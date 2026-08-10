@@ -1,0 +1,5 @@
+## Delete this comment and replace the path with a local one, if this folder is included in an actual repo
+
+["submodules/MySubmodule"]
+path = "submodules/MySubmodule"
+url = "C:/ChangeMe/MySubmodule"

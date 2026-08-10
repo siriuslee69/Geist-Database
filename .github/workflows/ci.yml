@@ -1,0 +1,50 @@
+name: Geist CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    name: Windows 11
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: "2.2.6"
+      - name: Doctor
+        run: nimble doctor
+      - name: Core tests
+        run: nimble testCore
+      - name: Protocol tests
+        run: nimble testProtocols
+      - name: Soak drills
+        run: nimble testSoak
+      - name: Interface tests
+        run: nimble testInterfaces
+      - name: Benchmark threshold
+        run: nimble benchCore
+      - name: Build all
+        run: nimble buildAll
+
+  nix:
+    name: Nix package and gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: cachix/install-nix-action@v27
+      - name: Build Nix package
+        run: nix-build nix/default.nix
+      - name: Repo gates in Nix shell
+        run: |
+          nix-shell -p nim libsodium nodejs powershell --run "nimble doctor"
+          nix-shell -p nim libsodium nodejs powershell --run "nimble testCore"
+          nix-shell -p nim libsodium nodejs powershell --run "nimble testProtocols"
+          nix-shell -p nim libsodium nodejs powershell --run "nimble testSoak"
+          nix-shell -p nim libsodium nodejs powershell --run "nimble testInterfaces"
+          nix-shell -p nim libsodium nodejs powershell --run "nimble benchCore"

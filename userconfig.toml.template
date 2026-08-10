@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------
+# Geist user configuration  --  copy to userconfig.toml and edit
+# ---------------------------------------------------------------------
+#
+# This file belongs to whoever RUNS geist or geistd on this machine. It
+# saves typing and nothing else: every setting here has a command line
+# option, and the option always wins.
+#
+#   geist --path data/notes list        <- no file needed
+#   geist list                          <- with [database] path below
+#
+# Looked for in the working directory first, then in
+# ~/.config/geist/userconfig.toml. Nothing here is secret: passwords are
+# named by FILE so they do not end up in a config you might share.
+
+[database]
+# The store root: a directory holding the artifact set, the manifest and
+# the sidecar folder.
+path = "data/notes"
+
+# Configuration preset. Omit to take the library default from config.toml.
+preset = "app"
+
+# File holding the at-rest password, for an encrypted preset. Prefer this
+# to --password: an inline password is visible in the process list.
+passwordFile = "secrets/db.pw"
+
+[daemon]
+# Endpoint geistd binds. 127.0.0.1 keeps it on this machine; use the
+# interface address to serve other desktops.
+listen = "dac://127.0.0.1:47655"
+
+# This daemon's signing identity, created on first start. It must be a
+# FILE that persists: a daemon that mints a fresh key every start can
+# never be pinned by a peer.
+identity = "keys/geistd.id"
+identityPasswordFile = "secrets/identity.pw"
+
+# Peers allowed to READ, by public pin. Exchange .pin files out of band --
+# that exchange IS the trust decision.
+trust = ["peers/laptop.pin"]
+
+# Peers allowed to read AND send rows. A daemon with any of these takes
+# the write lease, so a direct `geist put` on the same store is refused
+# while it runs.
+allowWrite = []
+
+[client]
+# Where `geist --remote` connects, and the pin it checks the daemon
+# against. Pinned trust means both sides must already know each other.
+remote = "dac://127.0.0.1:47655"
+peerPin = "peers/geistd.pin"
+
+# Default row limit for list and find.
+limit = 20
+
+# ---------------------------------------------------------------------
+# The relay: the same transport with a pipe where the database would be.
+# Nothing below opens a store. See docs/relay.md.
+# ---------------------------------------------------------------------
+
+[relay]
+# Endpoint geist-relayd binds. One above geistd's, so a machine can run
+# both without either being told about the other.
+listen = "dac://127.0.0.1:47656"
+identity = "keys/relay.id"
+identityPasswordFile = "secrets/relay.pw"
+
+# Peers allowed to COLLECT messages this relay is holding.
+trust = ["peers/laptop.pin"]
+
+# Peers allowed to SEND them. With to = "exec" this is also the list of
+# peers whose messages start a command, so it is the one to be careful
+# with.
+allowWrite = ["peers/phone.pin"]
+
+# Where an accepted message goes: spool, stdout, file or exec.
+to = "spool"
+
+# For to = "file": the log, and how each message is written --
+# "lines" (one plain line), "json" (one object per line) or "raw".
+file = "relay.jsonl"
+format = "json"
+
+# For to = "exec": the command. The message arrives on its STDIN, never
+# on its command line, and its stdout is sent back to the sender.
+# execTimeoutMs = 0 starts it and does not wait.
+exec = "whisper-cpp -"
+execTimeoutMs = 30000
+
+# Accept only these streams. Omit to accept any.
+stream = ["voice"]
+
+# Messages held per stream, in memory, for peers to collect. The oldest
+# is dropped when full, and the drop is counted. Nothing here survives a
+# restart -- that is what the database is for.
+spool = 256
+
+[relayClient]
+# Where `geist-relay send` and `geist-relay poll` connect, and the pin
+# they check that relay against.
+remote = "dac://127.0.0.1:47656"
+peerPin = "peers/relay.pin"
+
+# This client's own identity, which the relay operator must pin in turn.
+identity = "keys/phone.id"
+identityPasswordFile = "secrets/phone.pw"
+subject = "phone"
+
+# Default stream, print format for poll, and how long to wait for a
+# reply -- generously, since the far side may be running a transcriber.
+stream = "voice"
+format = "raw"
+timeoutMs = 30000

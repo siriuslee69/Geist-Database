@@ -1,0 +1,24 @@
+[submodule "deps/Fylgia-Utils"]
+	path = submodules/Fylgia-Utils
+	url = ../Fylgia-Utils.git
+	branch = main
+[submodule "deps/SIMD-Nexus"]
+	path = submodules/SIMD-Nexus
+	url = ../SIMD-Nexus.git
+	branch = main
+[submodule "deps/Tyr-Crypto"]
+	path = submodules/Tyr-Crypto
+	url = ../Tyr-Crypto.git
+	branch = main
+[submodule "deps/Eir-CompressionAndECC"]
+	path = submodules/Eir-CompressionAndECC
+	url = ../Eir-CompressionAndECC.git
+	branch = main
+[submodule "deps/Bifrost-ExchangeProtocols"]
+	path = submodules/Bifrost-ExchangeProtocols
+	url = ../Bifrost-ExchangeProtocols.git
+	branch = main
+[submodule "submodules/Otter-RepoEvaluation"]
+	path = submodules/Otter-RepoEvaluation
+	url = https://github.com/siriuslee69/Otter-RepoEvaluation.git
+	branch = main

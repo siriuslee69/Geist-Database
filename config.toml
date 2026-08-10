@@ -1,0 +1,74 @@
+# ---------------------------------------------------------------------
+# Geist library defaults
+# ---------------------------------------------------------------------
+#
+# These are what an embedding application inherits when it does not say
+# otherwise. Everything here has a built-in default, so deleting this file
+# changes nothing -- it exists to be edited, not to be required.
+#
+# Anything that varies per DATABASE belongs in the GeistConfig a caller
+# passes to openGeist, not here. What is below is the shape of the
+# library, not of one store.
+
+[storage]
+# Which preset openGeist uses when a caller names none.
+#   app  collapsed  secure-app  secure-collapsed
+#   chat  iot  archive  stream  ledger
+preset = "app"
+
+# Bytes. A capped column value at or above this moves out of the row and
+# into the sidecar tree, addressed by its own content hash.
+sidecarThreshold = 1024
+
+# Give every row the two reserved identity columns, so it can be replaced
+# and removed by name and exchanged with a peer. 16 bytes per row.
+# Turn off only for append-only streams that are never edited.
+rowIdentity = true
+
+# Keep a second, column-first copy of the rows beside the store, so a
+# search over one column reads that column instead of every row. The copy
+# is DERIVED: the row-major generation stays the truth, and losing it
+# costs a rebuild rather than data.
+#
+#   none      row-major only
+#   onSave    rebuilt with every save; never stale, slowest writes
+#   interval  rebuilt at most every transposeEverySeconds
+#   manual    rebuilt only by `geist transpose`; may be stale, and says so
+#
+# Not available on a sealed preset: the copy would be plaintext columns
+# beside an encrypted file.
+transpose = "none"
+
+# Seconds, for transpose = "interval". A daemon that saves often can keep
+# the search copy roughly fresh without rewriting it on every write.
+transposeEverySeconds = 300
+
+[backup]
+# How many rotation slots to keep beside the live artifacts (.b1 .b2 ...).
+copies = 2
+
+# Rotate at least this often, in seconds. 0 leaves the timing to the
+# preset's own policy.
+everySeconds = 0
+
+[transport]
+# Read by the NETWORK half of the library only (geist/network). A program
+# that imports plain `geist` to write rows to disk never looks at this
+# section, and does not compile the code that would understand it.
+#
+# Which tier a session starts at, and how much traffic makes it climb.
+# Climbing rekeys upward into a wider algorithm set as a conversation gets
+# long enough to be worth attacking.
+#
+#   telemetry  userData  standard  secret  archive  recovery
+#
+# WHICH algorithms each tier selects is not configurable. That is the one
+# thing about the network Geist owns outright, and a settings file able to
+# weaken a tier's mask would make the guarantee a deployment detail.
+startTier = "standard"
+
+# Mebibytes transferred before climbing. archive and recovery need DAC
+# package transfer for the handshake itself: their code-based KEM public
+# keys run to ~1.3 MB, well past one frame.
+secretAtMiB = 64
+archiveAtMiB = 1024

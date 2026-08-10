@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "WebWorker"
+    ],
+    "rootDir": "src/client/frontend/webextension",
+    "outDir": "dist/_ts_webextension_out",
+    "strict": false,
+    "noEmitOnError": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
+  },
+  "include": [
+    "src/client/frontend/webextension/**/*.ts",
+    "src/client/frontend/webextension/types.d.ts"
+  ]
+}

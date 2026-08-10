@@ -1,0 +1,10 @@
+UNLICENSED / ALL RIGHTS RESERVED
+
+Copyright (c) 2026 siriuslee69.
+
+This repository is currently not licensed for public redistribution, reuse,
+modification, or sublicensing.
+
+The `license = "UNLICENSED"` declaration in `geist_database.nimble` is
+intentional. Third-party dependencies remain governed by their own licenses in
+their respective repositories and submodules.

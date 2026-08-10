@@ -1,0 +1,73 @@
+.iron/.local*
+!.iron/.local*.template
+nimcache/
+.nimble_cache/
+node_modules/
+coverage/
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+*.lib
+*.a
+*.o
+*.obj
+*.dSYM/
+*.tmp
+.fuse_hidden*
+*.log
+*.out
+build/
+builds/
+dist/
+out/
+result
+src/client/android/app/.gradle/
+src/client/android/app/build/
+src/client/android/app/app/build/
+src/client/android/app/app/src/main/jniLibs/
+# Compiled test binaries are ignored; their SOURCES never are. The
+# negation is written against the same prefix as the exclusion, because a
+# general "!**/*.nim" is easy to defeat and once cost this repository its
+# whole test suite in commit 891f9a8.
+tests/**/test_*
+!tests/**/test_*.nim
+!tests/**/*.nim
+tests/data/
+.geist-koerper/
+koerper/
+*.bfx1
+*.bfx2
+*.geistdb
+*.config.json
+.env
+.env.*
+
+nimble.develop
+nimble.paths
+nimbledeps
+.iron/conventions/
+tests/.otter/results/
+
+# legacy implementation kept for reference during rearchitecture
+.geist-legacy/
+*.ge1st
+*.keys
+*.ledger
+*.b1
+*.b2
+*.b3
+.geist-sidecar/
+
+# Compiled example binaries, same rule as the tests above: the sources are
+# tracked, the products of `nimble examples` are not.
+examples/geist_*
+!examples/geist_*.nim
+# The write lease. It names a live process, so it is meaningless in a repo.
+.geist-lock
+
+# The user's own settings: paths, pins and endpoints for THIS machine.
+# The template beside it is tracked; what someone fills in is not.
+userconfig.toml
