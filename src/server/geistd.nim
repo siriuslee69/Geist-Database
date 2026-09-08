@@ -43,7 +43,7 @@
 
 import std/[os, strutils, tables, times]
 
-import ../analysis_pragmas
+import geistPragmas
 import ../geist/network
 
 type

@@ -41,7 +41,7 @@
 
 import std/[os, strutils]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./durable
 import ./address

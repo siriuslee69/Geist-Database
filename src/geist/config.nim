@@ -21,7 +21,7 @@
 
 import std/strutils
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./backup
 import ./crypto/batch

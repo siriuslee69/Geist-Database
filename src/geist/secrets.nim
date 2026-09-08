@@ -52,7 +52,7 @@ import std/[base64, strutils]
 
 import tyr
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./secret
 import ./crypto/cipher

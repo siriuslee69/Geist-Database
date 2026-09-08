@@ -46,7 +46,7 @@
 import std/[base64, json, os, osproc, streams, strtabs, strutils, tables,
   times, unicode]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./address
 import ./format

@@ -50,7 +50,7 @@
 
 import std/[os, strutils, tables]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./secret
 import ./keys
 import ./types

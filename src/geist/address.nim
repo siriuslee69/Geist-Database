@@ -35,7 +35,7 @@
 
 import std/strutils
 
-import ../analysis_pragmas
+import geistPragmas
 
 const
   geistScheme* = "geist://"

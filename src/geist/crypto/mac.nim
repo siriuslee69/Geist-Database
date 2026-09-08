@@ -24,7 +24,7 @@
 ##
 ## See docs/DESIGN_RATIONALE.md section 8.
 
-import ../../analysis_pragmas
+import geistPragmas
 import ../types
 import ./hashing
 

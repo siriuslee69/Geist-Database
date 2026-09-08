@@ -25,7 +25,7 @@
 
 import std/[os, json, strutils]
 
-import ../analysis_pragmas
+import geistPragmas
 import ../geist/wire
 
 type

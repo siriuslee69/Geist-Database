@@ -39,7 +39,7 @@
 
 import std/[algorithm, os, strutils, times]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./config
 import ./layout

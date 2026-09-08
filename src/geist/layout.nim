@@ -59,7 +59,7 @@
 
 import std/[os, strutils]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./address
 
 const

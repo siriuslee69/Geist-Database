@@ -9,7 +9,7 @@
 ## `crypto/hashing` re-exports everything here, so ordinary callers import
 ## that one and never name this module.
 
-import ../../analysis_pragmas
+import geistPragmas
 
 const
   fullDigestBytes* = 32

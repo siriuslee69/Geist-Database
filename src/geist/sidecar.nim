@@ -16,7 +16,7 @@
 
 import std/os
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./crypto/hashing
 

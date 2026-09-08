@@ -14,7 +14,7 @@
 
 import std/volatile
 
-import ../analysis_pragmas
+import geistPragmas
 
 type
   Secret* {.role: truthState, metaTags: {tagCryptoBoundary, tagTypes}.} = object

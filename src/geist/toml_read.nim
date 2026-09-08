@@ -22,7 +22,7 @@ import std/[json, os, strutils]
 
 import fylgia_utils
 
-import ../analysis_pragmas
+import geistPragmas
 
 const
   libraryConfigName* = "config.toml"

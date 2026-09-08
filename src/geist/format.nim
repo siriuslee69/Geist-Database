@@ -21,7 +21,7 @@
 ## Native struct punning would not survive x86 <-> ARM, and Geist targets
 ## Linux, Windows and Android on both.
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 
 const

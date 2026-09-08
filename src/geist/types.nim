@@ -12,7 +12,7 @@
 ## `Row` is the ONLY type the on-disk codec knows. Every other struct
 ## reaches disk through `toRow[T]`, so adding a model type costs no codec.
 
-import ../analysis_pragmas
+import geistPragmas
 import ./secret
 import ./crypto/hashwidths
 

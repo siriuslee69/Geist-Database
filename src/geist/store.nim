@@ -14,7 +14,7 @@
 
 import std/[os, streams]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./durable
 import ./format

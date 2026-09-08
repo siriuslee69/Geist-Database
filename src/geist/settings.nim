@@ -24,7 +24,7 @@
 
 import std/[json, os]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./config
 import ./toml_read
 import ./layout

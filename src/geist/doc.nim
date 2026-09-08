@@ -65,7 +65,7 @@ import std/[json, os, strutils, tables]
 
 import fylgia_utils
 
-import ../analysis_pragmas
+import geistPragmas
 
 const
   docIndentUnit* = "  "

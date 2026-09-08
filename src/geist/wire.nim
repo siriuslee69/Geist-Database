@@ -33,7 +33,7 @@
 ## the storage half were deleted, every program built on this file would
 ## still build.
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./format
 import ./toml_read

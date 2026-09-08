@@ -28,7 +28,7 @@
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
-import ../analysis_pragmas
+import geistPragmas
 
 type
   GeistTier* {.role: configurator, metaTags: {tagAme, tagConfig,

@@ -31,7 +31,7 @@
 
 import std/os
 
-import ../analysis_pragmas
+import geistPragmas
 
 when defined(posix):
   import std/posix

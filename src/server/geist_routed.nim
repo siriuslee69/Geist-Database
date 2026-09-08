@@ -52,7 +52,7 @@
 
 import std/[json, os, strutils, times]
 
-import ../analysis_pragmas
+import geistPragmas
 import ../geist/wire
 
 const

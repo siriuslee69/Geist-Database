@@ -30,5 +30,9 @@ for dep in ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto", "Eir-CompressionAndECC",
   let depRoot = resolveRepoRoot(dep)
   addPathIfExists(depRoot)
   addPathIfExists(joinPath(depRoot, "src"))
-  addPathIfExists(joinPath(depRoot, ".iron", "meta"))
+  addPathIfExists(joinPath(depRoot, "meta"))
   addPathIfExists(joinPath(depRoot, "tools", "meta"))
+
+## This repository's own pragma module, named for the repository so no
+## other repo on the Nim path can capture it.
+addPathIfExists(joinPath(repoRoot, "meta"))

@@ -24,7 +24,7 @@ import std/[tables, times]
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./format
 import ./masks

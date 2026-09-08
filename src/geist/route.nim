@@ -48,7 +48,7 @@
 
 import std/[strutils, tables]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./address
 
 const

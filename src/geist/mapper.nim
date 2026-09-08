@@ -15,7 +15,7 @@
 ## loop identifiers. The `...B` twins below alternate identifier sets so
 ## recursion works at arbitrary depth. Do not merge them.
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 
 ## ------------------------------ schema ------------------------------

@@ -42,7 +42,7 @@
 
 import std/[algorithm, editdistance, sequtils, strutils, tables]
 
-import ../analysis_pragmas
+import geistPragmas
 
 const
   suggestMaxDistance* = 3

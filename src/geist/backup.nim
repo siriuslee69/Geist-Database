@@ -19,7 +19,7 @@
 
 import std/[os, times]
 
-import ../analysis_pragmas
+import geistPragmas
 
 type
   BackupPolicy* {.role: configurator, metaTags: {tagBackup, tagConfig,

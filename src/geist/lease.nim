@@ -32,7 +32,7 @@
 
 import std/[exitprocs, locks, nativesockets, os, strutils, times]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./durable
 
 const

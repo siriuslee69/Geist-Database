@@ -30,7 +30,7 @@
 ## wire half imports the storage half. That is the property worth keeping:
 ## delete either one and the other still builds.
 
-import ../analysis_pragmas
+import geistPragmas
 import ../geist
 import ./wire
 import ./answer

@@ -29,7 +29,7 @@ import std/[os, strutils]
 
 import tyr
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./durable
 import ./format

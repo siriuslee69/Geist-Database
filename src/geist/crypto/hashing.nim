@@ -23,7 +23,7 @@
 
 import tyr
 
-import ../../analysis_pragmas
+import geistPragmas
 import ../types
 
 export hashwidths

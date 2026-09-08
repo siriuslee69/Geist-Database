@@ -34,7 +34,7 @@
 
 import std/[strutils]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./dynamic
 

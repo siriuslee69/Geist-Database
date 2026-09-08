@@ -48,7 +48,7 @@
 
 import std/os
 
-import ./analysis_pragmas
+import geistPragmas
 import ./geist/types
 import ./geist/secret
 import ./geist/durable

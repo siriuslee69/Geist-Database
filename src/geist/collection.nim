@@ -25,7 +25,7 @@
 
 import std/[os, times]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./config
 import ./session

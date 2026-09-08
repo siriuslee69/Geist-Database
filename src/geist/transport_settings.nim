@@ -25,7 +25,7 @@
 
 import std/[json, os, strutils]
 
-import ../analysis_pragmas
+import geistPragmas
 import ./masks
 import ./toml_read
 

@@ -41,7 +41,7 @@
 ## bitmap mean different things for different column kinds would cost more
 ## in reasoning than the bit costs in bytes.
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./format
 import ./sidecar

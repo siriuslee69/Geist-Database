@@ -14,7 +14,7 @@ import std/[os, strutils, times]
 
 import tyr
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./format
 import ./lease

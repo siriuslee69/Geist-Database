@@ -17,7 +17,7 @@
 ##
 ## See docs/DESIGN_RATIONALE.md section 10.
 
-import ../../analysis_pragmas
+import geistPragmas
 import ../types
 import ./batch
 

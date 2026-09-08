@@ -26,7 +26,7 @@
 
 import std/tables
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./config
 import ./dynamic

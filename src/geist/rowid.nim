@@ -46,7 +46,7 @@
 
 import std/tables
 
-import ../analysis_pragmas
+import geistPragmas
 import ./types
 import ./mapper
 import ./row
