@@ -31,3 +31,4 @@ for dep in ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto", "Eir-CompressionAndECC",
   addPathIfExists(depRoot)
   addPathIfExists(joinPath(depRoot, "src"))
   addPathIfExists(joinPath(depRoot, ".iron", "meta"))
+  addPathIfExists(joinPath(depRoot, "tools", "meta"))

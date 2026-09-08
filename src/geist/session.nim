@@ -12,7 +12,7 @@
 
 import std/[os, strutils, times]
 
-import tyr_crypto
+import tyr
 
 import ../analysis_pragmas
 import ./types

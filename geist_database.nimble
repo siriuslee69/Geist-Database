@@ -74,7 +74,7 @@ task checkModular, "Prove the storage half builds with no network stack":
   ## submodule path, including the one under test.
   var paths = ""
   for p in ["submodules/Fylgia-Utils/src", "submodules/Fylgia-Utils/.iron/meta",
-            "submodules/Tyr-Crypto/src", "submodules/Tyr-Crypto/.iron/meta",
+            "submodules/Tyr-Crypto/src", "submodules/Tyr-Crypto/tools/meta",
             "submodules/SIMD-Nexus/src", "submodules/Eir-CompressionAndECC/src",
             "submodules/nimsimd/src"]:
     if dirExists(p):

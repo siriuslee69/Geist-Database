@@ -26,7 +26,7 @@
 import std/[os, strutils]
 
 import bifrost_exchange_protocols as bfx except ByteSeq
-import tyr_crypto
+import tyr
 
 import ../analysis_pragmas
 import ./types

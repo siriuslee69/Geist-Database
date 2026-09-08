@@ -21,7 +21,7 @@
 ##
 ## See docs/DESIGN_RATIONALE.md section 8 and docs/STORAGE_PLAN.md 6.7.
 
-import tyr_crypto
+import tyr
 
 import ../../analysis_pragmas
 import ../types

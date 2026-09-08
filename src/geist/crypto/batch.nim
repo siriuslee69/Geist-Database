@@ -25,7 +25,7 @@
 ## ledger row -- or a different column group under the same key -- and it
 ## will decrypt cleanly and authenticate. See DESIGN_RATIONALE section 9.
 
-import tyr_crypto
+import tyr
 
 import ../../analysis_pragmas
 import ../types

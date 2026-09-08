@@ -50,7 +50,7 @@
 
 import std/[base64, strutils]
 
-import tyr_crypto
+import tyr
 
 import ../analysis_pragmas
 import ./types

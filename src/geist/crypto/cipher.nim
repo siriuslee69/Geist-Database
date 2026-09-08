@@ -23,7 +23,7 @@
 ## payload is large. Below `parallelThresholdBytes` the thread setup costs
 ## more than the keystream. See docs/DESIGN_RATIONALE.md section 7.
 
-import tyr_crypto
+import tyr
 
 import ../../analysis_pragmas
 import ../types
@@ -96,7 +96,7 @@ proc aesKeystream(k: StreamKeys, startBlock: uint64, n: int): ByteSeq {.
     ctr: ByteSeq = @[]
   zeros = newSeq[uint8](n)
   ctr = advanceCounter(k.aesNonce, startBlock)
-  result = @(aesCtrXor(k.aesKey, ctr, zeros))
+  result = @(aesCtrTyrXor(k.aesKey, ctr, zeros))
 
 when compileOption("threads"):
   type
@@ -112,16 +112,6 @@ when compileOption("threads"):
       ks: ByteSeq = @[]
       i: int = 0
     ks = chachaKeystream(j.keys[], j.startBlock, j.n)
-    while i < j.n:
-      j.dst[i] = ks[i]
-      i = i + 1
-
-  proc aesWorker(j: KsJob) {.thread, nimcall.} =
-    ## j: keystream job filling a caller-owned destination buffer.
-    var
-      ks: ByteSeq = @[]
-      i: int = 0
-    ks = aesKeystream(j.keys[], j.startBlock, j.n)
     while i < j.n:
       j.dst[i] = ks[i]
       i = i + 1
@@ -142,9 +132,7 @@ proc cascadeKeystreamParallel(k: StreamKeys, chachaStart, aesStart: uint64,
     createThread(tA, chachaWorker, KsJob(keys: addr keys,
       startBlock: chachaStart, n: n,
       dst: cast[ptr UncheckedArray[uint8]](addr a[0])))
-    createThread(tB, aesWorker, KsJob(keys: addr keys,
-      startBlock: aesStart, n: n,
-      dst: cast[ptr UncheckedArray[uint8]](addr b[0])))
+    b = aesKeystream(keys, aesStart, n)
     joinThread(tA)
     joinThread(tB)
     while i < n:
