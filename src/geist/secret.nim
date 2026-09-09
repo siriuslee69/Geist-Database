@@ -14,14 +14,14 @@
 
 import std/volatile
 
-import geistPragmas
+import runePragmas
 
 type
-  Secret* {.role: truthState, metaTags: {tagCryptoBoundary, tagTypes}.} = object
+  Secret* {.role: truthState, tag: "cryptoBoundary|types".} = object
     data: seq[uint8]
 
 proc volatileClear*(A: var openArray[uint8]) {.role: helper,
-    metaTags: {tagCryptoBoundary, tagWrite}.} =
+    tag: "cryptoBoundary|write".} =
   ## A: buffer overwritten with zeroes through volatile stores.
   var
     i: int = 0
@@ -43,26 +43,26 @@ proc `=copy`*(dst: var Secret, src: Secret) {.error:
   "Secret is move-only: call clone() so every duplication is explicit".}
 
 proc initSecret*(A: openArray[uint8]): Secret {.role: helper,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## A: raw key bytes taken into owned, self-clearing storage.
   result.data = @A
 
 proc len*(s: Secret): int {.role: parser, inline,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## s: secret whose byte length is returned.
   result = s.data.len
 
 proc use*(s: Secret): lent seq[uint8] {.role: parser, inline,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## s: secret borrowed for one cryptographic call. Does not copy.
   result = s.data
 
 proc clone*(s: Secret): Secret {.role: helper,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## s: secret being deliberately duplicated. The only legal copy path.
   result.data = s.data
 
 proc `$`*(s: Secret): string {.role: helper,
-    metaTags: {tagCryptoBoundary, tagFormatting}.} =
+    tag: "cryptoBoundary|formatting".} =
   ## s: secret rendered for logs without revealing any byte.
   result = "Secret(" & $s.data.len & "B)"

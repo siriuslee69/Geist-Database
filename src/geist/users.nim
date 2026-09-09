@@ -39,7 +39,7 @@
 
 import std/[algorithm, os, strutils, times]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./config
 import ./layout
@@ -58,8 +58,7 @@ const
     ## and appear in a log line without wrapping.
 
 type
-  AuthResult* {.role: truthState, metaTags: {tagCryptoBoundary, tagStatus,
-      tagTypes}.} = enum
+  AuthResult* {.role: truthState, tag: "cryptoBoundary|status|types".} = enum
     ## What a sign-in attempt was.
     ##
     ##   arOk        the password is right and the account is usable
@@ -69,8 +68,7 @@ type
     ##   arRefused   the request itself was malformed
     arOk, arWrong, arDisabled, arRefused
 
-  UserRecord* {.role: truthState, metaTags: {tagCryptoBoundary,
-      tagTypes}.} = object
+  UserRecord* {.role: truthState, tag: "cryptoBoundary|types".} = object
     ## One account.
     ##
     ## `password` is the ENCODED hash from `hashPassword`, not a password
@@ -88,8 +86,7 @@ type
     disabled*: bool
     role*: string
 
-  AuthOutcome* {.role: truthState, metaTags: {tagCryptoBoundary, tagStatus,
-      tagTypes}.} = object
+  AuthOutcome* {.role: truthState, tag: "cryptoBoundary|status|types".} = object
     ## The answer, and what to do about it.
     ##
     ## `rehash` is true when the stored hash is weaker than current policy
@@ -100,7 +97,7 @@ type
     rehash*: bool
     user*: UserRecord
 
-  UserStore* {.role: truthState, metaTags: {tagCryptoBoundary, tagTypes}.} =
+  UserStore* {.role: truthState, tag: "cryptoBoundary|types".} =
       object
     ## An open sign-in database.
     ##
@@ -112,20 +109,20 @@ type
     root*: string
     open*: bool
 
-  UserResult* {.role: truthState, metaTags: {tagStatus, tagTypes}.} = object
+  UserResult* {.role: truthState, tag: "status|types".} = object
     ok*: bool
     err*: string
 
 proc userOk(): UserResult {.role: helper, inline,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   result.ok = true
 
 proc userErr(err: string): UserResult {.role: helper, inline,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   result.err = err
 
 proc checkUserName*(name: string): string {.role: sanitizer,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## name: refused with a reason, or "" when it is usable.
   ##
   ## A user name is not a path segment here -- users live in ROWS, not in
@@ -148,7 +145,7 @@ proc checkUserName*(name: string): string {.role: sanitizer,
 proc openUsers*(S: var UserStore, h: GeistHome, app: string,
     c: GeistConfig, password: string = "", readOnly: bool = false,
     instance: string = ""): UserResult {.role: orchestrator,
-    metaTags: {tagCryptoBoundary, tagStorageIo}.} =
+    tag: "cryptoBoundary|storageIo".} =
   ## S: the store handle, filled in place.
   ## h: this machine's one Geist folder.
   ## app: which application's users -- `fjord`, `eris`.
@@ -178,7 +175,7 @@ proc openUsers*(S: var UserStore, h: GeistHome, app: string,
   result = userOk()
 
 proc saveUsers*(S: var UserStore): UserResult {.role: dataWriter,
-    metaTags: {tagCryptoBoundary, tagStorageIo, tagWrite}.} =
+    tag: "cryptoBoundary|storageIo|write".} =
   ## S: publish a new generation.
   var
     t: tuple[ok: bool, err: string]
@@ -187,8 +184,8 @@ proc saveUsers*(S: var UserStore): UserResult {.role: dataWriter,
   t = S.session.save()
   result = UserResult(ok: t.ok, err: t.err)
 
-proc closeUsers*(S: var UserStore): UserResult {.role: stateController,
-    metaTags: {tagCryptoBoundary, tagLifecycle, tagStorageIo}.} =
+proc closeUsers*(S: var UserStore): UserResult {.role: actor,
+    tag: "cryptoBoundary|lifecycle|storageIo".} =
   ## S: save what is pending and release the lease.
   if not S.open:
     return userOk()
@@ -197,7 +194,7 @@ proc closeUsers*(S: var UserStore): UserResult {.role: stateController,
   result = userOk()
 
 proc userRowFor*(s: UserStore, name: string): tuple[found: bool, id: RowId] {.
-    role: parser, metaTags: {tagCryptoBoundary, tagRead}.} =
+    role: parser, tag: "cryptoBoundary|read".} =
   ## s/name: where a user sits, or that they do not.
   var
     ids: seq[RowId] = @[]
@@ -210,7 +207,7 @@ proc userRowFor*(s: UserStore, name: string): tuple[found: bool, id: RowId] {.
 
 proc getUser*(s: UserStore, name: string): tuple[found: bool,
     value: UserRecord] {.role: dataFetcher,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## s/name: one account, or that there is none.
   ##
   ## Returns the record INCLUDING the encoded hash, because the caller is
@@ -222,13 +219,13 @@ proc getUser*(s: UserStore, name: string): tuple[found: bool,
   result = s.session.byId[:UserRecord](at.id)
 
 proc userExists*(s: UserStore, name: string): bool {.role: parser,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## s/name: is there such an account?
   result = s.getUser(name).found
 
 proc createUser*(S: var UserStore, name, password: string,
     displayName: string = "", userRole: string = ""): UserResult {.
-    role: dataWriter, metaTags: {tagCryptoBoundary, tagWrite}.} =
+    role: dataWriter, tag: "cryptoBoundary|write".} =
   ## S: the user store, open for writing.
   ## name: the account name, lower-cased on the way in.
   ## password: what the person chose. Hashed here and never stored.
@@ -266,7 +263,7 @@ proc createUser*(S: var UserStore, name, password: string,
   result = userOk()
 
 proc setPassword*(S: var UserStore, name, password: string): UserResult {.
-    role: dataWriter, metaTags: {tagCryptoBoundary, tagWrite}.} =
+    role: dataWriter, tag: "cryptoBoundary|write".} =
   ## S/name/password: replace the stored hash.
   ##
   ## THE STORAGE SALT IS NOT ROTATED. Changing a password must not make
@@ -295,7 +292,7 @@ proc setPassword*(S: var UserStore, name, password: string): UserResult {.
 
 proc setDisabled*(S: var UserStore, name: string,
     disabled: bool): UserResult {.role: dataWriter,
-    metaTags: {tagCryptoBoundary, tagWrite}.} =
+    tag: "cryptoBoundary|write".} =
   ## S/name/disabled: suspend or restore an account without deleting it.
   var
     at: tuple[found: bool, id: RowId]
@@ -314,7 +311,7 @@ proc setDisabled*(S: var UserStore, name: string,
   result = userOk()
 
 proc deleteUser*(S: var UserStore, name: string): UserResult {.
-    role: dataWriter, metaTags: {tagCryptoBoundary, tagDelete, tagWrite}.} =
+    role: dataWriter, tag: "cryptoBoundary|delete|write".} =
   ## S/name: a tombstone, so the removal can reach a mirror.
   var
     at: tuple[found: bool, id: RowId]
@@ -327,7 +324,7 @@ proc deleteUser*(S: var UserStore, name: string): UserResult {.
   result = userOk()
 
 proc userNames*(s: UserStore): seq[string] {.role: parser,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## s: every account, sorted.
   var
     i: uint32 = 0
@@ -359,7 +356,7 @@ const
     ## clock.
 
 proc authenticate*(s: UserStore, name, password: string): AuthOutcome {.
-    role: sanitizer, metaTags: {tagCryptoBoundary, tagRead}.} =
+    role: sanitizer, tag: "cryptoBoundary|read".} =
   ## s: the user store.
   ## name/password: what was typed.
   ##
@@ -401,7 +398,7 @@ proc authenticate*(s: UserStore, name, password: string): AuthOutcome {.
     rehash: needsRehash(got.value.password))
 
 proc signIn*(S: var UserStore, name, password: string): AuthOutcome {.
-    role: orchestrator, metaTags: {tagCryptoBoundary, tagWrite}.} =
+    role: orchestrator, tag: "cryptoBoundary|write".} =
   ## S: the user store, open for writing.
   ## name/password: what was typed.
   ##
@@ -433,7 +430,7 @@ proc signIn*(S: var UserStore, name, password: string): AuthOutcome {.
   result.user = got.value
 
 proc storageKeyFor*(u: UserRecord, password: string): Secret {.
-    role: encryptor, metaTags: {tagCryptoBoundary, tagKeyLifecycle}.} =
+    role: encryptor, tag: "cryptoBoundary|keyLifecycle".} =
   ## u: the record, for its per-user salt.
   ## password: the same password they signed in with.
   ##
@@ -448,7 +445,7 @@ proc storageKeyFor*(u: UserRecord, password: string): Secret {.
   result = deriveKey(password, decodeSalt(u.salt))
 
 proc describeAuth*(o: AuthOutcome): string {.role: helper,
-    metaTags: {tagCryptoBoundary, tagStatus}.} =
+    tag: "cryptoBoundary|status".} =
   ## o: one line for a log.
   ##
   ## Deliberately says nothing a log reader could use to enumerate

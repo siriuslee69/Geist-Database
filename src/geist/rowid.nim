@@ -46,7 +46,7 @@
 
 import std/tables
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./mapper
 import ./row
@@ -58,8 +58,7 @@ import ./store
 ## configuration can also see them.
 
 type
-  LiveIndex* {.role: truthState, metaTags: {tagDb, tagIndex, tagRead,
-      tagTypes}.} = object
+  LiveIndex* {.role: truthState, tag: "db|index|read|types".} = object
     ## The newest version of every id, and the order to present them in.
     ##
     ## newest: id -> row position in the log. Present for tombstoned ids
@@ -118,30 +117,30 @@ const
     ## before tags existed, where every id is its own counter.
 
 proc composeRowId*(nodeTag, counter: uint64): RowId {.role: helper, inline,
-    metaTags: {tagAppApi, tagDb, tagSync}.} =
+    tag: "appApi|db|sync".} =
   ## nodeTag/counter: the two halves joined into the id that is stored.
   result = ((nodeTag and rowIdNodeMask) shl rowIdCounterBits) or
     (counter and rowIdCounterMask)
 
 proc nodeTagOf*(id: RowId): uint64 {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagSync}.} =
+    tag: "appApi|db|sync".} =
   ## id: which database issued this row.
   result = (id shr rowIdCounterBits) and rowIdNodeMask
 
 proc counterOf*(id: RowId): uint64 {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagSync}.} =
+    tag: "appApi|db|sync".} =
   ## id: the issuing database's own sequence number for it.
   result = id and rowIdCounterMask
 
 proc hasIdentity*(s: Schema): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema asked whether its rows carry identity. The test itself is
   ## `hasIdentityColumns` in types.nim; this is the name the rest of the
   ## identity layer reads better with.
   result = s.hasIdentityColumns()
 
 proc withIdentity*(s: Schema): Schema {.role: truthBuilder,
-    metaTags: {tagAppApi, tagDb, tagTypes}.} =
+    tag: "appApi|db|types".} =
   ## s: schema gaining the two reserved columns, if it does not have them.
   ##
   ## They go FIRST and they are `colFixed`, so their offsets are constant
@@ -164,7 +163,7 @@ proc withIdentity*(s: Schema): Schema {.role: truthBuilder,
     i = i + 1
 
 proc withoutIdentity*(s: Schema): Schema {.role: truthBuilder,
-    metaTags: {tagAppApi, tagDb, tagTypes}.} =
+    tag: "appApi|db|types".} =
   ## s: schema with the reserved columns removed, for showing a caller the
   ## fields THEY declared. Used by `geist schema` and by anything comparing
   ## a stored schema against `schemaFor[T]()`.
@@ -185,7 +184,7 @@ proc withoutIdentity*(s: Schema): Schema {.role: truthBuilder,
 ## ------------------------- reading identity -------------------------
 
 proc identityOf*(s: Schema, A: openArray[uint8]): tuple[id: RowId,
-    flags: uint64] {.role: parser, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    flags: uint64] {.role: parser, tag: "appApi|db|read".} =
   ## s/A: schema and one stored row, read in ONE offset pass.
   ##
   ## Both halves together, always: resolving the offsets is the whole cost
@@ -203,23 +202,23 @@ proc identityOf*(s: Schema, A: openArray[uint8]): tuple[id: RowId,
   result.flags = s.u64At(A, offsets, 1)
 
 proc rowIdOf*(s: Schema, A: openArray[uint8]): RowId {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/A: just the id, for a caller that has no use for the flags.
   result = s.identityOf(A).id
 
 proc rowFlagsOf*(s: Schema, A: openArray[uint8]): uint64 {.role: parser,
-    inline, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    inline, tag: "appApi|db|read".} =
   ## s/A: just the flags. `isTombstone` is what usually follows.
   result = s.identityOf(A).flags
 
 proc isTombstone*(flags: uint64): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## flags: the `__flags` word. Only bit 0 is consulted.
   result = (flags and tombstoneFlag) != 0'u64
 
 proc tombstoneRow*(s: Schema, id: RowId,
     store: SidecarStore = SidecarStore()): ByteSeq {.role: truthBuilder,
-    metaTags: {tagAppApi, tagDb, tagWrite}.} =
+    tag: "appApi|db|write".} =
   ## s: schema the tombstone is packed against.
   ## id: the row being removed.
   ## store: sidecar; never used, since a tombstone writes no values.
@@ -244,7 +243,7 @@ proc restampRow*(s: Schema, A: openArray[uint8], id: RowId,
     flags: uint64 = 0'u64,
     store: SidecarStore = SidecarStore()): tuple[ok: bool, data: ByteSeq,
     err: string] {.role: truthBuilder,
-    metaTags: {tagAppApi, tagDb, tagSync, tagWrite}.} =
+    tag: "appApi|db|sync|write".} =
   ## s: schema the row is packed against.
   ## A: a complete row whose identity is being replaced.
   ## id/flags: what to put there instead.
@@ -287,7 +286,7 @@ proc restampRow*(s: Schema, A: openArray[uint8], id: RowId,
 ## --------------------------- the live view --------------------------
 
 proc initLiveIndex*(nodeTag: uint64 = 0'u64): LiveIndex {.role: configurator,
-    metaTags: {tagDb, tagTypes}.} =
+    tag: "db|types".} =
   ## nodeTag: this database's 24 bits, so the index knows which ids are its
   ## own to count from.
   ## The counter starts at one, so a composed id is never zero and zero
@@ -297,14 +296,14 @@ proc initLiveIndex*(nodeTag: uint64 = 0'u64): LiveIndex {.role: configurator,
   result.nextCounter = 1'u64
 
 proc freshRowId*(S: LiveIndex): RowId {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagWrite}.} =
+    tag: "appApi|db|write".} =
   ## S: index whose next unused id is composed. Not consumed until a row
   ## carrying it is stored, so asking twice without storing gives the same
   ## answer.
   result = composeRowId(S.nodeTag, S.nextCounter)
 
 proc noteRow*(S: var LiveIndex, id: RowId, flags: uint64, at: uint32) {.
-    role: stateController, metaTags: {tagDb, tagWrite}.} =
+    role: actor, tag: "db|write".} =
   ## S: index updated for ONE appended row.
   ## id/flags/at: its identity and its position in the log.
   ##
@@ -330,7 +329,7 @@ proc noteRow*(S: var LiveIndex, id: RowId, flags: uint64, at: uint32) {.
 
 
 proc rebuildLive*(S: var LiveIndex, C: ClusterBuild) {.role: truthBuilder,
-    metaTags: {tagDb, tagRead}.} =
+    tag: "db|read".} =
   ## S: index whose `live` positions are recomputed from `newest`.
   ## C: the cluster those positions address.
   ##
@@ -348,7 +347,7 @@ proc rebuildLive*(S: var LiveIndex, C: ClusterBuild) {.role: truthBuilder,
     i = i + 1
 
 proc noteAppend*(S: var LiveIndex, C: ClusterBuild, id: RowId, flags: uint64,
-    at: uint32) {.role: stateController, metaTags: {tagDb, tagWrite}.} =
+    at: uint32) {.role: actor, tag: "db|write".} =
   ## S: index updated for ONE row just appended to `C` at position `at`.
   ## C: the cluster it landed in, read only when a rebuild is unavoidable.
   ## id/flags/at: the row's identity and where it went.
@@ -380,12 +379,12 @@ proc noteAppend*(S: var LiveIndex, C: ClusterBuild, id: RowId, flags: uint64,
     S.rebuildLive(C)
 
 proc liveCount*(s: LiveIndex): uint32 {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: index whose visible row count is returned.
   result = uint32(s.live.len)
 
 proc positionOf*(s: LiveIndex, id: RowId): int {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/id: log position of an id's newest version, or -1 when unknown.
   if not s.newest.hasKey(id):
     return -1

@@ -52,7 +52,7 @@
 
 import std/[os, strutils, tables]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./format
 import ./row
@@ -68,8 +68,7 @@ const
     ## at u64 | len u64 | dense u8 | width u32
 
 type
-  ColumnRegion* {.role: truthState, metaTags: {tagDb, tagStorageIo,
-      tagTypes}.} = object
+  ColumnRegion* {.role: truthState, tag: "db|storageIo|types".} = object
     ## Where one column lives in the file, and how to address inside it.
     ## `dense` means arithmetic: value i starts at `at + i * width`.
     at*: uint64
@@ -77,8 +76,7 @@ type
     dense*: bool
     width*: uint32
 
-  TransposedFile* {.role: truthState, metaTags: {tagDb, tagStorageIo,
-      tagTypes}.} = object
+  TransposedFile* {.role: truthState, tag: "db|storageIo|types".} = object
     ## The directory of a transposed file -- everything except the data.
     ## Opening one reads this and nothing more, so asking a question about
     ## a 500 MB column store costs a few hundred bytes.
@@ -90,8 +88,7 @@ type
     header*: ColumnRegion
     columns*: seq[ColumnRegion]
 
-  TransposeState* {.role: truthState, metaTags: {tagDb, tagStatus,
-      tagTypes}.} = enum
+  TransposeState* {.role: truthState, tag: "db|status|types".} = enum
     ## What the two artifacts have to say about each other.
     ##
     ##   tsAbsent   no transposed file; the store is row-major only
@@ -104,20 +101,20 @@ type
 ## ------------------------------- paths ------------------------------
 
 proc transposedPath*(baseDir, baseName: string, n: uint64): string {.
-    role: parser, metaTags: {tagDb, tagStorageIo}.} =
+    role: parser, tag: "db|storageIo".} =
   ## baseDir/baseName/n: the transposed artifact of one generation.
   result = baseDir / (baseName & transposedSuffix & generationSuffix(n))
 
 proc liveTransposedPath*(baseDir: string,
     baseName: string = "main"): string {.role: parser,
-    metaTags: {tagDb, tagRead, tagStorageIo}.} =
+    tag: "db|read|storageIo".} =
   ## baseDir/baseName: the transposed file matching the live generation.
   ## It may not exist -- that is `tsAbsent`, not an error.
   result = transposedPath(baseDir, baseName, liveGeneration(baseDir))
 
 proc existingTransposed*(baseDir: string,
     baseName: string = "main"): tuple[path: string, generation: uint64] {.
-    role: parser, metaTags: {tagDb, tagRead, tagStorageIo}.} =
+    role: parser, tag: "db|read|storageIo".} =
   ## baseDir/baseName: the newest transposed file actually on disk, at any
   ## generation, or an empty path.
   ##
@@ -146,7 +143,7 @@ proc existingTransposed*(baseDir: string,
 
 proc columnSpan(s: Schema, A: openArray[uint8], offsets: seq[int],
     slot: int): tuple[at, len: int] {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s/A/offsets/slot: where one column's bytes sit inside one row.
   ##
   ## Derived from the offsets `fieldOffsets` already produced rather than
@@ -160,7 +157,7 @@ proc columnSpan(s: Schema, A: openArray[uint8], offsets: seq[int],
   result = (offsets[slot], int(s.slots[slot].width))
 
 proc isDenseColumn*(s: Schema, slot: int): bool {.role: parser, inline,
-    metaTags: {tagDb, tagStorageIo}.} =
+    tag: "db|storageIo".} =
   ## s/slot: whether every row spends the same bytes on this column.
   ##
   ## A collapsing schema omits zero values, so even a fixed column stops
@@ -172,7 +169,7 @@ proc isDenseColumn*(s: Schema, slot: int): bool {.role: parser, inline,
 
 proc writeTransposed*(path: string, C: ClusterBuild,
     generation: uint64): tuple[ok: bool, err: string] {.role: dataWriter,
-    metaTags: {tagDb, tagStorageIo, tagWrite}.} =
+    tag: "db|storageIo|write".} =
   ## path: where the transposed copy is written.
   ## C: the ENTRY cluster, the only one that is ever transposed.
   ## generation: the row-major generation this mirrors, stored in the
@@ -274,7 +271,7 @@ proc writeTransposed*(path: string, C: ClusterBuild,
 
 proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
     err: string] {.role: parser,
-    metaTags: {tagDb, tagRead, tagStorageIo}.} =
+    tag: "db|read|storageIo".} =
   ## path: a transposed file whose DIRECTORY is read -- not its data.
   ##
   ## Every length is checked against the file that is actually there. This
@@ -351,7 +348,7 @@ proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
 
 proc valueSpan*(t: TransposedFile, slot: int,
     i: uint32): tuple[at: uint64, len: int] {.role: parser,
-    metaTags: {tagDb, tagRead}.} =
+    tag: "db|read".} =
   ## t/slot/i: where one value of one column lives, absolutely.
   ##
   ## A dense column is arithmetic. A varying one costs one extra read of
@@ -375,7 +372,7 @@ proc valueSpan*(t: TransposedFile, slot: int,
 
 proc transposedValue*(t: TransposedFile, slot: int,
     i: uint32): ByteSeq {.role: dataFetcher,
-    metaTags: {tagDb, tagRead, tagStorageIo}.} =
+    tag: "db|read|storageIo".} =
   ## t/slot/i: one column's bytes for one row, exactly as they were stored.
   var
     span: tuple[at: uint64, len: int] = t.valueSpan(slot, i)
@@ -384,7 +381,7 @@ proc transposedValue*(t: TransposedFile, slot: int,
   result = readAt(t.path, span.at, span.len)
 
 proc transposedColumn*(t: TransposedFile, slot: int): seq[ByteSeq] {.
-    role: dataFetcher, metaTags: {tagDb, tagRead, tagStorageIo}.} =
+    role: dataFetcher, tag: "db|read|storageIo".} =
   ## t/slot: every value of one column, in row order, in ONE read.
   ##
   ## This is what the whole file is for. A scan reads this region and no
@@ -423,7 +420,7 @@ proc transposedColumn*(t: TransposedFile, slot: int): seq[ByteSeq] {.
     i = i + 1'u32
 
 proc transposedRow*(t: TransposedFile, i: uint32): Row {.role: dataFetcher,
-    metaTags: {tagDb, tagRead, tagStorageIo}.} =
+    tag: "db|read|storageIo".} =
   ## t/i: one row, rebuilt byte for byte as the row-major file holds it.
   ##
   ## A row is the header prefix followed by each column in schema order,
@@ -446,7 +443,7 @@ proc transposedRow*(t: TransposedFile, i: uint32): Row {.role: dataFetcher,
     j = j + 1
 
 proc scanBytes*(t: TransposedFile, slot: int): uint64 {.role: parser, inline,
-    metaTags: {tagDb, tagRead, tagStatus}.} =
+    tag: "db|read|status".} =
   ## t/slot: how many bytes a scan of this column will read.
   ##
   ## The number worth quoting when someone asks whether the second copy
@@ -458,7 +455,7 @@ proc scanBytes*(t: TransposedFile, slot: int): uint64 {.role: parser, inline,
 proc transposedFind*(t: TransposedFile, field, value: string,
     limit: int = 0): tuple[ok: bool, rows: seq[uint32], read: uint64,
     err: string] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStorageIo}.} =
+    tag: "appApi|db|read|storageIo".} =
   ## t/field/value: the rows whose column renders exactly `value`.
   ## limit: stop after this many, 0 for all.
   ##
@@ -505,7 +502,7 @@ proc transposedFind*(t: TransposedFile, field, value: string,
 proc transposeState*(baseDir: string,
     baseName: string = "main"): tuple[state: TransposeState, live: uint64,
     built: uint64, path: string] {.role: parser,
-    metaTags: {tagDb, tagRead, tagStatus}.} =
+    tag: "db|read|status".} =
   ## baseDir/baseName: which of the two artifacts is ahead, and by how far.
   ##
   ## Both numbers come off disk: `live` from the manifest, `built` from
@@ -527,7 +524,7 @@ proc transposeState*(baseDir: string,
     result.state = tsOrphan
 
 proc describeTransposeState*(s: TransposeState, live, built: uint64): string {.
-    role: helper, metaTags: {tagDb, tagStatus}.} =
+    role: helper, tag: "db|status".} =
   ## s/live/built: one line an operator can act on.
   case s
   of tsAbsent:
@@ -543,7 +540,7 @@ proc describeTransposeState*(s: TransposeState, live, built: uint64): string {.
       "back under it; rebuild"
 
 proc retireTransposed*(baseDir, baseName: string, keep: uint64) {.
-    role: stateController, metaTags: {tagDb, tagLifecycle, tagStorageIo}.} =
+    role: actor, tag: "db|lifecycle|storageIo".} =
   ## baseDir/baseName/keep: delete every transposed file except one.
   ##
   ## Generations of the store are retired one at a time because a reader

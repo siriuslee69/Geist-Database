@@ -30,7 +30,7 @@
 ## wire half imports the storage half. That is the property worth keeping:
 ## delete either one and the other still builds.
 
-import geistPragmas
+import runePragmas
 import ../geist
 import ./wire
 import ./answer
@@ -43,7 +43,7 @@ export answer, need, offer, registry
 
 proc initGeistNetworkDefaults*(path: string = libraryConfigName): tuple[
     ok: bool, err: string] {.role: configurator,
-    metaTags: {tagAme, tagConfig, tagLifecycle, tagRead}.} =
+    tag: "ame|config|lifecycle|read".} =
   ## path: config.toml, adopted for BOTH halves in one call.
   ##
   ## A program that speaks to peers wants every section of that file

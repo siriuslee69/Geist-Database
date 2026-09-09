@@ -65,7 +65,7 @@ import std/[json, os, strutils, tables]
 
 import fylgia_utils
 
-import geistPragmas
+import runePragmas
 
 const
   docIndentUnit* = "  "
@@ -78,12 +78,12 @@ const
     ## in the next module along.
 
 type
-  DocFormat* {.role: configurator, metaTags: {tagConfig, tagTypes}.} = enum
+  DocFormat* {.role: configurator, tag: "config|types".} = enum
     ## Which text the object becomes. Chosen from the file extension by
     ## `formatOf`, so a caller normally never names one.
     dfToml, dfJson
 
-  DocNote* {.role: configurator, metaTags: {tagConfig, tagDocs, tagTypes}.} =
+  DocNote* {.role: configurator, tag: "config|docs|types".} =
       object
     ## One comment, attached to a dotted field path.
     ##
@@ -97,7 +97,7 @@ type
     field*: string
     note*: string
 
-  DocStyle* {.role: configurator, metaTags: {tagConfig, tagDocs, tagTypes}.} =
+  DocStyle* {.role: configurator, tag: "config|docs|types".} =
       object
     ## header: lines written at the top of the file, each prefixed `# `.
     ## notes: per-field comments.
@@ -107,8 +107,7 @@ type
     notes*: seq[DocNote]
     keepUnknown*: bool
 
-  DocReport* {.role: truthState, metaTags: {tagConfig, tagStatus,
-      tagTypes}.} = object
+  DocReport* {.role: truthState, tag: "config|status|types".} = object
     ## What happened, in enough detail to show a person.
     ##
     ## `ok` is false only when the file could not be PARSED. A file full
@@ -122,17 +121,17 @@ type
     mistyped*: seq[string]
 
 proc defaultDocStyle*(): DocStyle {.role: configurator,
-    metaTags: {tagConfig, tagDocs}.} =
+    tag: "config|docs".} =
   ## No header, no notes, unknown keys preserved.
   result.keepUnknown = true
 
 proc noteOn*(S: var DocStyle, field, note: string) {.role: configurator,
-    inline, metaTags: {tagConfig, tagDocs}.} =
+    inline, tag: "config|docs".} =
   ## S/field/note: attach one comment to one dotted path.
   S.notes.add DocNote(field: field, note: note)
 
 proc hasProblems*(r: DocReport): bool {.role: parser, inline,
-    metaTags: {tagConfig, tagStatus}.} =
+    tag: "config|status".} =
   ## r: did anything in the file fail to apply?
   ##
   ## `missing` is deliberately NOT a problem: an absent option is the
@@ -140,7 +139,7 @@ proc hasProblems*(r: DocReport): bool {.role: parser, inline,
   result = not r.ok or r.unknown.len > 0 or r.mistyped.len > 0
 
 proc describe*(r: DocReport): string {.role: helper,
-    metaTags: {tagConfig, tagDocs, tagStatus}.} =
+    tag: "config|docs|status".} =
   ## r: one line per thing worth telling the person who edited the file.
   var
     t: seq[string] = @[]
@@ -158,7 +157,7 @@ proc describe*(r: DocReport): string {.role: helper,
 proc toNodeB[T](x: T): JsonNode
 
 proc scalarNode[T](v: T): JsonNode {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagConfig}.} =
+    tag: "codecBoundary|config".} =
   ## v: one leaf value as the JSON kind TOML will render it from.
   ##
   ## An enum becomes its NAME. A settings file that said `writeMode = 2`
@@ -176,7 +175,7 @@ proc scalarNode[T](v: T): JsonNode {.role: encryptor,
     result = newJInt(BiggestInt(v))
 
 proc toNode*[T](x: T): JsonNode {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagConfig}.} =
+    tag: "codecBoundary|config".} =
   ## x: any supported value, turned into the node a renderer takes.
   ##
   ## `fieldPairs` unrolls lexically, so a nested level cannot reuse this
@@ -207,7 +206,7 @@ proc toNode*[T](x: T): JsonNode {.role: encryptor,
     result = newJNull()
 
 proc toNodeB[T](x: T): JsonNode {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagConfig}.} =
+    tag: "codecBoundary|config".} =
   ## Alternating twin of `toNode`; see the note there.
   when T is JsonNode:
     result = x
@@ -235,7 +234,7 @@ proc toNodeB[T](x: T): JsonNode {.role: encryptor,
 ## ---------------------------- node -> object ------------------------
 
 proc dottedPath(prefix, name: string): string {.role: helper, inline,
-    metaTags: {tagConfig}.} =
+    tag: "config".} =
   ## prefix/name: the dotted path a report names a field by.
   result = if prefix.len > 0: prefix & "." & name else: name
 
@@ -243,7 +242,7 @@ proc fromNodeB[T](n: JsonNode, S: var T, prefix: string, R: var DocReport)
 
 proc readScalar[T](n: JsonNode, S: var T, path: string,
     R: var DocReport) {.role: parser,
-    metaTags: {tagCodecBoundary, tagConfig, tagParsing}.} =
+    tag: "codecBoundary|config|parsing".} =
   ## n/S/path/R: one leaf, left alone when the node is the wrong kind.
   ##
   ## An int is accepted for a float because `2` and `2.0` are the same
@@ -273,7 +272,7 @@ proc readScalar[T](n: JsonNode, S: var T, path: string,
 
 proc fromNode*[T](n: JsonNode, S: var T, prefix: string,
     R: var DocReport) {.role: parser,
-    metaTags: {tagCodecBoundary, tagConfig, tagParsing}.} =
+    tag: "codecBoundary|config|parsing".} =
   ## n: the parsed file, or one branch of it.
   ## S: the value being filled, PRE-LOADED WITH THE DEFAULTS. Anything the
   ##   file does not mention keeps what it already had, which is what
@@ -318,7 +317,7 @@ proc fromNode*[T](n: JsonNode, S: var T, prefix: string,
 
 proc fromNodeB[T](n: JsonNode, S: var T, prefix: string,
     R: var DocReport) {.role: parser,
-    metaTags: {tagCodecBoundary, tagConfig, tagParsing}.} =
+    tag: "codecBoundary|config|parsing".} =
   ## Alternating twin of `fromNode`; see the note there.
   when T is JsonNode:
     S = n
@@ -357,7 +356,7 @@ proc fromNodeB[T](n: JsonNode, S: var T, prefix: string,
 
 proc collectUnknown(have, want: JsonNode, prefix: string,
     R: var DocReport) {.role: parser,
-    metaTags: {tagConfig, tagParsing}.} =
+    tag: "config|parsing".} =
   ## have: the file as parsed.
   ## want: the same shape as the object produces.
   ## prefix/R: where we are, and what to add to.
@@ -379,7 +378,7 @@ proc collectUnknown(have, want: JsonNode, prefix: string,
       collectUnknown(value, want[key], t, R)
 
 proc mergeUnknown(have, want: JsonNode) {.role: truthBuilder,
-    metaTags: {tagConfig, tagWrite}.} =
+    tag: "config|write".} =
   ## have: the file as it was read.
   ## want: the node about to be written, mutated to carry the strays.
   ##
@@ -396,7 +395,7 @@ proc mergeUnknown(have, want: JsonNode) {.role: truthBuilder,
 ## ---------------------------- TOML rendering ------------------------
 
 proc noteFor(style: DocStyle, path: string): string {.role: parser,
-    metaTags: {tagConfig, tagDocs}.} =
+    tag: "config|docs".} =
   ## style/path: the comment attached to this dotted path, or nothing.
   var
     i: int = 0
@@ -407,7 +406,7 @@ proc noteFor(style: DocStyle, path: string): string {.role: parser,
   result = ""
 
 proc quoteToml(s: string): string {.role: helper,
-    metaTags: {tagConfig, tagFormatting}.} =
+    tag: "config|formatting".} =
   ## s: a string as a TOML basic string.
   var
     i: int = 0
@@ -424,7 +423,7 @@ proc quoteToml(s: string): string {.role: helper,
   result = t & "\""
 
 proc bareKey(s: string): bool {.role: parser,
-    metaTags: {tagConfig, tagFormatting}.} =
+    tag: "config|formatting".} =
   ## s: may this key be written without quotes?
   var
     i: int = 0
@@ -437,12 +436,12 @@ proc bareKey(s: string): bool {.role: parser,
   result = true
 
 proc tomlKey(s: string): string {.role: helper, inline,
-    metaTags: {tagConfig, tagFormatting}.} =
+    tag: "config|formatting".} =
   ## s: one key, quoted only when it has to be.
   result = if bareKey(s): s else: quoteToml(s)
 
 proc scalarText(n: JsonNode): string {.role: helper,
-    metaTags: {tagConfig, tagFormatting}.} =
+    tag: "config|formatting".} =
   ## n: one leaf as TOML.
   ##
   ## A float always carries a point. Written as `1` it would come back as
@@ -457,7 +456,7 @@ proc scalarText(n: JsonNode): string {.role: helper,
   else: result = "\"\""
 
 proc arrayText(n: JsonNode): string {.role: helper,
-    metaTags: {tagConfig, tagFormatting}.} =
+    tag: "config|formatting".} =
   ## n: an array of leaves, inline.
   var
     t: seq[string] = @[]
@@ -466,7 +465,7 @@ proc arrayText(n: JsonNode): string {.role: helper,
   result = "[" & t.join(", ") & "]"
 
 proc isTableArray(n: JsonNode): bool {.role: parser,
-    metaTags: {tagConfig, tagFormatting}.} =
+    tag: "config|formatting".} =
   ## n: an array whose items are tables becomes `[[header]]` blocks.
   ##
   ## An EMPTY array is not one: there is no way to write zero
@@ -477,7 +476,7 @@ proc isTableArray(n: JsonNode): bool {.role: parser,
   result = n[0].kind == JObject
 
 proc tomlHeader(path: seq[string]): string {.role: helper,
-    metaTags: {tagConfig, tagFormatting}.} =
+    tag: "config|formatting".} =
   ## path: the segments of a table header, each quoted only if it has to
   ## be, then joined with the dots TOML uses for nesting.
   ##
@@ -503,7 +502,7 @@ proc tomlHeader(path: seq[string]): string {.role: helper,
 
 proc renderTable(path: seq[string], n: JsonNode, style: DocStyle,
     indent: string, L: var seq[string]) {.role: dataWriter,
-    metaTags: {tagConfig, tagFormatting, tagWrite}.} =
+    tag: "config|formatting|write".} =
   ## path: the dotted header this table lives under.
   ## n: the table.
   ## style: where the comments come from.
@@ -557,7 +556,7 @@ proc renderTable(path: seq[string], n: JsonNode, style: DocStyle,
         i = i + 1
 
 proc renderDocToml*(n: JsonNode, style: DocStyle): string {.role: dataWriter,
-    metaTags: {tagConfig, tagFormatting, tagWrite}.} =
+    tag: "config|formatting|write".} =
   ## n/style: the whole file, comments and all.
   var
     L: seq[string] = @[]
@@ -573,13 +572,13 @@ proc renderDocToml*(n: JsonNode, style: DocStyle): string {.role: dataWriter,
 ## ---------------------------- files ---------------------------------
 
 proc formatOf*(path: string): DocFormat {.role: parser, inline,
-    metaTags: {tagConfig}.} =
+    tag: "config".} =
   ## path: TOML unless the name says JSON. TOML is the house format; JSON
   ## exists because something else already speaks it.
   result = if path.toLowerAscii().endsWith(".json"): dfJson else: dfToml
 
 proc parseDoc*(text: string, f: DocFormat): tuple[ok: bool, node: JsonNode,
-    err: string] {.role: parser, metaTags: {tagConfig, tagParsing, tagRead}.} =
+    err: string] {.role: parser, tag: "config|parsing|read".} =
   ## text/f: the file contents as a node, or the reason they are not one.
   try:
     if f == dfJson:
@@ -590,7 +589,7 @@ proc parseDoc*(text: string, f: DocFormat): tuple[ok: bool, node: JsonNode,
     result = (false, newJObject(), exc.msg)
 
 proc sectionKeys*(n: JsonNode, path: string): seq[string] {.role: parser,
-    metaTags: {tagConfig, tagParsing, tagRead}.} =
+    tag: "config|parsing|read".} =
   ## n: a parsed document, or nil.
   ## path: a dotted path to a table of named sub-tables, e.g. `account`.
   ##
@@ -645,7 +644,7 @@ proc sectionKeys*(n: JsonNode, path: string): seq[string] {.role: parser,
 
 proc readDoc*[T](path: string, fallback: T): tuple[value: T,
     node: JsonNode, report: DocReport] {.role: orchestrator,
-    metaTags: {tagAppApi, tagConfig, tagRead, tagStorageIo}.} =
+    tag: "appApi|config|read|storageIo".} =
   ## path: the file, which need not exist.
   ## fallback: every default, as an object. This IS the schema: what is
   ##   not a field of it is not a setting.
@@ -685,7 +684,7 @@ proc readDoc*[T](path: string, fallback: T): tuple[value: T,
 
 proc writeDoc*[T](path: string, x: T, style: DocStyle = defaultDocStyle(),
     keep: JsonNode = nil): tuple[ok: bool, err: string] {.role: dataWriter,
-    metaTags: {tagAppApi, tagConfig, tagStorageIo, tagWrite}.} =
+    tag: "appApi|config|storageIo|write".} =
   ## path: where to write; the directory is created if it is missing.
   ## x: the object, every field of which becomes a line.
   ## style: header and per-field comments.
@@ -718,7 +717,7 @@ proc writeDoc*[T](path: string, x: T, style: DocStyle = defaultDocStyle(),
 proc ensureDoc*[T](path: string, fallback: T,
     style: DocStyle = defaultDocStyle()): tuple[value: T, report: DocReport,
     written: bool] {.role: orchestrator,
-    metaTags: {tagAppApi, tagConfig, tagStorageIo}.} =
+    tag: "appApi|config|storageIo".} =
   ## path/fallback/style: read the file, then write it back out complete.
   ##
   ## The call an application makes at startup. After it, the file on disk

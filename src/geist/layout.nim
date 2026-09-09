@@ -59,7 +59,7 @@
 
 import std/[os, strutils]
 
-import geistPragmas
+import runePragmas
 import ./address
 
 const
@@ -80,7 +80,7 @@ const
   routerConfigFile* = "router.toml"
 
 type
-  NodeRole* {.role: configurator, metaTags: {tagConfig, tagTypes}.} = enum
+  NodeRole* {.role: configurator, tag: "config|types".} = enum
     ## Which kind of thing this process is, which is the only input to the
     ## default location besides the platform.
     ##
@@ -92,8 +92,7 @@ type
     ## /var/lib would need root to read its own mail.
     nrClient, nrServer
 
-  GeistHome* {.role: truthState, metaTags: {tagConfig, tagStorageIo,
-      tagTypes}.} = object
+  GeistHome* {.role: truthState, tag: "config|storageIo|types".} = object
     ## One machine's Geist folder.
     ##
     ## `explicit` records whether the base came from the caller or the
@@ -105,7 +104,7 @@ type
     explicit*: bool
 
 proc defaultHomeFor*(r: NodeRole): string {.role: configurator,
-    metaTags: {tagConfig, tagCompat}.} =
+    tag: "config|compat".} =
   ## r: where this kind of process keeps its Geist folder by default.
   ##
   ## Android is deliberately absent: an app's private directory is only
@@ -129,7 +128,7 @@ proc defaultHomeFor*(r: NodeRole): string {.role: configurator,
 
 proc openHome*(base: string = "",
     r: NodeRole = nrClient): tuple[ok: bool, home: GeistHome, err: string] {.
-    role: configurator, metaTags: {tagConfig, tagStorageIo}.} =
+    role: configurator, tag: "config|storageIo".} =
   ## base: an explicit root, or nothing to use $GEIST_HOME or the default.
   ## r: client or server.
   ##
@@ -155,42 +154,42 @@ proc openHome*(base: string = "",
   result.ok = true
 
 proc configDir*(h: GeistHome): string {.role: helper, inline,
-    metaTags: {tagConfig}.} =
+    tag: "config".} =
   ## h: every TOML file this machine reads.
   result = h.base / configDirName
 
 proc keysDir*(h: GeistHome): string {.role: helper, inline,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## h: signing identities and the keystore.
   result = h.base / keysDirName
 
 proc keystoreDir*(h: GeistHome): string {.role: helper, inline,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## h: what `openKeystore` should be given.
   result = h.keysDir() / keystoreDirName
 
 proc peersDir*(h: GeistHome): string {.role: helper, inline,
-    metaTags: {tagPeerDirectory}.} =
+    tag: "peerDirectory".} =
   ## h: the pins of everyone this node trusts.
   result = h.base / peersDirName
 
 proc dbDir*(h: GeistHome): string {.role: helper, inline,
-    metaTags: {tagStorageIo}.} =
+    tag: "storageIo".} =
   ## h: every store, under the app that owns it.
   result = h.base / dbDirName
 
 proc spoolDir*(h: GeistHome): string {.role: helper, inline,
-    metaTags: {tagStorageIo}.} =
+    tag: "storageIo".} =
   ## h: things in flight, which survive a restart but are not content.
   result = h.base / spoolDirName
 
 proc logDir*(h: GeistHome): string {.role: helper, inline,
-    metaTags: {tagStorageIo}.} =
+    tag: "storageIo".} =
   ## h: where a daemon writes, when it writes to a file at all.
   result = h.base / logDirName
 
 proc configPath*(h: GeistHome, name: string): string {.role: helper,
-    metaTags: {tagConfig}.} =
+    tag: "config".} =
   ## h/name: one config file. `name` may be bare (`fjord`) or carry its
   ## extension (`fjord.toml`); a bare one gets `.toml`, because that is
   ## the house format and every caller writing it out would be noise.
@@ -202,17 +201,17 @@ proc configPath*(h: GeistHome, name: string): string {.role: helper,
   result = h.configDir() / t
 
 proc identityPath*(h: GeistHome, node: string): string {.role: helper,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## h/node: this node's signing key.
   result = h.keysDir() / node & ".id"
 
 proc pinPath*(h: GeistHome, peer: string): string {.role: helper,
-    metaTags: {tagPeerDirectory}.} =
+    tag: "peerDirectory".} =
   ## h/peer: one peer's pin.
   result = h.peersDir() / peer & ".pin"
 
 proc appDir*(h: GeistHome; app: string; instance: string = ""): string {.
-    role: helper, metaTags: {tagStorageIo}.} =
+    role: helper, tag: "storageIo".} =
   ## h/app/instance: everything one application stores.
   ##
   ## The instance is part of the DIRECTORY NAME rather than a level of its
@@ -226,7 +225,7 @@ proc appDir*(h: GeistHome; app: string; instance: string = ""): string {.
 
 proc storePath*(h: GeistHome, app, instance: string,
     target: string): tuple[ok: bool, path: string, err: string] {.
-    role: helper, metaTags: {tagStorageIo}.} =
+    role: helper, tag: "storageIo".} =
   ## h/app/instance: whose store.
   ## target: the address target, `mail/alice/inbox` or `accounts`.
   ##
@@ -255,7 +254,7 @@ proc storePath*(h: GeistHome, app, instance: string,
 
 proc storeFor*(h: GeistHome,
     a: GeistAddress): tuple[ok: bool, path: string, err: string] {.
-    role: helper, metaTags: {tagStorageIo}.} =
+    role: helper, tag: "storageIo".} =
   ## h/a: the folder for whatever this address names, on this machine.
   ##
   ## The short form of `storePath` for the common case: a daemon that has
@@ -268,7 +267,7 @@ proc storeFor*(h: GeistHome,
   result = (true, h.appDir(a.app, a.instance) / a.forLeaf(), "")
 
 proc ensureHome*(h: GeistHome): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagLifecycle, tagStorageIo}.} =
+    role: dataWriter, tag: "lifecycle|storageIo".} =
   ## h: create the folder and its six fixed subdirectories.
   ##
   ## Called once at startup. The app directories under `db/` are NOT
@@ -287,7 +286,7 @@ proc ensureHome*(h: GeistHome): tuple[ok: bool, err: string] {.
   result = (true, "")
 
 proc appNames*(h: GeistHome): seq[string] {.role: parser,
-    metaTags: {tagStatus, tagStorageIo}.} =
+    tag: "status|storageIo".} =
   ## h: the applications that have actually stored something here.
   var
     t: string = ""
@@ -301,7 +300,7 @@ proc appNames*(h: GeistHome): seq[string] {.role: parser,
         result.add t
 
 proc describeHome*(h: GeistHome): string {.role: helper,
-    metaTags: {tagDocs, tagStatus}.} =
+    tag: "docs|status".} =
   ## h: the folder drawn as a tree, for a status line or a `--help`.
   ##
   ## Prints what is THERE, marking what is not, so the answer to "why is

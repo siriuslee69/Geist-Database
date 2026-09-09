@@ -62,7 +62,7 @@
 
 import std/[os, strutils]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./address
 import ./answer
@@ -83,7 +83,7 @@ const
     ## stopping leaves a valid position and the next call resumes.
 
 type
-  OfferCursor* {.role: truthState, metaTags: {tagSync, tagTypes}.} = object
+  OfferCursor* {.role: truthState, tag: "sync|types".} = object
     ## remote: the destination, keyed the way everything else keys a
     ##   destination -- see `destinationKey`. A fallback daemon serving the
     ##   same store must continue this position rather than start a fresh
@@ -94,8 +94,7 @@ type
     epoch*: uint64
     cursor*: uint64
 
-  OfferOutcome* {.role: truthState, metaTags: {tagStatus, tagSync,
-      tagTypes}.} = tuple
+  OfferOutcome* {.role: truthState, tag: "status|sync|types".} = tuple
     ## What one push did. `rewound` says this node's own log had been
     ## rewritten and the position was discarded -- which explains a run
     ## that re-sent everything.
@@ -107,12 +106,12 @@ type
     err: string
 
 proc offerPath*(baseDir: string): string {.role: parser, inline,
-    metaTags: {tagStorageIo, tagSync}.} =
+    tag: "storageIo|sync".} =
   ## baseDir: store root whose outbound positions are named.
   result = baseDir / offerCursorFile
 
 proc parseOfferLine(line: string): tuple[ok: bool, c: OfferCursor] {.
-    role: parser, metaTags: {tagParsing, tagSync}.} =
+    role: parser, tag: "parsing|sync".} =
   ## line: one `<remote> <epoch> <cursor>` record.
   ##
   ## A malformed line is DROPPED, not raised on, for the same reason as in
@@ -132,7 +131,7 @@ proc parseOfferLine(line: string): tuple[ok: bool, c: OfferCursor] {.
     result = (false, OfferCursor())
 
 proc loadOffers*(baseDir: string): seq[OfferCursor] {.role: parser,
-    metaTags: {tagRead, tagStorageIo, tagSync}.} =
+    tag: "read|storageIo|sync".} =
   ## baseDir: store root. No file means nothing has been offered to
   ## anybody yet, which is the first run and not an error.
   var
@@ -148,7 +147,7 @@ proc loadOffers*(baseDir: string): seq[OfferCursor] {.role: parser,
 
 proc saveOffers*(baseDir: string,
     C: openArray[OfferCursor]): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagStorageIo, tagSync, tagWrite}.} =
+    role: dataWriter, tag: "storageIo|sync|write".} =
   ## baseDir: store root.
   ## C: every known position, written as one atomic replacement.
   ##
@@ -164,7 +163,7 @@ proc saveOffers*(baseDir: string,
   result = replaceDurable(offerPath(baseDir), text)
 
 proc indexOfRemote(C: openArray[OfferCursor], remote: string): int {.
-    role: parser, metaTags: {tagSync}.} =
+    role: parser, tag: "sync".} =
   ## C/remote: where this peer sits, or -1.
   var
     i: int = 0
@@ -175,7 +174,7 @@ proc indexOfRemote(C: openArray[OfferCursor], remote: string): int {.
     i = i + 1
 
 proc offerFor*(C: openArray[OfferCursor], remote: string): OfferCursor {.
-    role: parser, metaTags: {tagSync}.} =
+    role: parser, tag: "sync".} =
   ## C/remote: this peer's position, or a zero one, which is what "has had
   ## nothing from me" looks like.
   var
@@ -183,7 +182,7 @@ proc offerFor*(C: openArray[OfferCursor], remote: string): OfferCursor {.
   result = if at < 0: OfferCursor(remote: remote) else: C[at]
 
 proc noteOffer*(C: var seq[OfferCursor], c: OfferCursor) {.
-    role: stateController, metaTags: {tagSync}.} =
+    role: actor, tag: "sync".} =
   ## C/c: the table updated in place.
   var
     at: int = indexOfRemote(C, c.remote)
@@ -194,8 +193,7 @@ proc noteOffer*(C: var seq[OfferCursor], c: OfferCursor) {.
 
 proc offerVia*(S: var Session, client: var GeistClient, address: string,
     limit: int = 256, maxRounds: int = offerRoundLimit): OfferOutcome {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagNetworkSurface,
-    tagOrchestrator, tagSync, tagWrite}.} =
+    role: orchestrator, tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
   ## S: the LOCAL database whose rows are being sent. Opened read-only is
   ##   fine and normal -- offering reads here and writes there.
   ## client: a routed client, which picks the hop and fails over.
@@ -264,7 +262,7 @@ proc offerVia*(S: var Session, client: var GeistClient, address: string,
   result.ok = true
 
 proc pending*(S: Session, baseDir: string, address: string): uint64 {.
-    role: parser, metaTags: {tagStatus, tagSync}.} =
+    role: parser, tag: "status|sync".} =
   ## S/baseDir/address: how many rows this node still owes that peer.
   ##
   ## What a client shows as "3 messages waiting to send". Reads the file

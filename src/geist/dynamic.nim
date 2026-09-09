@@ -16,14 +16,14 @@
 
 import std/[strutils, tables]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./mapper
 import ./row
 import ./sidecar
 
 proc slotKindFromName*(s: string): tuple[ok: bool, kind: SlotKind,
-    err: string] {.role: parser, metaTags: {tagCli, tagParsing, tagRead}.} =
+    err: string] {.role: parser, tag: "cli|parsing|read".} =
   ## s: type word from a schema spec.
   case s.strip().toLowerAscii()
   of "int", "i", "integer": result = (true, skInt, "")
@@ -36,13 +36,13 @@ proc slotKindFromName*(s: string): tuple[ok: bool, kind: SlotKind,
       "unknown field type '" & s & "'; expected int, float, text, bytes or ref")
 
 proc isVariableSlot*(k: SlotKind): bool {.role: parser, inline,
-    metaTags: {tagCli, tagRead}.} =
+    tag: "cli|read".} =
   ## k: slot kind whose bytes live in the overflow region rather than the
   ## 8-byte fixed slot.
   result = k in {skText, skBytes, skSealed, skRef}
 
 proc slotKindName*(k: SlotKind): string {.role: helper,
-    metaTags: {tagCli, tagFormatting}.} =
+    tag: "cli|formatting".} =
   ## k: slot kind rendered for `schema` output and error messages.
   case k
   of skNull: result = "null"
@@ -55,7 +55,7 @@ proc slotKindName*(k: SlotKind): string {.role: helper,
 
 proc parseSchemaSpec*(typeName, spec: string): tuple[ok: bool, s: Schema,
     err: string] {.role: parser,
-    metaTags: {tagCli, tagParsing, tagRead}.} =
+    tag: "cli|parsing|read".} =
   ## typeName: label stored with the cluster.
   ## spec: comma-separated `name:type` pairs, e.g. "id:int,title:text".
   ## Field ORDER is the slot order and therefore part of the format, so a
@@ -95,7 +95,7 @@ proc parseSchemaSpec*(typeName, spec: string): tuple[ok: bool, s: Schema,
   result.ok = true
 
 proc describeSchema*(s: Schema): string {.role: helper,
-    metaTags: {tagCli, tagFormatting, tagRead}.} =
+    tag: "cli|formatting|read".} =
   ## s: schema rendered back into spec form.
   var
     i: int = 0
@@ -107,7 +107,7 @@ proc describeSchema*(s: Schema): string {.role: helper,
 
 proc fieldToString*(s: Schema, A: openArray[uint8], offsets: seq[int],
     slot: int): string {.role: parser,
-    metaTags: {tagCli, tagFormatting, tagRead}.} =
+    tag: "cli|formatting|read".} =
   ## s/A/offsets/slot: schema, stored row, resolved offsets and a column.
   ## A value that took the sidecar escape shows its reference rather than
   ## its bytes: a CLI listing must not dump a 40 MiB payload into a
@@ -141,7 +141,7 @@ proc fieldToString*(s: Schema, A: openArray[uint8], offsets: seq[int],
     result = ""
 
 proc renderRow*(s: Schema, A: openArray[uint8]): seq[string] {.role: parser,
-    metaTags: {tagCli, tagFormatting, tagRead}.} =
+    tag: "cli|formatting|read".} =
   ## s/A: every column of one row rendered in declaration order.
   var
     offsets: seq[int] = @[]
@@ -153,7 +153,7 @@ proc renderRow*(s: Schema, A: openArray[uint8]): seq[string] {.role: parser,
 
 proc parsePairs*(args: openArray[string]): tuple[ok: bool,
     values: Table[string, string], err: string] {.role: sanitizer,
-    metaTags: {tagCli, tagParsing, tagRead}.} =
+    tag: "cli|parsing|read".} =
   ## args: `field=value` arguments from a command line.
   var
     i: int = 0
@@ -171,7 +171,7 @@ proc parsePairs*(args: openArray[string]): tuple[ok: bool,
 proc buildRow*(s: Schema, values: Table[string, string],
     store: SidecarStore = SidecarStore(), id: RowId = 0'u64,
     flags: uint64 = 0'u64): tuple[ok: bool, data: ByteSeq,
-    err: string] {.role: truthBuilder, metaTags: {tagCli, tagDb, tagWrite}.} =
+    err: string] {.role: truthBuilder, tag: "cli|db|write".} =
   ## s: schema the row must match, including its per-column storage policy.
   ## values: field name -> text. An omitted field keeps its zero value; a
   ##   name not in the schema is an error rather than a silent no-op,
@@ -236,7 +236,7 @@ proc buildRow*(s: Schema, values: Table[string, string],
 
 proc matchesText*(s: Schema, A: openArray[uint8], field,
     value: string): bool {.role: parser,
-    metaTags: {tagCli, tagDb, tagRead}.} =
+    tag: "cli|db|read".} =
   ## s/A: schema and candidate row.
   ## field/value: exact text comparison against the rendered column.
   var

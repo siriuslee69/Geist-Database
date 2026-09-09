@@ -15,13 +15,13 @@
 ## loop identifiers. The `...B` twins below alternate identifier sets so
 ## recursion works at arbitrary depth. Do not merge them.
 
-import geistPragmas
+import runePragmas
 import ./types
 
 ## ------------------------------ schema ------------------------------
 
 proc defaultSlot*(nameId: NameId, kind: SlotKind): Slot {.role: configurator,
-    metaTags: {tagCodecBoundary, tagDb, tagTypes}.} =
+    tag: "codecBoundary|db|types".} =
   ## nameId/kind: the column being declared from a Nim field.
   ##
   ## Defaults chosen so an unannotated object stores correctly rather than
@@ -52,7 +52,7 @@ proc defaultSlot*(nameId: NameId, kind: SlotKind): Slot {.role: configurator,
 proc schemaOfB[T: object](x: T, S: var Schema, prefix: string)
 
 proc schemaOf*[T: object](x: T, S: var Schema, prefix: string = "") {.
-    role: truthBuilder, metaTags: {tagCodecBoundary, tagDb, tagTypes}.} =
+    role: truthBuilder, tag: "codecBoundary|db|types".} =
   ## x: exemplar whose declaration order becomes the slot order.
   ## S: schema being built.
   ## prefix: dotted path for nested structs.
@@ -76,7 +76,7 @@ proc schemaOf*[T: object](x: T, S: var Schema, prefix: string = "") {.
       S.slots.add defaultSlot(S.intern(na), skInt)
 
 proc schemaOfB[T: object](x: T, S: var Schema, prefix: string) {.
-    role: truthBuilder, metaTags: {tagCodecBoundary, tagDb, tagTypes}.} =
+    role: truthBuilder, tag: "codecBoundary|db|types".} =
   ## Alternating twin of `schemaOf`; see the module note on fieldPairs.
   for fb, vb in fieldPairs(x):
     var
@@ -98,7 +98,7 @@ proc schemaOfB[T: object](x: T, S: var Schema, prefix: string) {.
       S.slots.add defaultSlot(S.intern(nb), skInt)
 
 proc schemaFor*[T: object](typeName: string = ""): Schema {.
-    role: truthBuilder, metaTags: {tagAppApi, tagCodecBoundary, tagDb}.} =
+    role: truthBuilder, tag: "appApi|codecBoundary|db".} =
   ## typeName: label stored with the cluster; defaults to T's own name.
   var
     x: T

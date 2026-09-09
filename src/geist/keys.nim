@@ -29,7 +29,7 @@ import std/[os, strutils]
 
 import tyr
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./durable
 import ./format
@@ -47,8 +47,7 @@ const
   keyFileMagic* = "GEKEY\x02"
 
 type
-  KeySet* {.role: truthState, metaTags: {tagCryptoBoundary, tagKeyLifecycle,
-      tagTypes}.} = object
+  KeySet* {.role: truthState, tag: "cryptoBoundary|keyLifecycle|types".} = object
     ## master: the root secret every batch key derives from.
     ## records: the public key ledger rows.
     ## nextKeyRef: monotonic allocator for per-batch key references.
@@ -56,8 +55,7 @@ type
     records*: seq[KeyRecord]
     nextKeyRef*: KeyId
 
-  Generation* {.role: truthState, metaTags: {tagKeyLifecycle, tagStorageIo,
-      tagTypes}.} = object
+  Generation* {.role: truthState, tag: "keyLifecycle|storageIo|types".} = object
     ## The manifest contents: which generation is live, and since when.
     number*: uint64
     dataPath*: string
@@ -66,12 +64,12 @@ type
     updatedAt*: uint64
 
 proc generationSuffix*(n: uint64): string {.role: helper,
-    metaTags: {tagKeyLifecycle, tagStorageIo}.} =
+    tag: "keyLifecycle|storageIo".} =
   ## n: generation number rendered as the `.gN` filename suffix.
   result = ".g" & $n
 
 proc generationPaths*(baseDir, baseName: string, n: uint64): Generation {.
-    role: configurator, metaTags: {tagKeyLifecycle, tagStorageIo}.} =
+    role: configurator, tag: "keyLifecycle|storageIo".} =
   ## baseDir/baseName: store root and database stem.
   ## n: generation whose three artifact paths are produced as a set.
   var
@@ -83,12 +81,12 @@ proc generationPaths*(baseDir, baseName: string, n: uint64): Generation {.
   result.ledgerPath = baseDir / (baseName & ledgerSuffix & sfx)
 
 proc manifestPath*(baseDir: string): string {.role: helper,
-    metaTags: {tagKeyLifecycle, tagStorageIo}.} =
+    tag: "keyLifecycle|storageIo".} =
   ## baseDir: store root holding the single atomic swap point.
   result = baseDir / manifestName
 
 proc readManifest*(baseDir: string): tuple[ok: bool, n: uint64, err: string] {.
-    role: dataFetcher, metaTags: {tagKeyLifecycle, tagRead, tagStorageIo}.} =
+    role: dataFetcher, tag: "keyLifecycle|read|storageIo".} =
   ## baseDir: store root whose live generation number is read.
   var
     p: string = ""
@@ -103,7 +101,7 @@ proc readManifest*(baseDir: string): tuple[ok: bool, n: uint64, err: string] {.
     result = (false, 0'u64, "malformed generation manifest: " & raw)
 
 proc commitManifest*(baseDir: string, n: uint64): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagKeyLifecycle, tagStorageIo, tagWrite}.} =
+    role: dataWriter, tag: "keyLifecycle|storageIo|write".} =
   ## baseDir: store root.
   ## n: generation to publish. Written to a temporary file, fsynced and
   ## renamed over, so a reader never observes a half-written manifest and a
@@ -115,7 +113,7 @@ proc commitManifest*(baseDir: string, n: uint64): tuple[ok: bool, err: string] {
 
 proc generationArtifacts*(baseDir, baseName: string, n: uint64,
     encrypted: bool): seq[string] {.role: helper,
-    metaTags: {tagBackup, tagKeyLifecycle, tagStorageIo}.} =
+    tag: "backup|keyLifecycle|storageIo".} =
   ## baseDir/baseName: store root and database stem.
   ## n: generation whose files are named as a SET.
   ## encrypted: false leaves out the key and ledger, which do not exist for
@@ -129,7 +127,7 @@ proc generationArtifacts*(baseDir, baseName: string, n: uint64,
     result.add g.ledgerPath
 
 proc retireGeneration*(baseDir, baseName: string, n: uint64): int {.
-    role: dataWriter, metaTags: {tagKeyLifecycle, tagStorageIo, tagWrite},
+    role: dataWriter, tag: "keyLifecycle|storageIo|write",
     discardable.} =
   ## baseDir/baseName: store root and stem.
   ## n: generation removed, whatever it consists of. Returns how many files
@@ -155,7 +153,7 @@ proc retireGeneration*(baseDir, baseName: string, n: uint64): int {.
     i = i + 1
 
 proc sweepUncommitted*(baseDir, baseName: string, live: uint64): int {.
-    role: dataWriter, metaTags: {tagKeyLifecycle, tagStorageIo, tagWrite},
+    role: dataWriter, tag: "keyLifecycle|storageIo|write",
     discardable.} =
   ## baseDir/baseName: store root and stem.
   ## live: the committed generation. Anything ABOVE it was being written
@@ -177,7 +175,7 @@ proc sweepUncommitted*(baseDir, baseName: string, live: uint64): int {.
     n = n + 1'u64
 
 proc liveGeneration*(baseDir: string): uint64 {.role: parser,
-    metaTags: {tagKeyLifecycle, tagRead, tagStorageIo}.} =
+    tag: "keyLifecycle|read|storageIo".} =
   ## baseDir: store root whose committed generation number is returned.
   ## One before any file was ever committed, so a fresh directory and a
   ## first-generation database name the same paths.
@@ -187,8 +185,7 @@ proc liveGeneration*(baseDir: string): uint64 {.role: parser,
   result = if m.ok: m.n else: 1'u64
 
 proc liveDataPath*(baseDir: string, baseName: string = "main"): string {.
-    role: parser, metaTags: {tagAppApi, tagKeyLifecycle, tagRead,
-    tagStorageIo}.} =
+    role: parser, tag: "appApi|keyLifecycle|read|storageIo".} =
   ## baseDir/baseName: store root and stem.
   ##
   ## The path an OBSERVER should read. A save publishes a new generation, so
@@ -199,20 +196,20 @@ proc liveDataPath*(baseDir: string, baseName: string = "main"): string {.
 ## ---------------------------- key file ------------------------------
 
 proc deriveFileKey(password: string, salt: openArray[uint8]): Secret {.
-    role: encryptor, metaTags: {tagCryptoBoundary, tagKeyLifecycle}.} =
+    role: encryptor, tag: "cryptoBoundary|keyLifecycle".} =
   ## password: operator credential.
   ## salt: per-file random salt stored in clear beside the ciphertext.
   result = initSecret(argon2idTyrHash(cast[seq[byte]](password), salt,
     argonPasses, argonMemoryKiB, argonLanes, 32))
 
 proc newKeySet*(): KeySet {.role: configurator,
-    metaTags: {tagCryptoBoundary, tagKeyLifecycle}.} =
+    tag: "cryptoBoundary|keyLifecycle".} =
   ## Allocate a fresh master secret and an empty key ledger.
   result.master = initSecret(cryptoRandomBytes(32))
   result.nextKeyRef = 1'u64
 
-proc allocKeyRef*(K: var KeySet, label: string): KeyId {.role: stateController,
-    metaTags: {tagCryptoBoundary, tagKeyLifecycle, tagLedger, tagWrite}.} =
+proc allocKeyRef*(K: var KeySet, label: string): KeyId {.role: actor,
+    tag: "cryptoBoundary|keyLifecycle|ledger|write".} =
   ## K: key set whose allocator advances.
   ## label: human-readable purpose recorded in the ledger.
   var
@@ -225,8 +222,7 @@ proc allocKeyRef*(K: var KeySet, label: string): KeyId {.role: stateController,
   K.records.add r
 
 proc writeKeyFile*(path, password: string, K: KeySet): tuple[ok: bool,
-    err: string] {.role: dataWriter, metaTags: {tagCryptoBoundary,
-    tagKeyLifecycle, tagStorageIo, tagWrite}.} =
+    err: string] {.role: dataWriter, tag: "cryptoBoundary|keyLifecycle|storageIo|write".} =
   ## path: `<name>.keys` destination.
   ## password: credential whose Argon2id output seals the master secret.
   ## K: key set being persisted.
@@ -261,8 +257,7 @@ proc writeKeyFile*(path, password: string, K: KeySet): tuple[ok: bool,
   result = writeDurable(path, buf)
 
 proc readKeyFile*(path, password: string): tuple[ok: bool, keys: KeySet,
-    err: string] {.role: dataFetcher, metaTags: {tagCryptoBoundary,
-    tagKeyLifecycle, tagRead, tagStorageIo}.} =
+    err: string] {.role: dataFetcher, tag: "cryptoBoundary|keyLifecycle|read|storageIo".} =
   ## path: `<name>.keys` source.
   ## password: credential; a wrong one fails the tag check, not the parse.
   var
@@ -320,7 +315,7 @@ proc readKeyFile*(path, password: string): tuple[ok: bool, keys: KeySet,
 ## ----------------------------- ledger -------------------------------
 
 proc encodeLedger(L: Ledger): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagLedger, tagWrite}.} =
+    tag: "codecBoundary|ledger|write".} =
   ## L: one ledger serialised as groups followed by batch entries.
   var
     i: int = 0
@@ -344,7 +339,7 @@ proc encodeLedger(L: Ledger): ByteSeq {.role: encryptor,
     i = i + 1
 
 proc decodeLedger(A: openArray[uint8], o: var int): Ledger {.role: parser,
-    metaTags: {tagCodecBoundary, tagLedger, tagRead}.} =
+    tag: "codecBoundary|ledger|read".} =
   ## A/o: buffer and cursor advanced past one encoded ledger.
   var
     n: int = 0
@@ -371,7 +366,7 @@ proc decodeLedger(A: openArray[uint8], o: var int): Ledger {.role: parser,
 
 proc writeLedgerFile*(path: string, L: openArray[Ledger]): tuple[ok: bool,
     err: string] {.role: dataWriter,
-    metaTags: {tagLedger, tagStorageIo, tagWrite}.} =
+    tag: "ledger|storageIo|write".} =
   ## path: `<name>.ledger` destination.
   ## L: one ledger per sealed cluster, in cluster order. Public material:
   ## it needs integrity, NOT confidentiality. Only the key file is secret.
@@ -388,7 +383,7 @@ proc writeLedgerFile*(path: string, L: openArray[Ledger]): tuple[ok: bool,
 
 proc readLedgerFile*(path: string): tuple[ok: bool, ledgers: seq[Ledger],
     err: string] {.role: dataFetcher,
-    metaTags: {tagLedger, tagRead, tagStorageIo}.} =
+    tag: "ledger|read|storageIo".} =
   ## path: `<name>.ledger` source; the trailing hash is checked first.
   var
     raw: ByteSeq = @[]
@@ -416,8 +411,8 @@ proc readLedgerFile*(path: string): tuple[ok: bool, ledgers: seq[Ledger],
 ## ----------------------------- rekey --------------------------------
 
 proc rekeyBatch*(K: var KeySet, L: var Ledger, batchIndex: uint32,
-    groupId: uint16): KeyId {.role: stateController,
-    metaTags: {tagBatch, tagCryptoBoundary, tagKeyLifecycle, tagWrite}.} =
+    groupId: uint16): KeyId {.role: actor,
+    tag: "batch|cryptoBoundary|keyLifecycle|write".} =
   ## K/L: key set and ledger.
   ## batchIndex/groupId: the ONE batch being re-keyed.
   ## A new keyRef is a fresh nonce space, so an epoch nearing its
@@ -444,7 +439,7 @@ proc rekeyBatch*(K: var KeySet, L: var Ledger, batchIndex: uint32,
 proc batchesNeedingRekey*(L: Ledger,
     highWater: uint64 = defaultRekeyAtEpoch): seq[tuple[batchIndex: uint32,
     groupId: uint16]] {.role: parser,
-    metaTags: {tagBatch, tagKeyLifecycle, tagRead, tagStatus}.} =
+    tag: "batch|keyLifecycle|read|status".} =
   ## L: ledger scanned for batches approaching epoch wrap.
   ## highWater: threshold; the default is far below any u64 wrap so the
   ## rekey happens long before it could ever be needed.

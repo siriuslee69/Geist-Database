@@ -48,7 +48,7 @@
 
 import std/os
 
-import geistPragmas
+import runePragmas
 import ./geist/types
 import ./geist/secret
 import ./geist/durable
@@ -113,7 +113,7 @@ export transpose
 proc openGeist*[T: object](path: string, c: GeistConfig = appConfig(),
     password: string = "", readOnly: bool = false): Session {.
     role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagOrchestrator, tagStorageIo}.} =
+    tag: "appApi|db|orchestrator|storageIo".} =
   ## path: store root directory, or a `<dir>/<name>` stem. The artifact set
   ##   (data, keys, ledger), the manifest and the sidecar folder all live
   ##   under the directory, so a database is always a self-contained
@@ -136,6 +136,6 @@ proc openGeist*[T: object](path: string, c: GeistConfig = appConfig(),
   result = openSession[T](dir, name, c, password, readOnly)
 
 proc geistVersion*(): string {.role: helper,
-    metaTags: {tagAppApi, tagStatus}.} =
+    tag: "appApi|status".} =
   ## The format version this build reads and writes.
   result = "geist format v" & $geistFormatVersion

@@ -19,11 +19,10 @@
 
 import std/[os, times]
 
-import geistPragmas
+import runePragmas
 
 type
-  BackupPolicy* {.role: configurator, metaTags: {tagBackup, tagConfig,
-      tagTypes}.} = object
+  BackupPolicy* {.role: configurator, tag: "backup|config|types".} = object
     ## copies: how many rotating slots to keep (.b1 .. .bN).
     ## everyNWrites: write-count trigger; 0 disables it.
     ## everySeconds: wall-clock trigger; 0 disables it.
@@ -34,8 +33,7 @@ type
     everySeconds*: uint32
     requireFullSet*: bool
 
-  BackupState* {.role: truthState, metaTags: {tagBackup, tagStatus,
-      tagTypes}.} = object
+  BackupState* {.role: truthState, tag: "backup|status|types".} = object
     ## Counters surfaced through database metadata so an operator can see
     ## how close the next rotation is without reading the data file.
     writesSinceBackup*: uint32
@@ -44,15 +42,14 @@ type
     rotations*: uint32
     lastError*: string
 
-  BackupResult* {.role: truthState, metaTags: {tagBackup, tagStatus,
-      tagTypes}.} = object
+  BackupResult* {.role: truthState, tag: "backup|status|types".} = object
     performed*: bool
     reason*: string
     copied*: seq[string]
     err*: string
 
 proc defaultBackupPolicy*(): BackupPolicy {.role: configurator,
-    metaTags: {tagBackup, tagConfig}.} =
+    tag: "backup|config".} =
   ## Three rotating copies, rotated every 64 writes or every 15 minutes.
   result.enabled = true
   result.copies = 3'u8
@@ -61,14 +58,14 @@ proc defaultBackupPolicy*(): BackupPolicy {.role: configurator,
   result.requireFullSet = true
 
 proc slotPath*(path: string, slot: int): string {.role: helper,
-    metaTags: {tagBackup, tagStorageIo}.} =
+    tag: "backup|storageIo".} =
   ## path: live artifact path.
   ## slot: 1-based rotation slot; 1 is the most recent copy.
   result = path & ".b" & $slot
 
 proc shouldBackup*(p: BackupPolicy, S: BackupState,
     now: int64): tuple[yes: bool, reason: string] {.role: parser,
-    metaTags: {tagBackup, tagRead, tagStatus}.} =
+    tag: "backup|read|status".} =
   ## p: policy.
   ## S: counters since the last rotation.
   ## now: current unix time.
@@ -86,7 +83,7 @@ proc shouldBackup*(p: BackupPolicy, S: BackupState,
 
 proc rotateOne(source, stem: string,
     copies: int): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagBackup, tagStorageIo, tagWrite}.} =
+    role: dataWriter, tag: "backup|storageIo|write".} =
   ## source: the live artifact to copy.
   ## stem: the name the SLOTS are built from, which must not carry a
   ##   generation suffix -- a save publishes a new generation, so slots
@@ -118,8 +115,7 @@ proc rotateOne(source, stem: string,
 
 proc runBackup*(P: openArray[string], stems: openArray[string],
     p: BackupPolicy, S: var BackupState, now: int64 = 0'i64): BackupResult {.
-    role: orchestrator, metaTags: {tagBackup, tagOrchestrator, tagStorageIo,
-    tagWrite}.} =
+    role: orchestrator, tag: "backup|orchestrator|storageIo|write".} =
   ## P: the full artifact set -- data, keys and ledger paths together.
   ## stems: the generation-free names the slots are built from, in the same
   ##   order. Kept separate from P because the live files move on every
@@ -162,14 +158,14 @@ proc runBackup*(P: openArray[string], stems: openArray[string],
   S.rotations = S.rotations + 1'u32
   S.lastError = ""
 
-proc noteWrite*(S: var BackupState) {.role: stateController, inline,
-    metaTags: {tagBackup, tagStatus, tagWrite}.} =
+proc noteWrite*(S: var BackupState) {.role: actor, inline,
+    tag: "backup|status|write".} =
   ## S: counters advanced after one committed write.
   S.writesSinceBackup = S.writesSinceBackup + 1'u32
   S.totalWrites = S.totalWrites + 1'u64
 
 proc restorePaths*(P: openArray[string], slot: int): seq[string] {.
-    role: helper, metaTags: {tagBackup, tagRead, tagStorageIo}.} =
+    role: helper, tag: "backup|read|storageIo".} =
   ## P: live artifact set.
   ## slot: rotation slot to restore from; 1 is the most recent.
   var
@@ -180,7 +176,7 @@ proc restorePaths*(P: openArray[string], slot: int): seq[string] {.
 
 proc restoreFrom*(P: openArray[string], slot: int): tuple[ok: bool,
     err: string] {.role: dataWriter,
-    metaTags: {tagBackup, tagStorageIo, tagWrite}.} =
+    tag: "backup|storageIo|write".} =
   ## P: live artifact set to overwrite.
   ## slot: rotation slot to restore. The whole set is verified present
   ## before anything is overwritten, so a partial restore cannot happen.

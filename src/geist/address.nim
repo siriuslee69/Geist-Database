@@ -35,7 +35,7 @@
 
 import std/strutils
 
-import geistPragmas
+import runePragmas
 
 const
   geistScheme* = "geist://"
@@ -58,8 +58,7 @@ const
     ## Six is a deep topology; the point is that it is finite.
 
 type
-  GeistAddress* {.role: truthState, metaTags: {tagNetworkSurface, tagProtocol,
-      tagTypes}.} = object
+  GeistAddress* {.role: truthState, tag: "networkSurface|protocol|types".} = object
     ## One destination, plus what the routing layer has done to it.
     ##
     ## `app`, `instance` and `node` are the WHERE and are matched against
@@ -89,19 +88,19 @@ type
 ## ---------------------------- validation ----------------------------
 
 proc isLabelByte(c: char): bool {.role: parser, inline,
-    metaTags: {tagParsing, tagProtocol}.} =
+    tag: "parsing|protocol".} =
   ## c: one byte of an app, instance, node or via label.
   result = c in {'a' .. 'z'} or c in {'0' .. '9'} or c == '-' or c == '_'
 
 proc isTargetByte(c: char): bool {.role: parser, inline,
-    metaTags: {tagParsing, tagProtocol}.} =
+    tag: "parsing|protocol".} =
   ## c: one byte of a target. A target may be a path, so it also carries
   ## `/` and `.`; `..` is refused separately because the character alone
   ## is innocent and the pair is not.
   result = isLabelByte(c) or c == '/' or c == '.'
 
 proc checkLabel(s, what: string): string {.role: sanitizer,
-    metaTags: {tagParsing, tagProtocol}.} =
+    tag: "parsing|protocol".} =
   ## s/what: one label and the name to complain about it by.
   ##
   ## Returns the complaint, empty when there is none. An empty label is
@@ -119,7 +118,7 @@ proc checkLabel(s, what: string): string {.role: sanitizer,
   result = ""
 
 proc checkTarget(s: string): string {.role: sanitizer,
-    metaTags: {tagParsing, tagProtocol}.} =
+    tag: "parsing|protocol".} =
   ## s: the target, which may be a path.
   ##
   ## `..` is refused outright rather than resolved. A target reaches a
@@ -145,7 +144,7 @@ proc checkTarget(s: string): string {.role: sanitizer,
 
 proc address*(app, instance, node, target: string,
     ttl: uint8 = defaultAddressTtl): GeistAddress {.role: configurator,
-    metaTags: {tagNetworkSurface, tagProtocol}.} =
+    tag: "networkSurface|protocol".} =
   ## app/instance/node/target: the four parts, none of them required.
   ## ttl: hops this address may still take.
   ##
@@ -159,24 +158,24 @@ proc address*(app, instance, node, target: string,
   result.ttl = ttl
 
 proc bareAddress*(target: string): GeistAddress {.role: configurator, inline,
-    metaTags: {tagNetworkSurface, tagProtocol}.} =
+    tag: "networkSurface|protocol".} =
   ## target: a plain collection or stream name, unrouted.
   result.target = target
 
 proc isRouted*(a: GeistAddress): bool {.role: parser, inline,
-    metaTags: {tagNetworkSurface, tagProtocol}.} =
+    tag: "networkSurface|protocol".} =
   ## a: an address that names an app is one a router can act on. One that
   ## does not is a bare target and belongs to whoever received it.
   result = a.app.len > 0
 
 proc sameDestination*(a, b: GeistAddress): bool {.role: parser,
-    metaTags: {tagNetworkSurface, tagProtocol}.} =
+    tag: "networkSurface|protocol".} =
   ## a/b: do these name the same thing, ignoring how far each has come?
   result = a.app == b.app and a.instance == b.instance and
     a.node == b.node and a.target == b.target
 
 proc destinationKey*(a: GeistAddress): string {.role: helper,
-    metaTags: {tagNetworkSurface, tagProtocol}.} =
+    tag: "networkSurface|protocol".} =
   ## a: the address reduced to WHAT it names, dropping how it got there.
   ##
   ## `ttl`, `via` and `as` describe a journey, not a destination, so two
@@ -203,7 +202,7 @@ proc destinationKey*(a: GeistAddress): string {.role: helper,
 ## ---------------------------- rendering -----------------------------
 
 proc `$`*(a: GeistAddress): string {.role: helper,
-    metaTags: {tagFormatting, tagNetworkSurface, tagProtocol}.} =
+    tag: "formatting|networkSurface|protocol".} =
   ## a: rendered back to the form `parseAddress` accepts.
   ##
   ## An unrouted address renders as its bare target, which is what makes
@@ -233,12 +232,12 @@ proc `$`*(a: GeistAddress): string {.role: helper,
 ## ---------------------------- parsing -------------------------------
 
 proc refuse(err: string): tuple[ok: bool, a: GeistAddress, err: string] {.
-    role: helper, inline, metaTags: {tagParsing, tagProtocol}.} =
+    role: helper, inline, tag: "parsing|protocol".} =
   ## err: why this address is not one.
   result = (false, GeistAddress(), err)
 
 proc parseParams(s: string, S: var GeistAddress): string {.role: parser,
-    metaTags: {tagParsing, tagProtocol}.} =
+    tag: "parsing|protocol".} =
   ## s: everything after the `?`.
   ## S: address being filled.
   ##
@@ -297,7 +296,7 @@ proc parseParams(s: string, S: var GeistAddress): string {.role: parser,
   result = ""
 
 proc parseAuthority(s: string, S: var GeistAddress): string {.role: parser,
-    metaTags: {tagParsing, tagProtocol}.} =
+    tag: "parsing|protocol".} =
   ## s: `app`, `app.instance`, `app@node` or `app.instance@node`.
   ## S: address being filled.
   ##
@@ -329,7 +328,7 @@ proc parseAuthority(s: string, S: var GeistAddress): string {.role: parser,
 
 proc parseAddress*(s: string): tuple[ok: bool, a: GeistAddress,
     err: string] {.role: parser,
-    metaTags: {tagNetworkSurface, tagParsing, tagProtocol}.} =
+    tag: "networkSurface|parsing|protocol".} =
   ## s: an address as it arrived, from a peer or from a config file.
   ##
   ## Two shapes, and the first is the common one:
@@ -380,7 +379,7 @@ proc parseAddress*(s: string): tuple[ok: bool, a: GeistAddress,
 ## ---------------------------- forwarding ----------------------------
 
 proc passedThrough*(a: GeistAddress, node: string): bool {.role: parser,
-    metaTags: {tagNetworkSurface, tagProtocol}.} =
+    tag: "networkSurface|protocol".} =
   ## a/node: has this request already been through this daemon?
   ##
   ## The loop check. `ttl` alone would eventually stop a cycle, but only
@@ -396,8 +395,8 @@ proc passedThrough*(a: GeistAddress, node: string): bool {.role: parser,
   result = false
 
 proc hop*(S: var GeistAddress, node: string): tuple[ok: bool, err: string] {.
-    role: stateController,
-    metaTags: {tagNetworkSurface, tagProtocol, tagServer}.} =
+    role: actor,
+    tag: "networkSurface|protocol|server".} =
   ## S: the address being forwarded, rewritten in place.
   ## node: the name of the daemon doing the forwarding.
   ##
@@ -424,7 +423,7 @@ proc hop*(S: var GeistAddress, node: string): tuple[ok: bool, err: string] {.
   result = (true, "")
 
 proc forLeaf*(a: GeistAddress): string {.role: helper, inline,
-    metaTags: {tagNetworkSurface, tagProtocol}.} =
+    tag: "networkSurface|protocol".} =
   ## a: what the final daemon should be handed as its collection.
   ##
   ## The target alone. A leaf `geistd` looks up a collection by this name

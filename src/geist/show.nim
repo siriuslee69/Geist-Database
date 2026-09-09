@@ -34,7 +34,7 @@
 
 import std/[strutils]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./dynamic
 
@@ -45,8 +45,7 @@ const
     ## output, and one of those will be the one that cannot render it.
 
 type
-  ShowStyle* {.role: configurator, metaTags: {tagCli, tagConfig,
-      tagFormatting, tagTypes}.} = object
+  ShowStyle* {.role: configurator, tag: "cli|config|formatting|types".} = object
     ## maxRows/maxColumns: how many to SHOW, not how many exist. Zero on
     ##   either means no limit, which is what `everything()` sets.
     ## maxCellWidth: one long body would otherwise set the width of its
@@ -62,7 +61,7 @@ type
     footer*: bool
 
 proc defaultShowStyle*(): ShowStyle {.role: configurator,
-    metaTags: {tagCli, tagFormatting}.} =
+    tag: "cli|formatting".} =
   ## Corners of the table, sized for a terminal rather than a file.
   result.maxRows = 20
   result.maxColumns = 10
@@ -71,7 +70,7 @@ proc defaultShowStyle*(): ShowStyle {.role: configurator,
   result.footer = true
 
 proc everything*(): ShowStyle {.role: configurator,
-    metaTags: {tagCli, tagFormatting}.} =
+    tag: "cli|formatting".} =
   ## No elision. For a caller who knows how big the table is and wants all
   ## of it: a test fixture, a small store, a redirect into a file.
   result = defaultShowStyle()
@@ -82,7 +81,7 @@ proc everything*(): ShowStyle {.role: configurator,
 ## ------------------------- what to leave out ------------------------
 
 proc shownCount*(n, limit: int): tuple[head, tail: int, elided: bool] {.
-    role: parser, metaTags: {tagFormatting}.} =
+    role: parser, tag: "formatting".} =
   ## n/limit: how many of `n` items to take from each end.
   ##
   ## The head gets the odd one when the limit is odd, because the first
@@ -96,7 +95,7 @@ proc shownCount*(n, limit: int): tuple[head, tail: int, elided: bool] {.
   result.elided = true
 
 proc shownIndexes*(n, limit: int): seq[int] {.role: parser,
-    metaTags: {tagFormatting}.} =
+    tag: "formatting".} =
   ## n/limit: the indexes actually shown, in order.
   ##
   ## One list, used for both directions, so rows and columns cannot drift
@@ -115,7 +114,7 @@ proc shownIndexes*(n, limit: int): seq[int] {.role: parser,
 ## ----------------------------- rendering ----------------------------
 
 proc clip(s: string, width: int): string {.role: helper,
-    metaTags: {tagFormatting}.} =
+    tag: "formatting".} =
   ## s/width: a cell cut to fit, with the cut made visible.
   if width <= 0 or s.len <= width:
     return s
@@ -124,14 +123,14 @@ proc clip(s: string, width: int): string {.role: helper,
   result = s[0 ..< width - ellipsis.len] & ellipsis
 
 proc gapRow(n: int): seq[string] {.role: helper,
-    metaTags: {tagFormatting}.} =
+    tag: "formatting".} =
   ## n: a line of nothing but the mark that says something was left out.
   for i in 0 ..< n:
     result.add ellipsis
 
 proc cellsOf(s: Schema, R: openArray[Row], cols: seq[int],
     gapAfter: int, width: int): seq[seq[string]] {.role: parser,
-    metaTags: {tagFormatting, tagRead}.} =
+    tag: "formatting|read".} =
   ## s/R: schema and the rows to render -- ALL of them; the caller has
   ##   already decided which those are.
   ## cols: column indexes to show, -1 marking an elided column.
@@ -156,7 +155,7 @@ proc cellsOf(s: Schema, R: openArray[Row], cols: seq[int],
     i = i + 1
 
 proc columnAxis(s: Schema, style: ShowStyle): seq[int] {.role: parser,
-    metaTags: {tagFormatting}.} =
+    tag: "formatting".} =
   ## s/style: column indexes to show, with -1 where the gap goes.
   var
     k: tuple[head, tail: int, elided: bool] = shownCount(s.slots.len,
@@ -167,7 +166,7 @@ proc columnAxis(s: Schema, style: ShowStyle): seq[int] {.role: parser,
     result = kept[0 ..< k.head] & @[-1] & kept[k.head .. ^1]
 
 proc headings(s: Schema, cols: seq[int]): seq[string] {.role: parser,
-    metaTags: {tagFormatting}.} =
+    tag: "formatting".} =
   ## s/cols: column names in shown order, the gap named too.
   for j in cols:
     if j < 0:
@@ -177,7 +176,7 @@ proc headings(s: Schema, cols: seq[int]): seq[string] {.role: parser,
 
 proc laid(head: openArray[string], body: seq[seq[string]],
     lead: openArray[string], leadHead: string): string {.role: helper,
-    metaTags: {tagFormatting, tagWrite}.} =
+    tag: "formatting|write".} =
   ## head: column titles.
   ## body: one seq of cells per line, each as long as `head`.
   ## lead: an optional first cell per body line -- the `@` column, or a
@@ -222,7 +221,7 @@ proc laid(head: openArray[string], body: seq[seq[string]],
     i = i + 1
 
 proc footerLine(rows, cols, shownRows, shownCols: int): string {.role: helper,
-    metaTags: {tagFormatting, tagStatus}.} =
+    tag: "formatting|status".} =
   ## The line that stops an elided table from looking like a complete one.
   result = "\n" & $rows & " row" & (if rows == 1: "" else: "s") & " x " &
     $cols & " column" & (if cols == 1: "" else: "s")
@@ -232,7 +231,7 @@ proc footerLine(rows, cols, shownRows, shownCols: int): string {.role: helper,
 
 proc leadColumn(at: openArray[int], count, gapAfter: int,
     withPositions: bool): seq[string] {.role: helper,
-    metaTags: {tagFormatting}.} =
+    tag: "formatting".} =
   ## at/count/gapAfter: the `@` column for the rows being shown, with the
   ## gap marked in the same place the body marks it.
   var
@@ -248,7 +247,7 @@ proc leadColumn(at: openArray[int], count, gapAfter: int,
 proc showSelection*(s: Schema, R: openArray[Row], at: openArray[int],
     totalRows, gapAfter: int, style: ShowStyle = defaultShowStyle(),
     transposed: bool = false): string {.role: helper,
-    metaTags: {tagAppApi, tagCli, tagFormatting, tagRead}.} =
+    tag: "appApi|cli|formatting|read".} =
   ## s: the schema every row belongs to.
   ## R: exactly the rows to render, in display order.
   ## at: their positions in the visible list, for the `@` column.
@@ -306,7 +305,7 @@ proc showSelection*(s: Schema, R: openArray[Row], at: openArray[int],
 proc showTable*(s: Schema, R: openArray[Row],
     style: ShowStyle = defaultShowStyle(),
     at: openArray[int] = []): string {.role: helper,
-    metaTags: {tagAppApi, tagCli, tagFormatting, tagRead}.} =
+    tag: "appApi|cli|formatting|read".} =
   ## s/R: schema and the rows to show. Rows are self-contained, so nothing
   ##   else is needed to render one.
   ## style: how much of it to show. The default elides; see `everything()`.
@@ -328,7 +327,7 @@ proc showTable*(s: Schema, R: openArray[Row],
 proc showTransposed*(s: Schema, R: openArray[Row],
     style: ShowStyle = defaultShowStyle(),
     at: openArray[int] = []): string {.role: helper,
-    metaTags: {tagAppApi, tagCli, tagFormatting, tagRead}.} =
+    tag: "appApi|cli|formatting|read".} =
   ## s/R/style/at: the same table with the axes swapped -- one line per
   ## FIELD, one column per row.
   ##
@@ -354,7 +353,7 @@ proc showTransposed*(s: Schema, R: openArray[Row],
     (if k.elided: k.head - 1 else: -1), swapped, transposed = true)
 
 proc showJson*(s: Schema, R: openArray[Row]): string {.role: helper,
-    metaTags: {tagAppApi, tagCli, tagFormatting, tagWrite}.} =
+    tag: "appApi|cli|formatting|write".} =
   ## s/R: the same rows as machine-readable output.
   ##
   ## No elision here, ever: a JSON array that quietly dropped its middle

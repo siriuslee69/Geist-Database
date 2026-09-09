@@ -24,7 +24,7 @@ import std/[tables, times]
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./format
 import ./masks
@@ -38,8 +38,7 @@ const
     ## package transfer, which `handshakeFitsFrame` reports on.
 
 type
-  GeistLink* {.role: truthState, metaTags: {tagAme, tagNetworkSurface,
-      tagTypes}.} = object
+  GeistLink* {.role: truthState, tag: "ame|networkSurface|types".} = object
     ## An open session. `client` is Bifrost's; Geist only moves payloads.
     ## nextPackage: package identity counter, so two large requests on one
     ##   link are never mistaken for each other's chunks.
@@ -55,7 +54,7 @@ type
 ## ---------------------------- wire codec ----------------------------
 
 proc encodeQuery*(q: Query): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagNetworkSurface, tagWrite}.} =
+    tag: "codecBoundary|networkSurface|write".} =
   ## q: query serialised as the DAC request body.
   var
     i: int = 0
@@ -76,7 +75,7 @@ proc encodeQuery*(q: Query): ByteSeq {.role: encryptor,
   result.addBytes(q.payload)
 
 proc decodeQuery*(A: openArray[uint8]): Query {.role: parser,
-    metaTags: {tagCodecBoundary, tagNetworkSurface, tagRead}.} =
+    tag: "codecBoundary|networkSurface|read".} =
   ## A: bytes produced by `encodeQuery`.
   var
     o: int = 1
@@ -107,7 +106,7 @@ proc decodeQuery*(A: openArray[uint8]): Query {.role: parser,
     i = i + 1
 
 proc encodeRows*(R: openArray[Row]): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagNetworkSurface, tagWrite}.} =
+    tag: "codecBoundary|networkSurface|write".} =
   ## R: rows serialised as `count | (schemaId | length | bytes)*`.
   ##
   ## One row codec for both directions: a reply carries rows this way and
@@ -123,7 +122,7 @@ proc encodeRows*(R: openArray[Row]): ByteSeq {.role: encryptor,
     i = i + 1
 
 proc decodeRows*(A: openArray[uint8], o: var int): seq[Row] {.role: parser,
-    metaTags: {tagCodecBoundary, tagNetworkSurface, tagRead}.} =
+    tag: "codecBoundary|networkSurface|read".} =
   ## A/o: buffer and cursor advanced past an encoded row list.
   ##
   ## Every length is checked against what is actually there: these bytes
@@ -155,7 +154,7 @@ proc decodeRows*(A: openArray[uint8], o: var int): seq[Row] {.role: parser,
     i = i + 1
 
 proc encodeReply*(r: Reply): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagNetworkSurface, tagWrite}.} =
+    tag: "codecBoundary|networkSurface|write".} =
   ## r: reply serialised as the DAC response body.
   result = @[]
   result.add uint8(ord(r.ok))
@@ -167,7 +166,7 @@ proc encodeReply*(r: Reply): ByteSeq {.role: encryptor,
   result.addBytes(encodeRows(r.rows))
 
 proc decodeReply*(A: openArray[uint8]): Reply {.role: parser,
-    metaTags: {tagCodecBoundary, tagNetworkSurface, tagRead}.} =
+    tag: "codecBoundary|networkSurface|read".} =
   ## A: bytes produced by `encodeReply`.
   var
     o: int = 1
@@ -223,15 +222,14 @@ const
     ## reply into a send error rather than a package.
 
 type
-  PackageAssembly* {.role: truthState, metaTags: {tagAme, tagNetworkSurface,
-      tagTypes}.} = object
+  PackageAssembly* {.role: truthState, tag: "ame|networkSurface|types".} = object
     ## Half a package. `active` is false between packages, which is also
     ## how a stray chunk with no manifest is recognised and dropped.
     active*: bool
     receiver*: bfx.DacPackageReceiver
 
 proc packageDefaults(): bfx.DacScenarioDefaults {.role: configurator,
-    metaTags: {tagAme, tagNetworkSurface}.} =
+    tag: "ame|networkSurface".} =
   ## MTU-sized chunks with XOR repair groups. The super-clean profile's
   ## 32 KB chunks would be faster on loopback and would fragment on any
   ## real network between two desktops, which is the case this exists for.
@@ -240,7 +238,7 @@ proc packageDefaults(): bfx.DacScenarioDefaults {.role: configurator,
 proc sendPayload(sock: bfx.DacSocket, remote: bfx.DacAddress,
     session: var bfx.AmeSession, payload: openArray[uint8],
     packageId: uint64): tuple[ok: bool, frames: int, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagNetworkSurface, tagWrite}.} =
+    role: orchestrator, tag: "ame|networkSurface|write".} =
   ## sock/remote/session: an established AME session.
   ## payload: the encoded Query or Reply.
   ## packageId: nonzero, distinct per package on this session.
@@ -272,7 +270,7 @@ proc sendPayload(sock: bfx.DacSocket, remote: bfx.DacAddress,
 proc feedPayload(A: var PackageAssembly,
     frame: openArray[uint8]): tuple[ok: bool, done: bool, payload: ByteSeq,
     err: string] {.role: parser,
-    metaTags: {tagAme, tagNetworkSurface, tagRead}.} =
+    tag: "ame|networkSurface|read".} =
   ## A: assembly state for ONE sender.
   ## frame: the decrypted body of one AME frame.
   ##
@@ -319,15 +317,14 @@ proc feedPayload(A: var PackageAssembly,
 ## ---------------------------- identity ------------------------------
 
 proc geistIdentity*(subject: string): bfx.AmeIdentityKey {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## subject: stable local name. The signing stack comes from the Geist
   ## signature slots, so an identity always carries every algorithm the
   ## highest configured tier can demand.
   result = bfx.initAmeIdentityKey(subject, geistSignatureSlots())
 
 proc geistPeerPin*(i: bfx.AmeIdentityKey): bfx.AmePinnedPeerIdentity {.
-    role: configurator, metaTags: {tagAme, tagCryptoBoundary,
-    tagNetworkSurface}.} =
+    role: configurator, tag: "ame|cryptoBoundary|networkSurface".} =
   ## i: identity whose public half becomes the pin a peer checks against.
   result = bfx.pinnedPeerIdentity(i)
 
@@ -337,8 +334,7 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     peer: bfx.AmePinnedPeerIdentity, policy: TriggerPolicy,
     sessionId: uint64 = 1'u64,
     timeoutMs: int = 4000): tuple[ok: bool, link: GeistLink, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagNetworkSurface,
-    tagOrchestrator}.} =
+    role: orchestrator, tag: "ame|networkSurface|orchestrator".} =
   ## remote: `dac://host:port` peer endpoint.
   ## identity/peer: local signing identity and the pinned remote key.
   ## policy: Geist tier policy; only the masks and the start tier are ours.
@@ -396,8 +392,7 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
 
 proc send*(S: var GeistLink, q: Query,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagAppApi, tagNetworkSurface,
-    tagOrchestrator}.} =
+    role: orchestrator, tag: "ame|appApi|networkSurface|orchestrator".} =
   ## S: open link.
   ## q: request; the serialised Query is the whole body.
   ##
@@ -441,8 +436,7 @@ proc send*(S: var GeistLink, q: Query,
 proc subscribeRemote*(S: var GeistLink, id: string,
     collection: string = "", fromCursor: uint64 = 0'u64,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagAppApi, tagNetworkSurface,
-    tagSync}.} =
+    role: orchestrator, tag: "ame|appApi|networkSurface|sync".} =
   ## S: open link.
   ## id: subscription name, stable across reconnects so a resumed session
   ##   continues from its own cursor rather than replaying.
@@ -452,8 +446,7 @@ proc subscribeRemote*(S: var GeistLink, id: string,
 
 proc pollRemote*(S: var GeistLink, id: string, limit: uint32 = 64'u32,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagAppApi, tagNetworkSurface,
-    tagSync}.} =
+    role: orchestrator, tag: "ame|appApi|networkSurface|sync".} =
   ## S/id/limit: link, subscription and maximum rows per poll.
   ##
   ## The reply CARRIES the rows. The server remembers this subscription's
@@ -464,8 +457,7 @@ proc pollRemote*(S: var GeistLink, id: string, limit: uint32 = 64'u32,
 
 proc syncRemote*(S: var GeistLink, cursor: uint64, limit: uint32 = 256'u32,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagAppApi, tagNetworkSurface,
-    tagSync}.} =
+    role: orchestrator, tag: "ame|appApi|networkSurface|sync".} =
   ## S: open link.
   ## cursor: how many rows of the peer's log this side already holds.
   ## limit: maximum rows in one answer, so it fits one datagram.
@@ -482,8 +474,7 @@ proc syncRemote*(S: var GeistLink, cursor: uint64, limit: uint32 = 256'u32,
 
 proc pushRemote*(S: var GeistLink, R: openArray[Row],
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagAppApi, tagNetworkSurface,
-    tagSync, tagWrite}.} =
+    role: orchestrator, tag: "ame|appApi|networkSurface|sync|write".} =
   ## S: open link.
   ## R: rows to store on the PEER, exactly as this side holds them --
   ##   identity included, so the peer reproduces the operation rather than
@@ -497,20 +488,18 @@ proc pushRemote*(S: var GeistLink, R: openArray[Row],
 
 proc fetchRemote*(S: var GeistLink, id: RowId,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagAppApi, tagNetworkSurface,
-    tagSync}.} =
+    role: orchestrator, tag: "ame|appApi|networkSurface|sync".} =
   ## S/id: one row of the peer, by the name both sides use for it.
   result = S.send(Query(op: qoFetch, cursor: id), timeoutMs)
 
 proc deleteRemote*(S: var GeistLink, id: RowId,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagAppApi, tagNetworkSurface,
-    tagSync, tagWrite}.} =
+    role: orchestrator, tag: "ame|appApi|networkSurface|sync|write".} =
   ## S/id: ask the peer to remove one row. Needs `prWrite` there.
   result = S.send(Query(op: qoDelete, cursor: id), timeoutMs)
 
-proc close*(S: var GeistLink) {.role: stateController,
-    metaTags: {tagAme, tagLifecycle, tagNetworkSurface}.} =
+proc close*(S: var GeistLink) {.role: actor,
+    tag: "ame|lifecycle|networkSurface".} =
   ## S: link closed and its Bifrost session cleared.
   if S.open:
     bfx.close(S.client)
@@ -547,8 +536,7 @@ proc close*(S: var GeistLink) {.role: stateController,
 ## to check a right without compiling a handshake to do it.
 
 type
-  TrustedPeer* {.role: configurator, metaTags: {tagAme, tagNetworkSurface,
-      tagServer, tagTypes}.} = object
+  TrustedPeer* {.role: configurator, tag: "ame|networkSurface|server|types".} = object
     ## pin: the peer's public identity, exchanged out of band.
     ## rights: what it may do once it has proved that identity.
     pin*: bfx.AmePinnedPeerIdentity
@@ -557,8 +545,7 @@ type
   PeerPhase = enum
     ppHandshaking, ppOpen
 
-  PeerLink* {.role: truthState, metaTags: {tagAme, tagNetworkSurface,
-      tagServer, tagTypes}.} = object
+  PeerLink* {.role: truthState, tag: "ame|networkSurface|server|types".} = object
     ## One remote desktop, for as long as it keeps talking to us.
     subject*: string
     address*: string
@@ -576,8 +563,7 @@ type
 
   ServedHandler* = proc (q: Query, p: PeerContext): Reply {.gcsafe.}
 
-  GeistServer* {.role: truthState, metaTags: {tagAme, tagNetworkSurface,
-      tagServer, tagTypes}.} = object
+  GeistServer* {.role: truthState, tag: "ame|networkSurface|server|types".} = object
     ## The bound socket and everyone currently connected to it.
     sock*: bfx.DacSocket
     identity*: bfx.AmeIdentityKey
@@ -600,7 +586,7 @@ proc initGeistServer*(a: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     trusted: openArray[TrustedPeer], policy: TriggerPolicy,
     idleSeconds: int64 = defaultPeerIdleSeconds): tuple[ok: bool,
     server: GeistServer, err: string] {.role: orchestrator,
-    metaTags: {tagAme, tagNetworkSurface, tagOrchestrator, tagServer}.} =
+    tag: "ame|networkSurface|orchestrator|server".} =
   ## a: local endpoint, bound ONCE for the life of the server.
   ## identity: this node's signing identity.
   ## trusted: every peer allowed to connect, with what each may do. An
@@ -629,7 +615,7 @@ proc initGeistServer*(a: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     result = (false, GeistServer(), exc.msg)
 
 proc pinFor(S: GeistServer, subject: string): int {.role: parser,
-    metaTags: {tagAme, tagServer}.} =
+    tag: "ame|server".} =
   ## S/subject: index of the trusted peer with this subject, or -1.
   ##
   ## Selecting by NAME is not a trust decision -- the handshake still
@@ -644,7 +630,7 @@ proc pinFor(S: GeistServer, subject: string): int {.role: parser,
     i = i + 1
 
 proc rightsFor*(s: GeistServer, subject: string): set[PeerRight] {.
-    role: parser, metaTags: {tagAme, tagServer}.} =
+    role: parser, tag: "ame|server".} =
   ## s/subject: what a peer with this name would be allowed, or nothing
   ## when this server has never heard of it.
   var
@@ -655,7 +641,7 @@ proc rightsFor*(s: GeistServer, subject: string): set[PeerRight] {.
 
 proc delegatedContext*(s: GeistServer, p: PeerContext,
     a: GeistAddress): PeerContext {.role: sanitizer,
-    metaTags: {tagAme, tagServer}.} =
+    tag: "ame|server".} =
   ## s: this server and its trust list.
   ## p: who actually connected -- proved by the handshake.
   ## a: the address, which may carry `?as=` because a ROUTER forwarded
@@ -684,8 +670,8 @@ proc delegatedContext*(s: GeistServer, p: PeerContext,
   result.subject = a.onBehalfOf
   result.rights = p.rights * s.rightsFor(a.onBehalfOf)
 
-proc dropIdlePeers*(S: var GeistServer) {.role: stateController,
-    metaTags: {tagAme, tagLifecycle, tagServer}.} =
+proc dropIdlePeers*(S: var GeistServer) {.role: actor,
+    tag: "ame|lifecycle|server".} =
   ## S: server whose silent sessions are forgotten. Called on every serve,
   ## so a long-running daemon's peer table stays the size of its actual
   ## traffic.
@@ -703,7 +689,7 @@ proc dropIdlePeers*(S: var GeistServer) {.role: stateController,
 
 proc beginPeer(S: var GeistServer, payload: openArray[uint8],
     remote: bfx.DacAddress, key: string): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagNetworkSurface, tagServer}.} =
+    role: orchestrator, tag: "ame|networkSurface|server".} =
   ## S: server accepting a new conversation.
   ## payload/remote/key: the frame, its source and the peer table key.
   ##
@@ -746,7 +732,7 @@ proc beginPeer(S: var GeistServer, payload: openArray[uint8],
 
 proc finishPeer(S: var GeistServer, payload: openArray[uint8],
     key: string): tuple[ok: bool, err: string] {.role: orchestrator,
-    metaTags: {tagAme, tagNetworkSurface, tagServer}.} =
+    tag: "ame|networkSurface|server".} =
   ## S/payload/key: the client's finish message, completing one handshake.
   var
     accepted: bfx.AmeHandshakeResult
@@ -778,7 +764,7 @@ proc finishPeer(S: var GeistServer, payload: openArray[uint8],
 proc answerPeer(S: var GeistServer, payload: openArray[uint8],
     remote: bfx.DacAddress, key: string,
     handler: ServedHandler): tuple[ok: bool, served: bool, err: string] {.
-    role: orchestrator, metaTags: {tagAme, tagNetworkSurface, tagServer}.} =
+    role: orchestrator, tag: "ame|networkSurface|server".} =
   ## S/payload/remote/key/handler: one frame on an established session.
   ##
   ## `served` distinguishes a completed request from a chunk of one that is
@@ -833,8 +819,7 @@ proc answerPeer(S: var GeistServer, payload: openArray[uint8],
 
 proc serveOnce*(S: var GeistServer, handler: ServedHandler,
     timeoutMs: int = 1000): tuple[ok: bool, served: bool, err: string] {.
-    role: metaOrchestrator, metaTags: {tagAme, tagNetworkSurface,
-    tagOrchestrator, tagServer}.} =
+    role: metaOrchestrator, tag: "ame|networkSurface|orchestrator|server".} =
   ## S: bound server.
   ## handler: Query -> Reply, told which peer is asking.
   ## timeoutMs: how long to wait for a frame. A timeout is NOT a failure --
@@ -876,12 +861,12 @@ proc serveOnce*(S: var GeistServer, handler: ServedHandler,
   result = (step.ok, false, step.err)
 
 proc peerCount*(s: GeistServer): int {.role: parser, inline,
-    metaTags: {tagAme, tagServer, tagStatus}.} =
+    tag: "ame|server|status".} =
   ## s: how many peers are currently connected, handshaking included.
   result = s.peers.len
 
-proc closeServer*(S: var GeistServer) {.role: stateController,
-    metaTags: {tagAme, tagLifecycle, tagNetworkSurface, tagServer}.} =
+proc closeServer*(S: var GeistServer) {.role: actor,
+    tag: "ame|lifecycle|networkSurface|server".} =
   ## S: server whose socket is released and whose sessions are forgotten.
   if not S.open:
     return

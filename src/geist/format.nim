@@ -21,7 +21,7 @@
 ## Native struct punning would not survive x86 <-> ARM, and Geist targets
 ## Linux, Windows and Android on both.
 
-import geistPragmas
+import runePragmas
 import ./types
 
 const
@@ -31,7 +31,7 @@ const
   indexEntryBytes* = 76
 
 type
-  IndexEntry* {.role: truthState, metaTags: {tagDb, tagStorageIo, tagTypes}.} = object
+  IndexEntry* {.role: truthState, tag: "db|storageIo|types".} = object
     ## One row of the seekable cluster index.
     ##
     ## Version 4 dropped the `layout` byte. It named a table-level cell
@@ -49,24 +49,24 @@ type
     auxLen*: uint64      ## the row offset table, or 0 for a dense cluster
     hash*: ByteSeq       ## 32 B content hash, lets a reader detect change
 
-  FileHeader* {.role: truthState, metaTags: {tagDb, tagStorageIo, tagTypes}.} = object
+  FileHeader* {.role: truthState, tag: "db|storageIo|types".} = object
     version*: uint16
     clusterCount*: uint32
     generation*: uint64
 
 proc putU16*(A: var ByteSeq, o: int, v: uint16) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/o/v: destination buffer, byte offset, value.
   A[o] = uint8(v and 0xFF)
   A[o + 1] = uint8((v shr 8) and 0xFF)
 
 proc getU16*(A: openArray[uint8], o: int): uint16 {.role: parser,
-    metaTags: {tagCodecBoundary, tagRead}.} =
+    tag: "codecBoundary|read".} =
   ## A/o: source buffer and byte offset.
   result = uint16(A[o]) or (uint16(A[o + 1]) shl 8)
 
 proc putU32*(A: var ByteSeq, o: int, v: uint32) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/o/v: destination buffer, byte offset, value.
   var
     i: int = 0
@@ -75,7 +75,7 @@ proc putU32*(A: var ByteSeq, o: int, v: uint32) {.role: helper,
     i = i + 1
 
 proc getU32*(A: openArray[uint8], o: int): uint32 {.role: parser,
-    metaTags: {tagCodecBoundary, tagRead}.} =
+    tag: "codecBoundary|read".} =
   ## A/o: source buffer and byte offset.
   var
     i: int = 0
@@ -85,7 +85,7 @@ proc getU32*(A: openArray[uint8], o: int): uint32 {.role: parser,
     i = i + 1
 
 proc putU64*(A: var ByteSeq, o: int, v: uint64) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/o/v: destination buffer, byte offset, value.
   var
     i: int = 0
@@ -94,7 +94,7 @@ proc putU64*(A: var ByteSeq, o: int, v: uint64) {.role: helper,
     i = i + 1
 
 proc getU64*(A: openArray[uint8], o: int): uint64 {.role: parser,
-    metaTags: {tagCodecBoundary, tagRead}.} =
+    tag: "codecBoundary|read".} =
   ## A/o: source buffer and byte offset.
   var
     i: int = 0
@@ -104,13 +104,13 @@ proc getU64*(A: openArray[uint8], o: int): uint64 {.role: parser,
     i = i + 1
 
 proc addU16*(A: var ByteSeq, v: uint16) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/v: buffer extended by one little-endian u16.
   A.add uint8(v and 0xFF)
   A.add uint8((v shr 8) and 0xFF)
 
 proc addU32*(A: var ByteSeq, v: uint32) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/v: buffer extended by one little-endian u32.
   var
     i: int = 0
@@ -119,7 +119,7 @@ proc addU32*(A: var ByteSeq, v: uint32) {.role: helper,
     i = i + 1
 
 proc addU64*(A: var ByteSeq, v: uint64) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/v: buffer extended by one little-endian u64.
   var
     i: int = 0
@@ -128,7 +128,7 @@ proc addU64*(A: var ByteSeq, v: uint64) {.role: helper,
     i = i + 1
 
 proc addBytes*(A: var ByteSeq, B: openArray[uint8]) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/B: destination buffer and appended source bytes.
   var
     i: int = 0
@@ -137,7 +137,7 @@ proc addBytes*(A: var ByteSeq, B: openArray[uint8]) {.role: helper,
     i = i + 1
 
 proc addText*(A: var ByteSeq, s: string) {.role: helper,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## A/s: buffer extended by a u32 length prefix and the raw characters.
   var
     i: int = 0
@@ -147,7 +147,7 @@ proc addText*(A: var ByteSeq, s: string) {.role: helper,
     i = i + 1
 
 proc readText*(A: openArray[uint8], o: var int): string {.role: parser,
-    metaTags: {tagCodecBoundary, tagRead}.} =
+    tag: "codecBoundary|read".} =
   ## A: source buffer.
   ## o: cursor advanced past the length prefix and the characters.
   var
@@ -162,7 +162,7 @@ proc readText*(A: openArray[uint8], o: var int): string {.role: parser,
   o = o + n
 
 proc encodeHeader*(h: FileHeader): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagStorageIo, tagWrite}.} =
+    tag: "codecBoundary|storageIo|write".} =
   ## h: header written at offset zero of every Geist file.
   var
     i: int = 0
@@ -176,7 +176,7 @@ proc encodeHeader*(h: FileHeader): ByteSeq {.role: encryptor,
 
 proc decodeHeader*(A: openArray[uint8]): tuple[ok: bool, h: FileHeader,
     err: string] {.role: parser,
-    metaTags: {tagCodecBoundary, tagStorageIo, tagRead}.} =
+    tag: "codecBoundary|storageIo|read".} =
   ## A: first `headerBytes` bytes of a candidate Geist file.
   var
     i: int = 0
@@ -195,7 +195,7 @@ proc decodeHeader*(A: openArray[uint8]): tuple[ok: bool, h: FileHeader,
   result.ok = true
 
 proc encodeIndexEntry*(e: IndexEntry): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagStorageIo, tagWrite}.} =
+    tag: "codecBoundary|storageIo|write".} =
   ## e: one cluster index row.
   var
     i: int = 0
@@ -214,7 +214,7 @@ proc encodeIndexEntry*(e: IndexEntry): ByteSeq {.role: encryptor,
     i = i + 1
 
 proc decodeIndexEntry*(A: openArray[uint8], o: int): IndexEntry {.role: parser,
-    metaTags: {tagCodecBoundary, tagStorageIo, tagRead}.} =
+    tag: "codecBoundary|storageIo|read".} =
   ## A/o: buffer and offset of one encoded index row.
   var
     i: int = 0
@@ -233,7 +233,7 @@ proc decodeIndexEntry*(A: openArray[uint8], o: int): IndexEntry {.role: parser,
     i = i + 1
 
 proc encodeSchema*(s: Schema): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagStorageIo, tagWrite}.} =
+    tag: "codecBoundary|storageIo|write".} =
   ## s: schema block preceding a cluster's fixed rows.
   var
     i: int = 0
@@ -261,7 +261,7 @@ proc encodeSchema*(s: Schema): ByteSeq {.role: encryptor,
     i = i + 1
 
 proc decodeSchema*(A: openArray[uint8], o: var int): Schema {.role: parser,
-    metaTags: {tagCodecBoundary, tagStorageIo, tagRead}.} =
+    tag: "codecBoundary|storageIo|read".} =
   ## A: buffer holding an encoded schema.
   ## o: cursor advanced past the schema block.
   var

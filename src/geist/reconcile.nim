@@ -42,7 +42,7 @@
 
 import std/[algorithm, editdistance, sequtils, strutils, tables]
 
-import geistPragmas
+import runePragmas
 
 const
   suggestMaxDistance* = 3
@@ -55,8 +55,7 @@ const
     ## within three edits of every other one.
 
 type
-  RosterEntry* {.role: truthState, metaTags: {tagConfig, tagStatus,
-      tagTypes}.} = object
+  RosterEntry* {.role: truthState, tag: "config|status|types".} = object
     ## One name the reconciliation had something to say about.
     ##
     ## `nearest` is filled for orphans only, and is empty when nothing was
@@ -64,8 +63,7 @@ type
     name*: string
     nearest*: string
 
-  RosterReport* {.role: truthState, metaTags: {tagConfig, tagStatus,
-      tagTypes}.} = object
+  RosterReport* {.role: truthState, tag: "config|status|types".} = object
     ## What the file and the roster disagreed about.
     ##
     ##   matched  in both; these are the settings that actually apply
@@ -76,12 +74,12 @@ type
     orphan*: seq[RosterEntry]
 
 proc changed*(r: RosterReport): bool {.role: parser, inline,
-    metaTags: {tagConfig, tagStatus}.} =
+    tag: "config|status".} =
   ## r: did reconciling alter the table? Only then is a rewrite worth it.
   result = r.added.len > 0
 
 proc describe*(r: RosterReport, what: string = "entry"): string {.role: helper,
-    metaTags: {tagConfig, tagDocs, tagStatus}.} =
+    tag: "config|docs|status".} =
   ## r/what: lines to show a person, or nothing when there is nothing to
   ## say. `what` names the thing being reconciled -- "friend", "room" --
   ## so one report reads correctly wherever it is used.
@@ -101,7 +99,7 @@ proc describe*(r: RosterReport, what: string = "entry"): string {.role: helper,
   result = L.join("\n")
 
 proc suggest*(name: string, roster: openArray[string]): string {.role: parser,
-    metaTags: {tagConfig, tagParsing}.} =
+    tag: "config|parsing".} =
   ## name: an orphan.
   ## roster: the names that do exist.
   ##
@@ -127,7 +125,7 @@ proc suggest*(name: string, roster: openArray[string]): string {.role: parser,
 
 proc reconcile*[T](S: var OrderedTable[string, T], roster: openArray[string],
     fallback: T): RosterReport {.role: truthBuilder,
-    metaTags: {tagAppApi, tagConfig, tagSync}.} =
+    tag: "appApi|config|sync".} =
   ## S: the settings table as the file had it, mutated in place.
   ## roster: the names that really exist, in the order they should appear.
   ## fallback: what a name with no section gets.
@@ -156,7 +154,7 @@ proc reconcile*[T](S: var OrderedTable[string, T], roster: openArray[string],
 
 proc applied*[T](s: OrderedTable[string, T],
     roster: openArray[string]): OrderedTable[string, T] {.role: parser,
-    metaTags: {tagAppApi, tagConfig}.} =
+    tag: "appApi|config".} =
   ## s/roster: only the entries that name something real.
   ##
   ## What the application should ACT on. `reconcile` keeps orphans in the
@@ -172,7 +170,7 @@ proc applied*[T](s: OrderedTable[string, T],
     i = i + 1
 
 proc settingsFor*[T](s: OrderedTable[string, T], name: string,
-    fallback: T): T {.role: parser, metaTags: {tagAppApi, tagConfig}.} =
+    fallback: T): T {.role: parser, tag: "appApi|config".} =
   ## s/name/fallback: one entry, or the defaults.
   ##
   ## The read a caller makes per message, per notification, per render.
@@ -184,12 +182,12 @@ proc settingsFor*[T](s: OrderedTable[string, T], name: string,
     result = s[name]
 
 proc rosterOf*[T](s: OrderedTable[string, T]): seq[string] {.role: parser,
-    metaTags: {tagConfig}.} =
+    tag: "config".} =
   ## s: the names in the table, in file order.
   result = toSeq(s.keys)
 
 proc sortedRoster*(names: openArray[string]): seq[string] {.role: helper,
-    metaTags: {tagConfig}.} =
+    tag: "config".} =
   ## names: a roster in a stable order, duplicates removed.
   ##
   ## A roster arriving from a server may be in whatever order the server

@@ -28,7 +28,7 @@ import std/[os, strutils]
 import bifrost_exchange_protocols as bfx except ByteSeq
 import tyr
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./format
 import ./crypto/cipher
@@ -42,7 +42,7 @@ const
   argonLanes = 4
 
 proc encodeSigningKeys(A: seq[bfx.AmeIdentitySigningKey]): ByteSeq {.
-    role: encryptor, metaTags: {tagCodecBoundary, tagNetworkSurface}.} =
+    role: encryptor, tag: "codecBoundary|networkSurface".} =
   ## A: public signing keys serialised in slot order.
   var
     i: int = 0
@@ -55,7 +55,7 @@ proc encodeSigningKeys(A: seq[bfx.AmeIdentitySigningKey]): ByteSeq {.
 
 proc decodeSigningKeys(A: openArray[uint8],
     o: var int): seq[bfx.AmeIdentitySigningKey] {.role: parser,
-    metaTags: {tagCodecBoundary, tagNetworkSurface}.} =
+    tag: "codecBoundary|networkSurface".} =
   ## A/o: buffer and cursor advanced past the signing key list.
   var
     n: int = 0
@@ -73,13 +73,13 @@ proc decodeSigningKeys(A: openArray[uint8],
     i = i + 1
 
 proc pinOf*(k: bfx.AmeIdentityKey): bfx.AmePinnedPeerIdentity {.
-    role: helper, metaTags: {tagCryptoBoundary, tagNetworkSurface}.} =
+    role: helper, tag: "cryptoBoundary|networkSurface".} =
   ## k: identity whose public half becomes a shareable pin.
   result = bfx.pinnedPeerIdentity(k)
 
 proc savePin*(path: string, p: bfx.AmePinnedPeerIdentity): tuple[ok: bool,
     err: string] {.role: dataWriter,
-    metaTags: {tagNetworkSurface, tagStorageIo, tagWrite}.} =
+    tag: "networkSurface|storageIo|write".} =
   ## path: destination for the public pin.
   ## p: subject and public signing keys. Nothing here is secret; the file
   ## carries a trailing hash so a corrupted pin fails loudly rather than
@@ -100,7 +100,7 @@ proc savePin*(path: string, p: bfx.AmePinnedPeerIdentity): tuple[ok: bool,
 
 proc loadPin*(path: string): tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity,
     err: string] {.role: dataFetcher,
-    metaTags: {tagNetworkSurface, tagRead, tagStorageIo}.} =
+    tag: "networkSurface|read|storageIo".} =
   ## path: pin file produced by `savePin`.
   var
     raw: ByteSeq = @[]
@@ -130,7 +130,7 @@ proc loadPin*(path: string): tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity,
 
 proc saveIdentity*(path, password: string,
     k: bfx.AmeIdentityKey): tuple[ok: bool, err: string] {.role: dataWriter,
-    metaTags: {tagCryptoBoundary, tagNetworkSurface, tagStorageIo, tagWrite}.} =
+    tag: "cryptoBoundary|networkSurface|storageIo|write".} =
   ## path: destination for the private identity.
   ## password: credential whose Argon2id output seals the secret keys.
   ## k: identity to persist. Public halves are stored in clear so a pin can
@@ -175,7 +175,7 @@ proc saveIdentity*(path, password: string,
 
 proc loadIdentity*(path, password: string): tuple[ok: bool,
     key: bfx.AmeIdentityKey, err: string] {.role: dataFetcher,
-    metaTags: {tagCryptoBoundary, tagNetworkSurface, tagRead, tagStorageIo}.} =
+    tag: "cryptoBoundary|networkSurface|read|storageIo".} =
   ## path: identity file produced by `saveIdentity`.
   ## password: credential; a wrong one fails the tag check, not the parse.
   var
@@ -232,8 +232,7 @@ proc loadIdentity*(path, password: string): tuple[ok: bool,
 proc loadOrCreateIdentity*(path, password, subject: string,
     slots: bfx.AmeSignatureAlgorithms): tuple[ok: bool,
     key: bfx.AmeIdentityKey, created: bool, err: string] {.
-    role: orchestrator, metaTags: {tagCryptoBoundary, tagNetworkSurface,
-    tagOrchestrator, tagStorageIo}.} =
+    role: orchestrator, tag: "cryptoBoundary|networkSurface|orchestrator|storageIo".} =
   ## path/password/subject/slots: identity file, credential, local name and
   ## the signature slots the Geist tier masks can select.
   ## An existing file that will not open is an error, never a reason to
@@ -253,7 +252,7 @@ proc loadOrCreateIdentity*(path, password, subject: string,
   result.created = true
 
 proc describePin*(p: bfx.AmePinnedPeerIdentity): string {.role: helper,
-    metaTags: {tagFormatting, tagNetworkSurface, tagStatus}.} =
+    tag: "formatting|networkSurface|status".} =
   ## p: pin rendered for operator confirmation. Shows a short fingerprint
   ## per slot so two sides can compare out of band.
   const

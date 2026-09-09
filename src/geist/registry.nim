@@ -57,7 +57,7 @@
 
 import std/[strutils, tables, times]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./address
 import ./answer
@@ -76,7 +76,7 @@ const
     ## opened the next, and every request would pay a full open.
 
 type
-  StoreSlot* {.role: truthState, metaTags: {tagDb, tagServer, tagTypes}.} =
+  StoreSlot* {.role: truthState, tag: "db|server|types".} =
       ref object
     ## One open database, and what the registry knows about it.
     ##
@@ -97,7 +97,7 @@ type
     usedAt*: int64
     uses*: uint64
 
-  OpenStore* {.role: configurator, metaTags: {tagDb, tagServer, tagTypes}.} =
+  OpenStore* {.role: configurator, tag: "db|server|types".} =
       proc (h: GeistHome, a: GeistAddress, path: string, S: var Session):
         tuple[ok: bool, writable: bool, err: string] {.closure.}
     ## How this application opens one of its own stores.
@@ -118,8 +118,7 @@ type
     ## refusal rather than an empty database -- opening a store for a name
     ## nobody has ever used is how a typo becomes a directory.
 
-  RegistryReport* {.role: truthState, metaTags: {tagServer, tagStatus,
-      tagTypes}.} = object
+  RegistryReport* {.role: truthState, tag: "server|status|types".} = object
     ## What the registry has done since it was made. Counters rather than
     ## a log, because a daemon that logged every acquire would spend more
     ## on the log than on the work.
@@ -128,8 +127,7 @@ type
     refused*: uint64
     hits*: uint64
 
-  StoreRegistry* {.role: truthState, metaTags: {tagDb, tagServer,
-      tagTypes}.} = object
+  StoreRegistry* {.role: truthState, tag: "db|server|types".} = object
     ## home: the one folder everything on this machine lives under.
     ## open: the application's opener.
     ## allow: app names this daemon answers for. EMPTY MEANS NONE, not
@@ -152,7 +150,7 @@ type
 proc initRegistry*(home: GeistHome, open: OpenStore,
     allow: openArray[string], limit: int = defaultOpenStores): tuple[ok: bool,
     registry: StoreRegistry, err: string] {.role: configurator,
-    metaTags: {tagConfig, tagDb, tagServer}.} =
+    tag: "config|db|server".} =
   ## home: an opened `GeistHome`.
   ## open: how this application opens one store.
   ## allow: the app names this daemon serves.
@@ -183,12 +181,12 @@ proc initRegistry*(home: GeistHome, open: OpenStore,
   result.ok = true
 
 proc clockOf(R: StoreRegistry): int64 {.role: helper, inline,
-    metaTags: {tagServer}.} =
+    tag: "server".} =
   ## R: the injected clock, or the real one when nothing set it.
   result = if R.nowSeconds != 0: R.nowSeconds else: getTime().toUnix()
 
 proc slotKey*(a: GeistAddress): string {.role: parser, inline,
-    metaTags: {tagDb, tagServer}.} =
+    tag: "db|server".} =
   ## a: the address, reduced to what identifies a STORE.
   ##
   ## `destinationKey` and not a key of its own: two requests that reached
@@ -198,7 +196,7 @@ proc slotKey*(a: GeistAddress): string {.role: parser, inline,
   result = a.destinationKey()
 
 proc serves*(R: StoreRegistry, app: string): bool {.role: parser,
-    metaTags: {tagServer}.} =
+    tag: "server".} =
   ## R/app: whether this daemon answers for an app at all.
   var
     i: int = 0
@@ -209,8 +207,8 @@ proc serves*(R: StoreRegistry, app: string): bool {.role: parser,
     i = i + 1
   result = false
 
-proc forget(S: var StoreRegistry, key: string) {.role: stateController,
-    metaTags: {tagServer}.} =
+proc forget(S: var StoreRegistry, key: string) {.role: actor,
+    tag: "server".} =
   ## S/key: drop one key from the recency order, wherever it sits.
   var
     i: int = 0
@@ -220,15 +218,14 @@ proc forget(S: var StoreRegistry, key: string) {.role: stateController,
       return
     i = i + 1
 
-proc touch(S: var StoreRegistry, key: string) {.role: stateController,
-    metaTags: {tagServer}.} =
+proc touch(S: var StoreRegistry, key: string) {.role: actor,
+    tag: "server".} =
   ## S/key: move this store to the most-recently-used end.
   S.forget(key)
   S.order.add key
 
 proc closeSlot(S: var StoreRegistry, key: string): tuple[ok: bool,
-    err: string] {.role: dataWriter, metaTags: {tagDb, tagServer,
-    tagStorageIo, tagWrite}.} =
+    err: string] {.role: dataWriter, tag: "db|server|storageIo|write".} =
   ## S/key: save and close one store, and forget it.
   ##
   ## A writable session is SAVED FIRST and not closed if the save fails.
@@ -250,7 +247,7 @@ proc closeSlot(S: var StoreRegistry, key: string): tuple[ok: bool,
   result = (true, "")
 
 proc evictTo(S: var StoreRegistry, room: int): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagDb, tagLifecycle, tagServer}.} =
+    role: orchestrator, tag: "db|lifecycle|server".} =
   ## S: the registry.
   ## room: how many stores may remain open.
   ##
@@ -280,7 +277,7 @@ proc evictTo(S: var StoreRegistry, room: int): tuple[ok: bool, err: string] {.
 
 proc acquire*(S: var StoreRegistry, a: GeistAddress): tuple[ok: bool,
     slot: StoreSlot, err: string] {.role: metaOrchestrator,
-    metaTags: {tagDb, tagOrchestrator, tagServer, tagStorageIo}.} =
+    tag: "db|orchestrator|server|storageIo".} =
   ## S: the registry, whose open set this call may change.
   ## a: the address being served.
   ##
@@ -342,7 +339,7 @@ proc acquire*(S: var StoreRegistry, a: GeistAddress): tuple[ok: bool,
   result = (true, slot, room.err)
 
 proc serveQuery*(S: var StoreRegistry, q: Query, p: PeerContext): Reply {.
-    role: actor, metaTags: {tagAppApi, tagDb, tagNetworkSurface, tagServer}.} =
+    role: actor, tag: "appApi|db|networkSurface|server".} =
   ## S: the registry.
   ##
   ## NOT called `answer`: `answer.nim` is a module in this namespace, and
@@ -375,8 +372,7 @@ proc serveQuery*(S: var StoreRegistry, q: Query, p: PeerContext): Reply {.
   result = answerQuery(got.slot.session, got.slot.cursors, inner, p)
 
 proc saveAll*(S: var StoreRegistry): tuple[ok: bool, saved: int,
-    err: string] {.role: dataWriter, metaTags: {tagDb, tagServer,
-    tagStorageIo, tagWrite}.} =
+    err: string] {.role: dataWriter, tag: "db|server|storageIo|write".} =
   ## S: every writable store, flushed.
   ##
   ## Reports the FIRST failure but keeps going, because a shutdown that
@@ -397,8 +393,7 @@ proc saveAll*(S: var StoreRegistry): tuple[ok: bool, saved: int,
         result.err = "store " & key & ": " & saved.err
 
 proc closeRegistry*(S: var StoreRegistry): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagDb, tagLifecycle, tagServer,
-    tagStorageIo}.} =
+    role: dataWriter, tag: "db|lifecycle|server|storageIo".} =
   ## S: close everything, saving what is writable.
   ##
   ## Every store is attempted even when one fails: the alternative leaves
@@ -420,12 +415,12 @@ proc closeRegistry*(S: var StoreRegistry): tuple[ok: bool, err: string] {.
     i = i + 1
 
 proc openCount*(S: StoreRegistry): int {.role: parser, inline,
-    metaTags: {tagServer, tagStatus}.} =
+    tag: "server|status".} =
   ## S: how many stores are open right now.
   result = S.slots.len
 
 proc openKeys*(S: StoreRegistry): seq[string] {.role: parser,
-    metaTags: {tagServer, tagStatus}.} =
+    tag: "server|status".} =
   ## S: the open stores, least recently used FIRST.
   ##
   ## In recency order rather than sorted, because the question an operator
@@ -433,7 +428,7 @@ proc openKeys*(S: StoreRegistry): seq[string] {.role: parser,
   result = S.order
 
 proc describeRegistry*(S: StoreRegistry): string {.role: parser,
-    metaTags: {tagDocs, tagServer, tagStatus}.} =
+    tag: "docs|server|status".} =
   ## S: one line for a status page or a log.
   result = $S.openCount() & "/" & $S.limit & " store(s) open, " &
     $S.report.opened & " opened, " & $S.report.evicted & " evicted, " &

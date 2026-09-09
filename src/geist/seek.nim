@@ -21,7 +21,7 @@
 
 import std/[os, strutils]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./format
 import ./row
@@ -29,8 +29,7 @@ import ./store
 import ./sidecar
 
 type
-  SeekHandle* {.role: truthState, metaTags: {tagAppApi, tagDb, tagStorageIo,
-      tagTypes}.} = object
+  SeekHandle* {.role: truthState, tag: "appApi|db|storageIo|types".} = object
     ## A resolved cluster: enough to address any row without re-reading the
     ## index. Hold one across several seeks to pay the index cost once.
     path*: string
@@ -42,7 +41,7 @@ type
 proc openSeek*(path: string,
     role: ClusterRole = crEntry): tuple[ok: bool, h: SeekHandle,
     err: string] {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## path: a Geist data file.
   ## role: which cluster to address; crEntry is the application's rows.
   ## Cost is the index (32 B + 80 B per cluster) plus the schema block,
@@ -66,12 +65,12 @@ proc openSeek*(path: string,
   result.ok = true
 
 proc rowCount*(h: SeekHandle): uint32 {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## h: handle whose cluster row count is returned.
   result = h.entry.rowCount
 
 proc looksSealed*(h: SeekHandle): bool {.role: parser,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagDb, tagRead}.} =
+    tag: "appApi|cryptoBoundary|db|read".} =
   ## h: handle whose database is checked for a ledger artifact.
   ##
   ## A seek returns bytes AS STORED, so a sealed cluster yields ciphertext
@@ -97,13 +96,13 @@ proc looksSealed*(h: SeekHandle): bool {.role: parser,
   result = false
 
 proc isDenseHandle*(h: SeekHandle): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## h: handle whose cluster has uniform rows, so a column is a byte range
   ## at a constant offset and can be strided without parsing anything.
   result = h.schema.isDense()
 
 proc rowOffsetTable*(h: SeekHandle): seq[uint32] {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## h: handle whose offset table is read from the auxiliary region.
   ## Empty for a dense cluster, which needs none.
   if h.isDenseHandle():
@@ -111,7 +110,7 @@ proc rowOffsetTable*(h: SeekHandle): seq[uint32] {.role: dataFetcher,
   result = decodeOffsets(readAux(h.path, h.entry))
 
 proc seekRow*(h: SeekHandle, i: uint32): Row {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## h/i: handle and row index.
   ## Dense: one seek of `rowBytes`. Varying: the offset table is read
   ## first, so the row itself is still one seek but the table costs one
@@ -134,7 +133,7 @@ proc seekRow*(h: SeekHandle, i: uint32): Row {.role: dataFetcher,
     int(offs[int(i) + 1]) - int(offs[int(i)]))
 
 proc seekRange*(h: SeekHandle, first, count: uint32): seq[Row] {.
-    role: dataFetcher, metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    role: dataFetcher, tag: "appApi|db|storageIo|read".} =
   ## h: handle.
   ## first/count: row window read as ONE contiguous block rather than
   ##   `count` separate seeks, which is what makes a range scan cheap.
@@ -181,7 +180,7 @@ proc seekRange*(h: SeekHandle, first, count: uint32): seq[Row] {.
     i = i + 1'u32
 
 proc seekFixedColumn*(h: SeekHandle, slot: int): seq[uint64] {.
-    role: dataFetcher, metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    role: dataFetcher, tag: "appApi|db|storageIo|read".} =
   ## h/slot: handle and an integer-shaped column.
   ##
   ## A DENSE cluster is read once and strided at `rowBytes`, touching only
@@ -214,7 +213,7 @@ proc seekFixedColumn*(h: SeekHandle, slot: int): seq[uint64] {.
 
 proc seekColumnBytes*(h: SeekHandle, slot: int,
     store: SidecarStore = SidecarStore()): seq[ByteSeq] {.
-    role: dataFetcher, metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    role: dataFetcher, tag: "appApi|db|storageIo|read".} =
   ## h/slot/store: handle, column, and the sidecar a capped column may
   ## reference. Returns each row's value in order, as stored.
   var
@@ -245,7 +244,7 @@ proc seekColumnBytes*(h: SeekHandle, slot: int,
 
 proc seekObject*[T: object](h: SeekHandle, i: uint32,
     store: SidecarStore = SidecarStore()): T {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## h/i: handle and row index unpacked into T.
   ## store: sidecar store, needed only if a capped column externalised.
   ## The row now carries its own values, so this reads the row and nothing
@@ -254,7 +253,7 @@ proc seekObject*[T: object](h: SeekHandle, i: uint32,
 
 proc seekText*(h: SeekHandle, i: uint32, slot: int,
     store: SidecarStore = SidecarStore()): string {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## h/i/slot/store: one text column of one row.
   ## Reads the row and resolves one column out of it, so a wide row with
   ## several large fields still costs one read.
@@ -265,7 +264,7 @@ proc seekText*(h: SeekHandle, i: uint32, slot: int,
 
 proc seekMatching*(h: SeekHandle, slot: int, value: uint64,
     limit: int = 0): seq[uint32] {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## h/slot/value: fixed-column equality scan returning row INDICES.
   ## limit: stop after this many hits; 0 means all.
   ## Returning indices rather than rows lets a caller decide what to fetch,
@@ -282,7 +281,7 @@ proc seekMatching*(h: SeekHandle, slot: int, value: uint64,
     i = i + 1
 
 proc indexCostBytes*(path: string): int {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## path: file whose index size is reported, for callers deciding whether
   ## to hold a handle open. Independent of row count by construction.
   var
@@ -293,7 +292,7 @@ proc indexCostBytes*(path: string): int {.role: parser,
   result = idx.f.indexBytes
 
 proc fileGeneration*(path: string): uint64 {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## path: file whose generation is read from the header alone. A cheap way
   ## for a holder of a `SeekHandle` to notice its handle went stale.
   var
@@ -303,7 +302,7 @@ proc fileGeneration*(path: string): uint64 {.role: parser,
     result = idx.f.header.generation
 
 proc isStale*(h: SeekHandle): bool {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## h: handle checked against the file it came from. A handle caches the
   ## index, so a writer that appended rows since `openSeek` would otherwise
   ## be invisible -- this is the cheap check that says to reopen.

@@ -48,7 +48,7 @@
 
 import std/[strutils, tables]
 
-import geistPragmas
+import runePragmas
 import ./address
 
 const
@@ -70,8 +70,7 @@ const
     ## The ttl a router stamps on an address that arrived without one.
 
 type
-  Hop* {.role: configurator, metaTags: {tagConfig, tagNetworkSurface,
-      tagPeerDirectory, tagTypes}.} = object
+  Hop* {.role: configurator, tag: "config|networkSurface|peerDirectory|types".} = object
     ## One endpoint that can serve a route.
     ##
     ## `local` means this daemon answers it itself rather than forwarding.
@@ -87,16 +86,14 @@ type
     priority*: uint8
     local*: bool
 
-  Route* {.role: configurator, metaTags: {tagConfig, tagNetworkSurface,
-      tagTypes}.} = object
+  Route* {.role: configurator, tag: "config|networkSurface|types".} = object
     ## A pattern and the hops that serve it. `*` in either field matches
     ## anything; the most specific matching route wins.
     app*: string
     instance*: string
     hops*: seq[Hop]
 
-  RouteTable* {.role: configurator, metaTags: {tagConfig, tagNetworkSurface,
-      tagTypes}.} = object
+  RouteTable* {.role: configurator, tag: "config|networkSurface|types".} = object
     ## The whole table, as it appears in a config file.
     ##
     ## `node` is this daemon's own name and is what gets written into an
@@ -111,8 +108,7 @@ type
     probeSuccesses*: uint8
     route*: seq[Route]
 
-  HopHealth* {.role: truthState, metaTags: {tagHealth, tagNetworkSurface,
-      tagStatus, tagTypes}.} = object
+  HopHealth* {.role: truthState, tag: "health|networkSurface|status|types".} = object
     ## What has happened to one endpoint, in local monotonic seconds.
     ##
     ## Peer timestamps are never used. Two machines whose clocks disagree
@@ -125,8 +121,7 @@ type
     successes*: uint32
     down*: bool
 
-  RouteView* {.role: truthState, metaTags: {tagHealth, tagNetworkSurface,
-      tagTypes}.} = object
+  RouteView* {.role: truthState, tag: "health|networkSurface|types".} = object
     ## The table plus what is currently known about each endpoint.
     ##
     ## Health is keyed by endpoint rather than by name so two routes that
@@ -135,8 +130,7 @@ type
     table*: RouteTable
     health*: Table[string, HopHealth]
 
-  HopChoice* {.role: truthState, metaTags: {tagNetworkSurface, tagStatus,
-      tagTypes}.} = object
+  HopChoice* {.role: truthState, tag: "networkSurface|status|types".} = object
     ## What `chooseHop` decided, and why.
     ##
     ## `probing` marks a hop that is still considered down and is being
@@ -152,7 +146,7 @@ type
 ## ---------------------------- defaults ------------------------------
 
 proc defaultRouteTable*(node: string = ""): RouteTable {.role: configurator,
-    metaTags: {tagConfig, tagNetworkSurface}.} =
+    tag: "config|networkSurface".} =
   ## node: this daemon's name.
   ##
   ## Every timer at its documented value and no routes at all. A table
@@ -166,7 +160,7 @@ proc defaultRouteTable*(node: string = ""): RouteTable {.role: configurator,
   result.probeSuccesses = defaultProbeSuccesses
 
 proc initRouteView*(t: RouteTable): RouteView {.role: configurator,
-    metaTags: {tagHealth, tagNetworkSurface}.} =
+    tag: "health|networkSurface".} =
   ## t: a validated table, with every endpoint's health unknown.
   result.table = t
   result.health = initTable[string, HopHealth]()
@@ -174,12 +168,12 @@ proc initRouteView*(t: RouteTable): RouteView {.role: configurator,
 ## ---------------------------- validation ----------------------------
 
 proc isAny(s: string): bool {.role: parser, inline,
-    metaTags: {tagConfig, tagNetworkSurface}.} =
+    tag: "config|networkSurface".} =
   ## s: does this pattern field match everything?
   result = s.len == 0 or s == anyPattern
 
 proc validate*(t: RouteTable): tuple[ok: bool, err: string] {.
-    role: sanitizer, metaTags: {tagConfig, tagNetworkSurface}.} =
+    role: sanitizer, tag: "config|networkSurface".} =
   ## t: the table as loaded, checked for the things that would make
   ## routing ambiguous rather than merely wrong.
   ##
@@ -227,7 +221,7 @@ proc validate*(t: RouteTable): tuple[ok: bool, err: string] {.
 ## ---------------------------- matching ------------------------------
 
 proc scoreRoute(r: Route, a: GeistAddress): int {.role: parser,
-    metaTags: {tagNetworkSurface}.} =
+    tag: "networkSurface".} =
   ## r/a: how well this route matches, or -1 when it does not.
   ##
   ## An exact app is worth more than an exact instance, so `eris.*` beats
@@ -246,7 +240,7 @@ proc scoreRoute(r: Route, a: GeistAddress): int {.role: parser,
   result = t
 
 proc matchRoute*(t: RouteTable, a: GeistAddress): int {.role: parser,
-    metaTags: {tagNetworkSurface}.} =
+    tag: "networkSurface".} =
   ## t/a: the index of the most specific matching route, or -1.
   var
     i: int = 0
@@ -264,14 +258,14 @@ proc matchRoute*(t: RouteTable, a: GeistAddress): int {.role: parser,
 ## ---------------------------- health --------------------------------
 
 proc healthOf*(V: RouteView, endpoint: string): HopHealth {.role: parser,
-    metaTags: {tagHealth, tagNetworkSurface}.} =
+    tag: "health|networkSurface".} =
   ## V/endpoint: what is known, or a blank record for one never tried.
   if V.health.hasKey(endpoint):
     return V.health[endpoint]
   result = HopHealth()
 
 proc noteSuccess*(S: var RouteView, endpoint: string, now: int64) {.
-    role: stateController, metaTags: {tagHealth, tagNetworkSurface}.} =
+    role: actor, tag: "health|networkSurface".} =
   ## S/endpoint/now: the link worked.
   ##
   ## A hop that is down needs `probeSuccesses` of these in a row before it
@@ -290,7 +284,7 @@ proc noteSuccess*(S: var RouteView, endpoint: string, now: int64) {.
   S.health[endpoint] = h
 
 proc noteFailure*(S: var RouteView, endpoint: string, now: int64) {.
-    role: stateController, metaTags: {tagHealth, tagNetworkSurface}.} =
+    role: actor, tag: "health|networkSurface".} =
   ## S/endpoint/now: the link did not work.
   ##
   ## Call this for a refused connection, a timeout or a broken link --
@@ -310,7 +304,7 @@ proc noteFailure*(S: var RouteView, endpoint: string, now: int64) {.
   S.health[endpoint] = h
 
 proc dueForProbe*(V: RouteView, endpoint: string, now: int64): bool {.
-    role: parser, metaTags: {tagHealth, tagNetworkSurface}.} =
+    role: parser, tag: "health|networkSurface".} =
   ## V/endpoint/now: may a hop that is down be tried again yet?
   var
     h: HopHealth = V.healthOf(endpoint)
@@ -321,7 +315,7 @@ proc dueForProbe*(V: RouteView, endpoint: string, now: int64): bool {.
 ## ---------------------------- choosing ------------------------------
 
 proc byPriority(hops: seq[Hop]): seq[Hop] {.role: helper,
-    metaTags: {tagNetworkSurface}.} =
+    tag: "networkSurface".} =
   ## hops: the same hops, lowest priority number first.
   ##
   ## An insertion sort: a route has a handful of hops, and this keeps the
@@ -344,13 +338,13 @@ proc byPriority(hops: seq[Hop]): seq[Hop] {.role: helper,
     i = i + 1
 
 proc keyOf*(h: Hop): string {.role: helper, inline,
-    metaTags: {tagNetworkSurface}.} =
+    tag: "networkSurface".} =
   ## h: what this hop's health is filed under. A local hop has no
   ## endpoint, so it is filed under its name.
   result = if h.local: "local:" & h.name else: h.endpoint
 
 proc chooseHop*(V: RouteView, a: GeistAddress, now: int64): HopChoice {.
-    role: actor, metaTags: {tagHealth, tagNetworkSurface}.} =
+    role: actor, tag: "health|networkSurface".} =
   ## V: the table and what is known about each endpoint.
   ## a: where the request is going.
   ## now: local monotonic seconds.
@@ -397,7 +391,7 @@ proc chooseHop*(V: RouteView, a: GeistAddress, now: int64): HopChoice {.
   result.hop = hops[fallback]
 
 proc servesLocally*(V: RouteView, a: GeistAddress): bool {.role: parser,
-    metaTags: {tagNetworkSurface}.} =
+    tag: "networkSurface".} =
   ## V/a: would this address be answered here rather than forwarded?
   ##
   ## Asked before a hop is chosen, because a request this daemon serves
@@ -415,7 +409,7 @@ proc servesLocally*(V: RouteView, a: GeistAddress): bool {.role: parser,
   result = false
 
 proc describe*(V: RouteView, now: int64): string {.role: helper,
-    metaTags: {tagHealth, tagNetworkSurface, tagStatus}.} =
+    tag: "health|networkSurface|status".} =
   ## V/now: the table and its health, one line per hop, for an operator.
   var
     L: seq[string] = @[]

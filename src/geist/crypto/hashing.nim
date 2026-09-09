@@ -23,13 +23,13 @@
 
 import tyr
 
-import geistPragmas
+import runePragmas
 import ../types
 
 export hashwidths
 
 proc sha3Width(outLen: int): int {.role: helper, inline,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## outLen: requested width mapped up to the nearest SHA3 variant.
   ## SHA3 is NOT an extendable-output function -- it is a fixed family of
   ## 224/256/384/512-bit digests, and Tyr rejects anything else. BLAKE3 and
@@ -41,7 +41,7 @@ proc sha3Width(outLen: int): int {.role: helper, inline,
   else: result = 64
 
 proc truncated(A: ByteSeq, outLen: int): ByteSeq {.role: helper, inline,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## A/outLen: digest cut to the requested width.
   ## Truncating a hash preserves preimage and second-preimage resistance at
   ## the truncated length, which is exactly what the packed tier needs. It
@@ -54,7 +54,7 @@ proc truncated(A: ByteSeq, outLen: int): ByteSeq {.role: helper, inline,
 
 proc geistHash*(k: HashKind, A: openArray[uint8],
     outLen: int = fullDigestBytes): ByteSeq {.role: encryptor,
-    metaTags: {tagCryptoBoundary, tagWrite}.} =
+    tag: "cryptoBoundary|write".} =
   ## k: hash family.
   ## A: message.
   ## outLen: digest width. BLAKE3 and Gimli take it natively; SHA3 is
@@ -69,7 +69,7 @@ proc geistHash*(k: HashKind, A: openArray[uint8],
 
 proc geistKeyedHash*(k: HashKind, key: Secret, A: openArray[uint8],
     outLen: int = fullDigestBytes): ByteSeq {.role: encryptor,
-    metaTags: {tagCryptoBoundary, tagWrite}.} =
+    tag: "cryptoBoundary|write".} =
   ## k/key/A/outLen: keyed variant, used for Merkle leaves so an observer
   ## cannot recompute them without the batch key.
   case k
@@ -83,7 +83,7 @@ proc geistKeyedHash*(k: HashKind, key: Secret, A: openArray[uint8],
 
 proc geistMacOf*(m: MacKind, key: Secret, A: openArray[uint8],
     outLen: int = fullDigestBytes): ByteSeq {.role: encryptor,
-    metaTags: {tagCryptoBoundary, tagWrite}.} =
+    tag: "cryptoBoundary|write".} =
   ## m: authenticator selection, including the XOR combiner.
   ## key/A/outLen: key material, message and tag width.
   ## Unlike `geistHash` this MAY combine, because unforgeability is a PRF

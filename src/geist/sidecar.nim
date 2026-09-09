@@ -16,13 +16,12 @@
 
 import std/os
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./crypto/hashing
 
 type
-  SidecarStore* {.role: truthState, metaTags: {tagSidecar, tagStorageIo,
-      tagTypes}.} = object
+  SidecarStore* {.role: truthState, tag: "sidecar|storageIo|types".} = object
     ## root: directory holding the fan-out tree; empty disables the store.
     ## threshold: byte size at or above which a value moves out of the row.
     ## hash: content-hash family; the own-file tier addresses BY this hash.
@@ -37,7 +36,7 @@ type
 proc initSidecarStore*(root: string,
     threshold: uint32 = defaultSidecarThreshold,
     hash: HashKind = hkBlake3): SidecarStore {.
-    role: configurator, metaTags: {tagSidecar, tagStorageIo}.} =
+    role: configurator, tag: "sidecar|storageIo".} =
   ## root: sidecar directory; created lazily on first write.
   ## threshold: size at or above which values are externalised.
   ## hash: content-hash family. Always applied at full width here, because
@@ -49,7 +48,7 @@ proc initSidecarStore*(root: string,
   result.hash = hash
 
 proc hexOf(A: openArray[uint8]): string {.role: helper,
-    metaTags: {tagFormatting, tagSidecar}.} =
+    tag: "formatting|sidecar".} =
   ## A: hash bytes rendered as lowercase hex.
   const
     H = "0123456789abcdef"
@@ -62,7 +61,7 @@ proc hexOf(A: openArray[uint8]): string {.role: helper,
     i = i + 1
 
 proc sidecarLocator*(A: openArray[uint8]): string {.role: helper,
-    metaTags: {tagSidecar, tagStorageIo}.} =
+    tag: "sidecar|storageIo".} =
   ## A: content hash whose two-level fan-out path is returned.
   var
     h: string = ""
@@ -70,19 +69,19 @@ proc sidecarLocator*(A: openArray[uint8]): string {.role: helper,
   result = h[0 .. 1] & "/" & h[2 .. 3] & "/" & h
 
 proc sidecarPath*(s: SidecarStore, locator: string): string {.role: helper,
-    metaTags: {tagSidecar, tagStorageIo}.} =
+    tag: "sidecar|storageIo".} =
   ## s: sidecar store whose root is joined with the locator.
   ## locator: fan-out relative path produced by `sidecarLocator`.
   result = s.root / locator
 
 proc shouldExternalise*(s: SidecarStore, n: int): bool {.role: parser, inline,
-    metaTags: {tagSidecar, tagRead}.} =
+    tag: "sidecar|read".} =
   ## s: sidecar store carrying the threshold.
   ## n: candidate value length in bytes.
   result = s.root.len > 0 and uint32(n) >= s.threshold
 
 proc describeRef*(r: Ref): string {.role: helper,
-    metaTags: {tagFormatting, tagSidecar}.} =
+    tag: "formatting|sidecar".} =
   ## r: reference rendered for a CLI listing. A size is deliberately not
   ## shown: it is no longer stored, and reading the payload just to print
   ## its length would defeat the point of a cheap listing.
@@ -97,13 +96,13 @@ proc describeRef*(r: Ref): string {.role: helper,
     result = "<external " & r.databaseId & ">"
 
 proc refLocator*(r: Ref): string {.role: helper,
-    metaTags: {tagSidecar, tagStorageIo}.} =
+    tag: "sidecar|storageIo".} =
   ## r: own-file reference whose path is DERIVED, never stored. This is the
   ## whole reason the cell is 33 bytes instead of 118.
   result = sidecarLocator(r.hash)
 
 proc putSidecar*(S: var SidecarStore, A: openArray[uint8]): Ref {.
-    role: dataWriter, metaTags: {tagSidecar, tagStorageIo, tagWrite}.} =
+    role: dataWriter, tag: "sidecar|storageIo|write".} =
   ## S: sidecar store updated with write counters.
   ## A: payload written under its own content hash.
   var
@@ -128,7 +127,7 @@ proc putSidecar*(S: var SidecarStore, A: openArray[uint8]): Ref {.
 
 proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
     err: string] {.role: dataFetcher,
-    metaTags: {tagSidecar, tagStorageIo, tagRead}.} =
+    tag: "sidecar|storageIo|read".} =
   ## s: sidecar store to read from.
   ## r: reference produced by `putSidecar`; its hash is re-verified.
   var
@@ -155,7 +154,7 @@ proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
   result.ok = true
 
 proc encodeRef*(r: Ref): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagSidecar, tagWrite}.} =
+    tag: "codecBoundary|sidecar|write".} =
   ## r: reference serialised into a cluster overflow region.
   ##
   ##   rtSidecar  tag | hash32                     33 B
@@ -192,7 +191,7 @@ proc encodeRef*(r: Ref): ByteSeq {.role: encryptor,
       i = i + 1
 
 proc decodeRef*(A: openArray[uint8]): Ref {.role: parser,
-    metaTags: {tagCodecBoundary, tagSidecar, tagRead}.} =
+    tag: "codecBoundary|sidecar|read".} =
   ## A: bytes produced by `encodeRef`, POSSIBLY PADDED.
   ##
   ## Each target implies its own length, so a reference is self-delimiting

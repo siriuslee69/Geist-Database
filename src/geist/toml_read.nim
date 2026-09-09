@@ -22,7 +22,7 @@ import std/[json, os, strutils]
 
 import fylgia_utils
 
-import geistPragmas
+import runePragmas
 
 const
   libraryConfigName* = "config.toml"
@@ -31,7 +31,7 @@ const
     ## the same file.
 
 proc tomlOf*(path: string): tuple[ok: bool, node: JsonNode, err: string] {.
-    role: parser, metaTags: {tagConfig, tagParsing, tagRead}.} =
+    role: parser, tag: "config|parsing|read".} =
   ## path: a TOML file, or nothing.
   ##
   ## A missing file is OK with an empty table: "no settings" is a valid
@@ -46,7 +46,7 @@ proc tomlOf*(path: string): tuple[ok: bool, node: JsonNode, err: string] {.
     result = (false, newJObject(), path & ": " & exc.msg)
 
 proc section*(n: JsonNode, name: string): JsonNode {.role: parser,
-    metaTags: {tagConfig, tagParsing}.} =
+    tag: "config|parsing".} =
   ## n/name: one table, or an empty one when it is absent.
   if n.kind == JObject and n.hasKey(name) and n[name].kind == JObject:
     return n[name]
@@ -54,7 +54,7 @@ proc section*(n: JsonNode, name: string): JsonNode {.role: parser,
 
 proc checkKeys*(n: JsonNode, known: openArray[string],
     where: string): string {.role: sanitizer,
-    metaTags: {tagConfig, tagParsing}.} =
+    tag: "config|parsing".} =
   ## n/known/where: every key in this table must be one we act on.
   ##
   ## Returns the complaint, empty when there is none. A misspelled setting
@@ -73,7 +73,7 @@ proc checkKeys*(n: JsonNode, known: openArray[string],
     unknown.join(", ") & "; known: " & known.join(", ")
 
 proc setting*[T: string | SomeInteger | bool](n: JsonNode, key: string,
-    fallback: T): T {.role: parser, metaTags: {tagConfig, tagParsing}.} =
+    fallback: T): T {.role: parser, tag: "config|parsing".} =
   ## n/key/fallback: one setting of whatever type the fallback is.
   ##
   ## The fallback decides the type, so a caller writes what it wants and
@@ -96,7 +96,7 @@ proc setting*[T: string | SomeInteger | bool](n: JsonNode, key: string,
       result = T(n[key].getInt())
 
 proc setting*(n: JsonNode, key: string, fallback: seq[string]): seq[string] {.
-    role: parser, metaTags: {tagConfig, tagParsing}.} =
+    role: parser, tag: "config|parsing".} =
   ## n/key/fallback: a list of strings, tolerating a bare string as a list
   ## of one -- `trust = "a.pin"` is what a person writes when there is only
   ## one, and refusing it would be pedantry rather than safety.

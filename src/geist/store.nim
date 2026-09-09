@@ -14,7 +14,7 @@
 
 import std/[os, streams]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./durable
 import ./format
@@ -23,8 +23,7 @@ import ./row
 import ./crypto/hashing
 
 type
-  ClusterBuild* {.role: truthState, metaTags: {tagDb, tagStorageIo,
-      tagTypes}.} = object
+  ClusterBuild* {.role: truthState, tag: "db|storageIo|types".} = object
     role*: ClusterRole
     mode*: ClusterMode
     schema*: Schema
@@ -46,8 +45,7 @@ type
     externalised*: uint32
     truncatedIn*: seq[FieldName]
 
-  GeistFile* {.role: truthState, metaTags: {tagDb, tagStorageIo,
-      tagTypes}.} = object
+  GeistFile* {.role: truthState, tag: "db|storageIo|types".} = object
     ## The parsed shape of a file. `index` alone answers "what changed".
     header*: FileHeader
     index*: seq[IndexEntry]
@@ -57,7 +55,7 @@ proc initClusterBuild*(role: ClusterRole, mode: ClusterMode, s: Schema,
     store: SidecarStore = SidecarStore(), schemaId: uint16 = 0'u16,
     chainHashKind: HashKind = hkBlake3,
     indexHashKind: HashKind = hkBlake3): ClusterBuild {.
-    role: configurator, metaTags: {tagDb, tagStorageIo}.} =
+    role: configurator, tag: "db|storageIo".} =
   ## role/mode: cluster classification and append semantics.
   ## s: schema for every row in this cluster, carrying its column policy.
   ## store: sidecar a capped column escapes to; a zero-value store means
@@ -75,7 +73,7 @@ proc initClusterBuild*(role: ClusterRole, mode: ClusterMode, s: Schema,
 
 proc chainStep(prev: ByteSeq, A: openArray[uint8],
     h: HashKind): ByteSeq {.role: helper,
-    metaTags: {tagCryptoBoundary, tagDb, tagLedger}.} =
+    tag: "cryptoBoundary|db|ledger".} =
   ## prev: running chain hash.
   ## A: newly appended row bytes folded into the chain.
   ## h: chain hash family. Always full width -- a chain link that only
@@ -87,7 +85,7 @@ proc chainStep(prev: ByteSeq, A: openArray[uint8],
   result = geistHash(h, buf, fullDigestBytes)
 
 proc varyingRows*(C: ClusterBuild): bool {.role: parser, inline,
-    metaTags: {tagDb, tagRead}.} =
+    tag: "db|read".} =
   ## C: cluster whose rows vary in length, so addressing goes through the
   ## offset table rather than arithmetic.
   ##
@@ -98,7 +96,7 @@ proc varyingRows*(C: ClusterBuild): bool {.role: parser, inline,
   result = not C.schema.isDense()
 
 proc addRow*[T: object](C: var ClusterBuild, x: T): uint32 {.
-    role: dataWriter, metaTags: {tagAppApi, tagDb, tagStorageIo, tagWrite},
+    role: dataWriter, tag: "appApi|db|storageIo|write",
     discardable.} =
   ## C: cluster receiving one row.
   ## x: object whose declaration order must match `C.schema`.
@@ -136,7 +134,7 @@ proc addRow*[T: object](C: var ClusterBuild, x: T): uint32 {.
     C.chainHash = chainStep(C.chainHash, built.data, C.chainHashKind)
 
 proc addRowBytes*(C: var ClusterBuild, A: openArray[uint8]): uint32 {.
-    role: dataWriter, metaTags: {tagAppApi, tagDb, tagStorageIo, tagWrite},
+    role: dataWriter, tag: "appApi|db|storageIo|write",
     discardable.} =
   ## C: cluster receiving one row.
   ## A: a COMPLETE row, already packed against `C.schema` -- by `toRowBytes`
@@ -169,7 +167,7 @@ proc addRowBytes*(C: var ClusterBuild, A: openArray[uint8]): uint32 {.
     C.chainHash = chainStep(C.chainHash, A, C.chainHashKind)
 
 proc rowSpan*(C: ClusterBuild, i: uint32): tuple[at: int, len: int] {.
-    role: parser, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    role: parser, tag: "appApi|db|read".} =
   ## C/i: cluster and row index resolved to a byte range.
   ## Dense schemas compute it; varying ones read two offsets. Both O(1),
   ## which is the point of keeping the table rather than walking lengths.
@@ -190,7 +188,7 @@ proc rowSpan*(C: ClusterBuild, i: uint32): tuple[at: int, len: int] {.
   result.len = w
 
 proc rowBytesAt*(C: ClusterBuild, i: uint32): ByteSeq {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C/i: one stored row's bytes, whichever addressing applies.
   var
     span: tuple[at: int, len: int]
@@ -202,18 +200,18 @@ proc rowBytesAt*(C: ClusterBuild, i: uint32): ByteSeq {.role: parser,
     j = j + 1
 
 proc rowAt*(C: ClusterBuild, i: uint32): Row {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C/i: one row wrapped for callers that still take a `Row`.
   result.schemaId = C.schemaId
   result.data = C.rowBytesAt(i)
 
 proc objectAt*[T: object](C: ClusterBuild, i: uint32): T {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C/i: cluster and row index unpacked back into T.
   result = fromRowBytes[T](C.rowBytesAt(i), C.schema, C.store)
 
 proc encodeOffsets*(O: seq[uint32]): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## O: the packed cluster's row offset table.
   var
     i: int = 0
@@ -223,7 +221,7 @@ proc encodeOffsets*(O: seq[uint32]): ByteSeq {.role: encryptor,
     i = i + 1
 
 proc decodeOffsets*(A: openArray[uint8]): seq[uint32] {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## A: bytes produced by `encodeOffsets`.
   var
     n: int = 0
@@ -236,7 +234,7 @@ proc decodeOffsets*(A: openArray[uint8]): seq[uint32] {.role: parser,
     i = i + 1
 
 proc encodeCluster(C: ClusterBuild): tuple[body: ByteSeq, schemaBytes: int] {.
-    role: encryptor, metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    role: encryptor, tag: "codecBoundary|db|write".} =
   ## C: cluster serialised as `schema block | rows`.
   ## When the schema is not dense the rows vary in length and their offset
   ## table travels in the auxiliary region (see `IndexEntry.auxAt`).
@@ -248,7 +246,7 @@ proc encodeCluster(C: ClusterBuild): tuple[body: ByteSeq, schemaBytes: int] {.
   result.body.addBytes(C.rows)
 
 proc auxRegion(C: ClusterBuild): ByteSeq {.role: helper,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## C: cluster whose auxiliary region is returned.
   ##
   ## The region holds the row offset table and nothing else. It used to
@@ -266,7 +264,7 @@ proc auxRegion(C: ClusterBuild): ByteSeq {.role: helper,
 
 proc writeGeistFile*(path: string, C: openArray[ClusterBuild],
     generation: uint64 = 1'u64): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagDb, tagStorageIo, tagWrite}.} =
+    role: dataWriter, tag: "db|storageIo|write".} =
   ## path: destination file.
   ## C: clusters written in order; index order is file order.
   ## generation: bumped by the key lifecycle on every rekey.
@@ -330,7 +328,7 @@ proc writeGeistFile*(path: string, C: openArray[ClusterBuild],
 
 proc stampGeneration*(path: string, n: uint64): tuple[ok: bool,
     err: string] {.role: dataWriter,
-    metaTags: {tagDb, tagStorageIo, tagWrite}.} =
+    tag: "db|storageIo|write".} =
   ## path: an existing Geist file whose header generation is rewritten.
   ## n: the generation it is being published AS.
   ##
@@ -356,7 +354,7 @@ proc stampGeneration*(path: string, n: uint64): tuple[ok: bool,
     result = (false, exc.msg)
 
 proc readAt*(path: string, at: uint64, n: int): ByteSeq {.role: dataFetcher,
-    metaTags: {tagDb, tagStorageIo, tagRead}.} =
+    tag: "db|storageIo|read".} =
   ## path/at/n: file, absolute offset and byte count read in isolation.
   var
     fs: FileStream = nil
@@ -373,7 +371,7 @@ proc readAt*(path: string, at: uint64, n: int): ByteSeq {.role: dataFetcher,
     fs.close()
 
 proc readIndex*(path: string): tuple[ok: bool, f: GeistFile, err: string] {.
-    role: dataFetcher, metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    role: dataFetcher, tag: "appApi|db|storageIo|read".} =
   ## path: file whose header and cluster index are read WITHOUT touching
   ## a single row. This is the daemon's observation path: cost is
   ## `headerBytes + indexEntryBytes * clusterCount` regardless of file size.
@@ -408,7 +406,7 @@ const
 
 proc readSchemaOf*(path: string, e: IndexEntry): tuple[s: Schema,
     schemaBytes: int] {.role: dataFetcher,
-    metaTags: {tagDb, tagStorageIo, tagRead}.} =
+    tag: "db|storageIo|read".} =
   ## path/e: file and index entry whose schema block is read alone.
   var
     raw: ByteSeq = @[]
@@ -424,7 +422,7 @@ proc readSchemaOf*(path: string, e: IndexEntry): tuple[s: Schema,
 
 proc readRowAt*(path: string, e: IndexEntry, schemaBytes: int,
     i: uint32): Row {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## path/e: file and the row's cluster.
   ## schemaBytes: size of the cluster's schema block, from `readSchemaOf`.
   ## i: row index; seeks straight to it with no cluster load and no scan.
@@ -433,7 +431,7 @@ proc readRowAt*(path: string, e: IndexEntry, schemaBytes: int,
     uint64(i * e.rowBytes), int(e.rowBytes))
 
 proc readAux*(path: string, e: IndexEntry): ByteSeq {.role: dataFetcher,
-    metaTags: {tagDb, tagStorageIo, tagRead}.} =
+    tag: "db|storageIo|read".} =
   ## path/e: file and cluster whose auxiliary region is read whole. That is
   ## the row offset table, and it is empty for a dense cluster.
   result = readAt(path, e.auxAt, int(e.auxLen))
@@ -442,7 +440,7 @@ proc readCluster*(path: string, e: IndexEntry,
     store: SidecarStore = SidecarStore(),
     chainHashKind: HashKind = hkBlake3,
     indexHashKind: HashKind = hkBlake3): ClusterBuild {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagStorageIo, tagRead}.} =
+    tag: "appApi|db|storageIo|read".} =
   ## path/e: file and index entry loaded fully back into memory.
   ## store: sidecar store used when rows resolve externalised values.
   ## chainHashKind/indexHashKind: carried in from the configuration. They
@@ -470,7 +468,7 @@ proc readCluster*(path: string, e: IndexEntry,
 
 proc findIndex*(f: GeistFile, role: ClusterRole,
     typeHint: uint16 = 0'u16): int {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## f: parsed file shape.
   ## role: cluster role to locate.
   ## typeHint: schema id when several clusters share a role.
@@ -484,7 +482,7 @@ proc findIndex*(f: GeistFile, role: ClusterRole,
     i = i + 1
 
 proc changedClusters*(before, after: GeistFile): seq[int] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## before/after: two index reads of the same file.
   ## Returns the indices whose content hash or row count moved, so a daemon
   ## can follow a file it does not own without loading any rows.

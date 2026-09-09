@@ -41,7 +41,7 @@
 ## bitmap mean different things for different column kinds would cost more
 ## in reasoning than the bit costs in bytes.
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./format
 import ./sidecar
@@ -58,29 +58,29 @@ const
 ## ------------------------------ bitmaps -----------------------------
 
 proc bitSet(A: var ByteSeq, base, slot: int) {.role: helper, inline,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## A/base/slot: buffer, bitmap start and column index.
   A[base + (slot shr 3)] = A[base + (slot shr 3)] or
     (1'u8 shl uint8(slot and 7))
 
 proc bitGet(A: openArray[uint8], base, slot: int): bool {.role: parser,
-    inline, metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    inline, tag: "codecBoundary|db|read".} =
   ## A/base/slot: buffer, bitmap start and column index.
   result = (A[base + (slot shr 3)] and (1'u8 shl uint8(slot and 7))) != 0'u8
 
 proc nullBase*(s: Schema): int {.role: helper, inline,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s: schema whose null bitmap starts at byte zero when present.
   result = 0
 
 proc cappedBase*(s: Schema): int {.role: helper, inline,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s: schema whose capped bitmap follows the null bitmap when present.
   if s.autoCollapse:
     result = nullBitmapBytes(s.slots.len)
 
 proc isOmitted*(s: Schema, A: openArray[uint8], slot: int): bool {.
-    role: parser, inline, metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    role: parser, inline, tag: "codecBoundary|db|read".} =
   ## s/A/slot: schema, row and column. False when the schema does not
   ## collapse, because then nothing is ever omitted.
   if not s.autoCollapse:
@@ -88,7 +88,7 @@ proc isOmitted*(s: Schema, A: openArray[uint8], slot: int): bool {.
   result = bitGet(A, s.nullBase(), slot)
 
 proc isExternal*(s: Schema, A: openArray[uint8], slot: int): bool {.
-    role: parser, inline, metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    role: parser, inline, tag: "codecBoundary|db|read".} =
   ## s/A/slot: schema, row and column. True when a capped column took the
   ## sidecar escape and holds a reference rather than a value.
   if not s.hasCapped():
@@ -98,8 +98,7 @@ proc isExternal*(s: Schema, A: openArray[uint8], slot: int): bool {.
 ## ------------------------------ writing -----------------------------
 
 type
-  RowWriter* {.role: truthState, metaTags: {tagCodecBoundary, tagDb,
-      tagTypes}.} = object
+  RowWriter* {.role: truthState, tag: "codecBoundary|db|types".} = object
     ## Accumulates one row. The bitmaps are only final once every column
     ## has declared itself, so the body is staged separately and joined at
     ## the end.
@@ -121,7 +120,7 @@ type
 
 proc initRowWriter*(s: Schema,
     store: SidecarStore = SidecarStore()): RowWriter {.role: configurator,
-    metaTags: {tagCodecBoundary, tagDb}.} =
+    tag: "codecBoundary|db".} =
   ## s: schema being written.
   ## store: sidecar store, required only if the schema has capped columns.
   result.schema = s
@@ -129,7 +128,7 @@ proc initRowWriter*(s: Schema,
   result.store = store
 
 proc padTo(W: var RowWriter, n: int) {.role: helper, inline,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## W/n: writer and the byte count this column must occupy.
   var
     i: int = 0
@@ -138,7 +137,7 @@ proc padTo(W: var RowWriter, n: int) {.role: helper, inline,
     i = i + 1
 
 proc writeColumn*(W: var RowWriter, A: openArray[uint8]) {.role: dataWriter,
-    metaTags: {tagCodecBoundary, tagDb, tagSidecar, tagWrite}.} =
+    tag: "codecBoundary|db|sidecar|write".} =
   ## W: writer positioned at its next column.
   ## A: the value's bytes, already encoded for its `SlotKind`.
   ##
@@ -220,7 +219,7 @@ proc writeColumn*(W: var RowWriter, A: openArray[uint8]) {.role: dataWriter,
   W.cursor = W.cursor + 1
 
 proc writeU64*(W: var RowWriter, v: uint64) {.role: dataWriter,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## W/v: writer and one integer-shaped value, encoded little-endian to
   ## the column's declared width.
   var
@@ -242,7 +241,7 @@ proc writeU64*(W: var RowWriter, v: uint64) {.role: dataWriter,
   W.writeColumn(buf)
 
 proc writeText*(W: var RowWriter, s: string) {.role: dataWriter,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## W/s: writer and one text value.
   var
     t: ByteSeq = @[]
@@ -254,7 +253,7 @@ proc writeText*(W: var RowWriter, s: string) {.role: dataWriter,
   W.writeColumn(t)
 
 proc finish*(W: RowWriter): ByteSeq {.role: truthBuilder,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## W: writer whose bitmaps and body are joined into the stored row.
   result = W.head
   result.addBytes(W.body)
@@ -262,7 +261,7 @@ proc finish*(W: RowWriter): ByteSeq {.role: truthBuilder,
 ## ------------------------------ reading -----------------------------
 
 proc fieldOffsets*(s: Schema, A: openArray[uint8]): seq[int] {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s/A: schema and one stored row.
   ## Returns each column's byte offset, or -1 when it was omitted. One
   ## pass answers every later field access, so a random read does not walk
@@ -288,7 +287,7 @@ proc fieldOffsets*(s: Schema, A: openArray[uint8]): seq[int] {.role: parser,
 
 proc validateRow*(s: Schema, A: openArray[uint8]): tuple[ok: bool,
     err: string] {.role: sanitizer,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s/A: schema and a row from somewhere UNTRUSTED -- a command line, a
   ## file, a peer.
   ##
@@ -330,7 +329,7 @@ proc validateRow*(s: Schema, A: openArray[uint8]): tuple[ok: bool,
 
 proc rawAt*(s: Schema, A: openArray[uint8], offsets: seq[int],
     slot: int): ByteSeq {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s/A/offsets/slot: the column's bytes AS STORED. A capped column that
   ## externalised yields its reference, not the payload -- follow it with
   ## `resolve`.
@@ -360,7 +359,7 @@ proc rawAt*(s: Schema, A: openArray[uint8], offsets: seq[int],
 
 proc resolve*(s: Schema, A: openArray[uint8], offsets: seq[int], slot: int,
     store: SidecarStore): ByteSeq {.role: dataFetcher,
-    metaTags: {tagCodecBoundary, tagDb, tagRead, tagSidecar}.} =
+    tag: "codecBoundary|db|read|sidecar".} =
   ## s/A/offsets/slot/store: the column's VALUE, following the sidecar
   ## when the capped bit is set. Raises when a payload is missing or fails
   ## verification, because returning short data would corrupt the caller.
@@ -376,7 +375,7 @@ proc resolve*(s: Schema, A: openArray[uint8], offsets: seq[int], slot: int,
 
 proc u64At*(s: Schema, A: openArray[uint8], offsets: seq[int],
     slot: int): uint64 {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s/A/offsets/slot: an integer-shaped column, widened from whatever
   ## width it declared. An omitted column reads back as zero, which is its
   ## Nim value anyway.
@@ -392,7 +391,7 @@ proc u64At*(s: Schema, A: openArray[uint8], offsets: seq[int],
 
 proc textAt*(s: Schema, A: openArray[uint8], offsets: seq[int], slot: int,
     store: SidecarStore = SidecarStore()): string {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s/A/offsets/slot/store: a text column, sidecar followed if needed.
   var
     raw: ByteSeq = @[]
@@ -412,7 +411,7 @@ proc textAt*(s: Schema, A: openArray[uint8], offsets: seq[int], slot: int,
 proc packB[T: object](x: T, W: var RowWriter)
 
 proc pack*[T: object](x: T, W: var RowWriter) {.role: dataWriter,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## x: object written in declaration order.
   ## W: writer holding the schema and its storage policy.
   for fa, va in fieldPairs(x):
@@ -436,7 +435,7 @@ proc pack*[T: object](x: T, W: var RowWriter) {.role: dataWriter,
       W.writeU64(uint64(va))
 
 proc packB[T: object](x: T, W: var RowWriter) {.role: dataWriter,
-    metaTags: {tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "codecBoundary|db|write".} =
   ## Alternating twin of `pack`; see the note above.
   for fb, vb in fieldPairs(x):
     when vb is Ref:
@@ -459,8 +458,7 @@ proc packB[T: object](x: T, W: var RowWriter) {.role: dataWriter,
       W.writeU64(uint64(vb))
 
 type
-  RowReader* {.role: truthState, metaTags: {tagCodecBoundary, tagDb,
-      tagTypes}.} = object
+  RowReader* {.role: truthState, tag: "codecBoundary|db|types".} = object
     ## The read-side counterpart of `RowWriter`: everything an unpack pass
     ## needs, so the twins below take one parameter instead of five.
     schema*: Schema
@@ -470,7 +468,7 @@ type
 
 proc initRowReader*(s: Schema, A: openArray[uint8],
     store: SidecarStore = SidecarStore()): RowReader {.role: configurator,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s/A/store: schema, stored row and the sidecar it may reference.
   result.schema = s
   result.data = @A
@@ -480,7 +478,7 @@ proc initRowReader*(s: Schema, A: openArray[uint8],
 proc unpackB[T: object](x: var T, R: RowReader, i: var int)
 
 proc unpack*[T: object](x: var T, R: RowReader, i: var int) {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## x: object reconstructed in declaration order.
   ## R: reader over one row.
   ## i: column cursor shared across nesting levels.
@@ -507,7 +505,7 @@ proc unpack*[T: object](x: var T, R: RowReader, i: var int) {.role: parser,
       va = type(va)(R.schema.u64At(R.data, R.offsets, i)); i = i + 1
 
 proc unpackB[T: object](x: var T, R: RowReader, i: var int) {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## Alternating twin of `unpack`; see the note above.
   for fb, vb in fieldPairs(x):
     when vb is Ref:
@@ -532,7 +530,7 @@ proc unpackB[T: object](x: var T, R: RowReader, i: var int) {.role: parser,
       vb = type(vb)(R.schema.u64At(R.data, R.offsets, i)); i = i + 1
 
 proc reservedColumns*(s: Schema): int {.role: parser, inline,
-    metaTags: {tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "codecBoundary|db|read".} =
   ## s: schema whose leading columns belong to Geist rather than to the
   ## caller's object -- the index at which T's own first field sits.
   ## Two when the schema carries row identity, zero otherwise.
@@ -543,7 +541,7 @@ proc toRowBytes*[T: object](x: T, s: Schema,
     flags: uint64 = 0'u64): tuple[data: ByteSeq,
     truncated: uint32, externalised: uint32, omitted: uint32,
     truncatedIn: seq[FieldName], err: string] {.role: orchestrator,
-    metaTags: {tagAppApi, tagCodecBoundary, tagDb, tagWrite}.} =
+    tag: "appApi|codecBoundary|db|write".} =
   ## x: object to store.
   ## s: schema carrying the per-column storage policy.
   ## store: sidecar, needed only when a capped column overflows.
@@ -578,7 +576,7 @@ proc toRowBytes*[T: object](x: T, s: Schema,
 
 proc fromRowBytes*[T: object](A: openArray[uint8], s: Schema,
     store: SidecarStore = SidecarStore()): T {.role: orchestrator,
-    metaTags: {tagAppApi, tagCodecBoundary, tagDb, tagRead}.} =
+    tag: "appApi|codecBoundary|db|read".} =
   ## A/s/store: one stored row, its schema and the sidecar it may follow.
   ##
   ## The cursor starts past the reserved columns, so T sees exactly the
@@ -594,7 +592,7 @@ proc fromRowBytes*[T: object](A: openArray[uint8], s: Schema,
 
 proc rowStats*(s: Schema, A: openArray[uint8]): tuple[present: int,
     omitted: int, external: int, bytes: int] {.role: parser,
-    metaTags: {tagCodecBoundary, tagDb, tagRead, tagStatus}.} =
+    tag: "codecBoundary|db|read|status".} =
   ## s/A: schema and row. What the bitmaps saved and what escaped to the
   ## sidecar -- the two numbers that say whether a schema's column policy
   ## suits the data it is actually holding.

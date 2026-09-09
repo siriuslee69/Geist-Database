@@ -26,7 +26,7 @@
 
 import std/tables
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./config
 import ./dynamic
@@ -50,12 +50,12 @@ type
     ## underneath, and a subscriber's position must outlive that.
 
 proc initSyncCursors*(): SyncCursors {.role: configurator,
-    metaTags: {tagServer, tagSync, tagTypes}.} =
+    tag: "server|sync|types".} =
   ## An empty cursor table.
   result = initTable[string, uint64]()
 
 proc commitRemote(S: var Session): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagDb, tagServer, tagWrite}.} =
+    role: orchestrator, tag: "db|server|write".} =
   ## S: session whose accepted remote write is made durable.
   ##
   ## An acknowledgement that LEAVES THE MACHINE has to be true when it
@@ -72,7 +72,7 @@ proc commitRemote(S: var Session): tuple[ok: bool, err: string] {.
   result = S.save()
 
 proc denied(schema: Schema, epoch: uint64, who, what: string): Reply {.
-    role: helper, metaTags: {tagServer, tagStatus}.} =
+    role: helper, tag: "server|status".} =
   ## schema/epoch: context every reply carries.
   ## who/what: the peer and the right it lacks, named in the message --
   ## "denied" alone leaves an operator guessing which pin to change.
@@ -81,8 +81,7 @@ proc denied(schema: Schema, epoch: uint64, who, what: string): Reply {.
       "; the operator grants that with --allow-write <pin>")
 
 proc answerQuery*(S: var Session, cursors: var SyncCursors, q: Query,
-    p: PeerContext): Reply {.role: actor, metaTags: {tagAppApi, tagDb,
-    tagNetworkSurface, tagRead, tagServer, tagSync}.} =
+    p: PeerContext): Reply {.role: actor, tag: "appApi|db|networkSurface|read|server|sync".} =
   ## S: the open database.
   ## cursors: named subscription positions, updated in place.
   ## q: the request.

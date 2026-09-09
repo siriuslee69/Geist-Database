@@ -35,4 +35,10 @@ for dep in ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto", "Eir-CompressionAndECC",
 
 ## This repository's own pragma module, named for the repository so no
 ## other repo on the Nim path can capture it.
-addPathIfExists(joinPath(repoRoot, "meta"))
+
+## Shared pragma module: one file for the whole workspace, so there is no
+## per-repository copy to drift or to collide on the Nim path.
+if dirExists(thisDir() & "/../Rune-Pragmas/meta"):
+  switch("path", thisDir() & "/../Rune-Pragmas/meta")
+if dirExists(thisDir() & "/submodules/Rune-Pragmas/meta"):
+  switch("path", thisDir() & "/submodules/Rune-Pragmas/meta")

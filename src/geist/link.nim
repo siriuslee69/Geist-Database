@@ -48,7 +48,7 @@ import std/[tables, times]
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./address
 import ./identity
@@ -68,14 +68,13 @@ const
     ## from one that hung.
 
 type
-  LinkSlot* {.role: truthState, metaTags: {tagNetworkSurface, tagTypes}.} =
+  LinkSlot* {.role: truthState, tag: "networkSurface|types".} =
       object
     ## One cached connection, and the pin it was made against.
     link*: GeistLink
     openedAt*: int64
 
-  GeistClient* {.role: truthState, metaTags: {tagAppApi, tagNetworkSurface,
-      tagTypes}.} = object
+  GeistClient* {.role: truthState, tag: "appApi|networkSurface|types".} = object
     ## Everything needed to reach whatever a request names.
     ##
     ## `identity` is this program's signing key; `pins` maps a hop's pin
@@ -91,8 +90,7 @@ type
     sessionId*: uint64
     nowSeconds*: int64
 
-  AskResult* {.role: truthState, metaTags: {tagAppApi, tagNetworkSurface,
-      tagStatus, tagTypes}.} = object
+  AskResult* {.role: truthState, tag: "appApi|networkSurface|status|types".} = object
     ## What came back, and how much work it took.
     ##
     ## `served` names the hop that answered, so a caller can log which
@@ -112,7 +110,7 @@ type
 proc initGeistClient*(identity: bfx.AmeIdentityKey, t: RouteTable,
     policy: TriggerPolicy = defaultTriggerPolicy()): tuple[ok: bool,
     client: GeistClient, err: string] {.role: configurator,
-    metaTags: {tagAppApi, tagNetworkSurface}.} =
+    tag: "appApi|networkSurface".} =
   ## identity: this program's signing key.
   ## t: the route table, validated here so a bad one fails at startup
   ##   rather than on the first request that needed the broken route.
@@ -133,13 +131,13 @@ proc initGeistClient*(identity: bfx.AmeIdentityKey, t: RouteTable,
   result.ok = true
 
 proc clockOf(c: GeistClient): int64 {.role: helper, inline,
-    metaTags: {tagNetworkSurface}.} =
+    tag: "networkSurface".} =
   ## c: the injected clock, or the real one when nothing set it.
   result = if c.nowSeconds != 0: c.nowSeconds else: getTime().toUnix()
 
 proc pinFor(S: var GeistClient, path: string): tuple[ok: bool,
     pin: bfx.AmePinnedPeerIdentity, err: string] {.role: dataFetcher,
-    metaTags: {tagNetworkSurface, tagPeerDirectory}.} =
+    tag: "networkSurface|peerDirectory".} =
   ## S/path: the pin file, loaded once and remembered.
   ##
   ## A pin that will not load is NOT a transport failure and must not
@@ -155,8 +153,8 @@ proc pinFor(S: var GeistClient, path: string): tuple[ok: bool,
   S.pins[path] = t.pin
   result = (true, t.pin, "")
 
-proc dropLink*(S: var GeistClient, endpoint: string) {.role: stateController,
-    metaTags: {tagNetworkSurface}.} =
+proc dropLink*(S: var GeistClient, endpoint: string) {.role: actor,
+    tag: "networkSurface".} =
   ## S/endpoint: forget a cached link, closing it if it is still open.
   ##
   ## Called after every transport failure. Reusing a socket that has
@@ -172,7 +170,7 @@ proc dropLink*(S: var GeistClient, endpoint: string) {.role: stateController,
   S.links.del(endpoint)
 
 proc linkTo(S: var GeistClient, h: Hop): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagNetworkSurface, tagOrchestrator}.} =
+    role: orchestrator, tag: "networkSurface|orchestrator".} =
   ## S/h: make sure there is an open link to this hop, reusing one if
   ## there already is.
   var
@@ -200,7 +198,7 @@ proc linkTo(S: var GeistClient, h: Hop): tuple[ok: bool, err: string] {.
 
 proc askHop(S: var GeistClient, h: Hop, q: Query): tuple[ok: bool,
     reply: Reply, err: string] {.role: orchestrator,
-    metaTags: {tagNetworkSurface, tagOrchestrator}.} =
+    tag: "networkSurface|orchestrator".} =
   ## S/h/q: one attempt against one hop.
   ##
   ## `ok` false means the LINK failed. A reply that arrived saying no is
@@ -221,7 +219,7 @@ proc askHop(S: var GeistClient, h: Hop, q: Query): tuple[ok: bool,
   result = (true, sent.reply, "")
 
 proc ask*(S: var GeistClient, q: Query): AskResult {.role: metaOrchestrator,
-    metaTags: {tagAppApi, tagNetworkSurface, tagOrchestrator}.} =
+    tag: "appApi|networkSurface|orchestrator".} =
   ## S: the client, whose health view this call updates.
   ## q: the request. `q.collection` carries the address; a bare collection
   ##   name is a legal one and routes on the `*` route, so a program that
@@ -269,8 +267,8 @@ proc ask*(S: var GeistClient, q: Query): AskResult {.role: metaOrchestrator,
   result.err = "no hop answered after " & $result.attempts & " attempt(s); " &
     "last error was " & result.err
 
-proc closeClient*(S: var GeistClient) {.role: stateController,
-    metaTags: {tagAppApi, tagLifecycle, tagNetworkSurface}.} =
+proc closeClient*(S: var GeistClient) {.role: actor,
+    tag: "appApi|lifecycle|networkSurface".} =
   ## S: close every cached link.
   var
     endpoints: seq[string] = @[]
@@ -280,6 +278,6 @@ proc closeClient*(S: var GeistClient) {.role: stateController,
     S.dropLink(key)
 
 proc healthReport*(s: GeistClient): string {.role: helper,
-    metaTags: {tagHealth, tagNetworkSurface, tagStatus}.} =
+    tag: "health|networkSurface|status".} =
   ## s: the route table and what is currently known about each hop.
   result = s.routes.describe(s.clockOf())

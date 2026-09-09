@@ -33,7 +33,7 @@
 ## the storage half were deleted, every program built on this file would
 ## still build.
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./format
 import ./toml_read
@@ -64,7 +64,7 @@ type
 
 proc initGeistWireDefaults*(path: string = libraryConfigName): tuple[
     ok: bool, err: string] {.role: configurator,
-    metaTags: {tagAme, tagConfig, tagLifecycle, tagRead}.} =
+    tag: "ame|config|lifecycle|read".} =
   ## path: config.toml, of which only `[transport]` concerns this half.
   ##
   ## A relay has no storage settings to adopt, so it validates the one

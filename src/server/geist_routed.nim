@@ -52,7 +52,7 @@
 
 import std/[json, os, strutils, times]
 
-import geistPragmas
+import runePragmas
 import ../geist/wire
 
 const
@@ -62,8 +62,7 @@ const
   routerConfigName* = "router.toml"
 
 type
-  RouterConfig* {.role: configurator, metaTags: {tagConfig, tagEntrypoint,
-      tagNetworkSurface, tagServer, tagTypes}.} = object
+  RouterConfig* {.role: configurator, tag: "config|entrypoint|networkSurface|server|types".} = object
     ## The whole deployment. Written and read by `doc.nim`, so this object
     ## IS the file's schema: a field here is an option there, and there is
     ## no second list to keep in step.
@@ -79,8 +78,7 @@ type
     quiet*: bool
     routing*: RouteTable
 
-  RouterState* {.role: truthState, metaTags: {tagNetworkSurface, tagServer,
-      tagStatus, tagTypes}.} = object
+  RouterState* {.role: truthState, tag: "networkSurface|server|status|types".} = object
     ## client: the outgoing half, with the health view failover reads.
     ## forwarded/refused: what the operator sees per request.
     client*: GeistClient
@@ -93,8 +91,8 @@ type
 var
   shutdownRequested*: bool = false
 
-proc requestShutdown*() {.role: stateController,
-    metaTags: {tagEntrypoint, tagLifecycle, tagServer}.} =
+proc requestShutdown*() {.role: actor,
+    tag: "entrypoint|lifecycle|server".} =
   ## Ask the serve loop to stop after the request in flight.
   shutdownRequested = true
 
@@ -106,7 +104,7 @@ when defined(posix):
     requestShutdown()
 
 proc installSignalHandlers*() {.role: orchestrator,
-    metaTags: {tagEntrypoint, tagLifecycle, tagServer}.} =
+    tag: "entrypoint|lifecycle|server".} =
   ## Make SIGTERM and SIGINT request a graceful stop.
   when defined(posix):
     signal(SIGTERM, onSignal)
@@ -115,7 +113,7 @@ proc installSignalHandlers*() {.role: orchestrator,
 ## ---------------------------- configuration -------------------------
 
 proc defaultRouterConfig*(): RouterConfig {.role: configurator,
-    metaTags: {tagConfig, tagServer}.} =
+    tag: "config|server".} =
   ## Every option at the value the daemon uses when the file says nothing.
   ##
   ## The route list is EMPTY on purpose. A router that shipped with a
@@ -128,7 +126,7 @@ proc defaultRouterConfig*(): RouterConfig {.role: configurator,
   result.routing = defaultRouteTable("")
 
 proc routerNotes*(): DocStyle {.role: configurator,
-    metaTags: {tagConfig, tagDocs, tagServer}.} =
+    tag: "config|docs|server".} =
   ## The comments written above the options whose names do not explain
   ## themselves. Everything else is left bare -- a file where every line
   ## has a comment is a file nobody reads.
@@ -187,7 +185,7 @@ proc routerNotes*(): DocStyle {.role: configurator,
     "daemon answers it itself")
 
 proc exampleRouterConfig*(): RouterConfig {.role: configurator,
-    metaTags: {tagConfig, tagDocs, tagServer}.} =
+    tag: "config|docs|server".} =
   ## The four-daemon VPS from docs/federation.md, as a file.
   ##
   ## `--write-config` emits this rather than an empty table: a route
@@ -242,8 +240,7 @@ the failover rules and the enumerated edge cases.
 """
 
 type
-  RouterArgs* {.role: configurator, metaTags: {tagConfig, tagEntrypoint,
-      tagServer, tagTypes}.} = object
+  RouterArgs* {.role: configurator, tag: "config|entrypoint|server|types".} = object
     ## What was typed. Kept apart from `RouterConfig` because the file and
     ## the command line are different surfaces: the file describes a
     ## deployment, these describe this run of it.
@@ -262,7 +259,7 @@ type
     quiet*: bool
 
 proc parseArgs*(argv: openArray[string]): RouterArgs {.role: parser,
-    metaTags: {tagEntrypoint, tagParsing, tagServer}.} =
+    tag: "entrypoint|parsing|server".} =
   ## argv: command line without the executable name.
   var
     i: int = 0
@@ -308,7 +305,7 @@ proc parseArgs*(argv: openArray[string]): RouterArgs {.role: parser,
 
 proc routerConfigCandidates*(named: string,
     home: string = ""): seq[string] {.role: parser,
-    metaTags: {tagConfig, tagServer}.} =
+    tag: "config|server".} =
   ## named: `--config`, or nothing.
   ## home: an explicit Geist folder, or nothing for this machine's.
   ##
@@ -328,7 +325,7 @@ proc routerConfigCandidates*(named: string,
   result.add "/etc/geist/" & routerConfigName
 
 proc applyArgs*(c: RouterConfig, a: RouterArgs): RouterConfig {.
-    role: configurator, metaTags: {tagConfig, tagServer}.} =
+    role: configurator, tag: "config|server".} =
   ## c/a: the file, then whatever was typed over the top of it.
   ##
   ## An option WINS over the file. A config file is a way to stop typing,
@@ -347,7 +344,7 @@ proc applyArgs*(c: RouterConfig, a: RouterArgs): RouterConfig {.
   if a.quiet: result.quiet = true
 
 proc resolveIdentityPassword(c: RouterConfig): string {.role: sanitizer,
-    metaTags: {tagConfig, tagCryptoBoundary, tagServer}.} =
+    tag: "config|cryptoBoundary|server".} =
   ## c: the identity password, from its file. There is no option that
   ## takes it inline: a key password on a command line is in the process
   ## table for every user on the machine.
@@ -357,7 +354,7 @@ proc resolveIdentityPassword(c: RouterConfig): string {.role: sanitizer,
 
 proc collectTrust(c: RouterConfig): tuple[ok: bool, peers: seq[TrustedPeer],
     err: string] {.role: dataFetcher,
-    metaTags: {tagPeerDirectory, tagServer}.} =
+    tag: "peerDirectory|server".} =
   ## c: every `.pin` named by trust or allowWrite, loaded once.
   ##
   ## A pin that will not load is FATAL rather than skipped. Starting with
@@ -385,13 +382,12 @@ proc collectTrust(c: RouterConfig): tuple[ok: bool, peers: seq[TrustedPeer],
 ## ---------------------------- routing -------------------------------
 
 proc refuse(err: string): Reply {.role: helper, inline,
-    metaTags: {tagNetworkSurface, tagServer}.} =
+    tag: "networkSurface|server".} =
   ## err: a refusal a client can act on.
   result = Reply(ok: false, err: err)
 
 proc routeQuery*(S: var RouterState, q: Query, p: PeerContext): Reply {.
-    role: metaOrchestrator, metaTags: {tagNetworkSurface, tagOrchestrator,
-    tagServer}.} =
+    role: metaOrchestrator, tag: "networkSurface|orchestrator|server".} =
   ## S: this router and its health view.
   ## q: the request as it arrived; `q.collection` carries the address.
   ## p: who asked, proved by the handshake.
@@ -440,14 +436,14 @@ proc routeQuery*(S: var RouterState, q: Query, p: PeerContext): Reply {.
 ## ---------------------------- the daemon ----------------------------
 
 proc note(quiet: bool, line: string) {.role: helper,
-    metaTags: {tagServer, tagStatus}.} =
+    tag: "server|status".} =
   ## quiet/line: one status line, on stderr.
   if not quiet:
     stderr.writeLine(line)
 
 proc loadRouterConfig*(named: string, home: string = ""): tuple[ok: bool,
     c: RouterConfig,
-    err: string] {.role: orchestrator, metaTags: {tagConfig, tagServer}.} =
+    err: string] {.role: orchestrator, tag: "config|server".} =
   ## named: `--config`, or nothing to search the usual places.
   ##
   ## A config file that will not parse is FATAL. Running a router on
@@ -473,8 +469,7 @@ proc loadRouterConfig*(named: string, home: string = ""): tuple[ok: bool,
   result = (true, loaded.value, loaded.report.describe())
 
 proc runRouted*(argv: seq[string]): int {.role: metaOrchestrator,
-    metaTags: {tagEntrypoint, tagLifecycle, tagNetworkSurface,
-    tagOrchestrator, tagServer}.} =
+    tag: "entrypoint|lifecycle|networkSurface|orchestrator|server".} =
   ## argv: command line without the executable name.
   var
     a: RouterArgs

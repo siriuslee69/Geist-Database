@@ -24,14 +24,14 @@
 
 import std/[os, strutils, tables]
 
-import geistPragmas
+import runePragmas
 import ../geist/network
 
 type
-  Mode* {.role: truthState, metaTags: {tagCli, tagTypes}.} = enum
+  Mode* {.role: truthState, tag: "cli|types".} = enum
     mDirect, mRemote
 
-  Options* {.role: truthState, metaTags: {tagCli, tagParsing, tagTypes}.} = object
+  Options* {.role: truthState, tag: "cli|parsing|types".} = object
     ## Exported, like the daemon's `DaemonConfig`, so option precedence can
     ## be tested without spawning a process. Nothing else imports this.
     ##
@@ -127,13 +127,13 @@ Pinned trust means each side must already know the other's public keys, so
 exchange the .pin files; hand the daemon your pin with its --trust option.
 """
 
-proc fail(msg: string) {.role: helper, metaTags: {tagCli, tagStatus}.} =
+proc fail(msg: string) {.role: helper, tag: "cli|status".} =
   ## msg: operator-facing error written to stderr before a non-zero exit.
   stderr.writeLine("geist: " & msg)
   quit(1)
 
 proc resolvePassword(o: Options): string {.role: sanitizer,
-    metaTags: {tagCli, tagCryptoBoundary, tagParsing}.} =
+    tag: "cli|cryptoBoundary|parsing".} =
   ## o: parsed options. A password file wins over an inline password,
   ## because the inline form is visible in the process list.
   if o.passwordFile.len > 0:
@@ -143,14 +143,14 @@ proc resolvePassword(o: Options): string {.role: sanitizer,
   result = o.password
 
 proc needsValue(key: string): bool {.role: parser,
-    metaTags: {tagCli, tagParsing}.} =
+    tag: "cli|parsing".} =
   ## key: long option name that consumes the following argument.
   result = key in ["path", "remote", "password", "password-file", "preset",
     "schema", "type", "limit", "slot", "identity", "peer-pin", "pin-out",
     "subject", "config"]
 
 proc parseOptions*(argv: openArray[string]): Options {.role: parser,
-    metaTags: {tagCli, tagParsing, tagRead}.} =
+    tag: "cli|parsing|read".} =
   ## argv: command line without the executable name.
   var
     i: int = 0
@@ -204,7 +204,7 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
   result.mode = if result.remote.len > 0: mRemote else: mDirect
 
 proc withUserConfig*(o: Options): Options {.role: configurator,
-    metaTags: {tagCli, tagConfig, tagParsing}.} =
+    tag: "cli|config|parsing".} =
   ## o: options straight off the command line.
   ##
   ## Fills in only what was NOT typed. A config file is a way to stop
@@ -241,7 +241,7 @@ proc withUserConfig*(o: Options): Options {.role: configurator,
   result.mode = if result.remote.len > 0: mRemote else: mDirect
 
 proc storePaths(o: Options): tuple[dir, name: string] {.role: parser,
-    metaTags: {tagCli, tagParsing, tagStorageIo}.} =
+    tag: "cli|parsing|storageIo".} =
   ## o: options whose --path is split into a store root and a stem.
   if o.path.len == 0:
     fail("--path or --remote is required")
@@ -252,7 +252,7 @@ proc storePaths(o: Options): tuple[dir, name: string] {.role: parser,
     result.name = o.path.splitFile().name
 
 proc livePath(o: Options): string {.role: parser,
-    metaTags: {tagCli, tagRead, tagStorageIo}.} =
+    tag: "cli|read|storageIo".} =
   ## o: options resolved to the current generation's data file, through the
   ## manifest -- every save publishes a new one, so the name is never fixed.
   var
@@ -261,7 +261,7 @@ proc livePath(o: Options): string {.role: parser,
 
 proc openDirect(o: Options, schema: Schema = Schema(),
     forWriting: bool = false): Session {.
-    role: orchestrator, metaTags: {tagCli, tagDb, tagOrchestrator}.} =
+    role: orchestrator, tag: "cli|db|orchestrator".} =
   ## o: options.
   ## schema: used only when creating; an existing file supplies its own.
   ## forWriting: a command that intends to modify the database. It opens
@@ -313,7 +313,7 @@ template writing(o: Options, db, body: untyped) =
 
 proc emitRows(s: Schema, R: seq[Row], asJson: bool,
     at: seq[int] = @[], transposed: bool = false) {.role: helper,
-    metaTags: {tagCli, tagFormatting, tagStatus}.} =
+    tag: "cli|formatting|status".} =
   ## s/R: schema and rows. Rows are self-contained, so no context is needed
   ## to render them.
   ## asJson: machine-readable output instead of an aligned table.
@@ -341,7 +341,7 @@ proc emitRows(s: Schema, R: seq[Row], asJson: bool,
     stdout.write showTable(s, R, style, at)
 
 proc resolveRowRef(db: Session, arg: string): RowId {.role: parser,
-    metaTags: {tagCli, tagDb, tagParsing, tagRead}.} =
+    tag: "cli|db|parsing|read".} =
   ## db/arg: a row named either way a person might name it.
   ##
   ##   @2            the third row of the visible list, as `list` shows it
@@ -369,7 +369,7 @@ proc resolveRowRef(db: Session, arg: string): RowId {.role: parser,
 ## --------------------------- direct commands ------------------------
 
 proc cmdInspect(o: Options) {.role: actor,
-    metaTags: {tagCli, tagRead, tagStatus}.} =
+    tag: "cli|read|status".} =
   ## o: options. Reads header and cluster index ONLY -- no rows, no
   ## password, no lease. This is the command that works on a database
   ## another process currently owns.
@@ -398,7 +398,7 @@ proc cmdInspect(o: Options) {.role: actor,
       $e.auxLen, " B"
 
 proc cmdSchema(o: Options) {.role: actor,
-    metaTags: {tagCli, tagRead, tagStatus}.} =
+    tag: "cli|read|status".} =
   ## o: options. The schema block is stored in clear, so this needs no key.
   var
     p: string = livePath(o)
@@ -435,7 +435,7 @@ proc cmdSchema(o: Options) {.role: actor,
     i = i + 1
 
 proc cmdInit(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagWrite}.} =
+    tag: "cli|db|write".} =
   ## o: options carrying --schema and optionally --type.
   var
     parsed: tuple[ok: bool, s: Schema, err: string]
@@ -455,7 +455,7 @@ proc cmdInit(o: Options) {.role: actor,
   echo "schema: ", describeSchema(parsed.s)
 
 proc cmdPut(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagWrite}.} =
+    tag: "cli|db|write".} =
   ## o: options whose trailing arguments are `field=value` pairs.
   var
     id: RowId = 0'u64
@@ -479,7 +479,7 @@ proc cmdPut(o: Options) {.role: actor,
       echo "appended row ", db.entryCount() - 1'u32
 
 proc rowValues(s: Schema, A: openArray[uint8]): Table[string, string] {.
-    role: parser, metaTags: {tagCli, tagDb, tagRead}.} =
+    role: parser, tag: "cli|db|read".} =
   ## s/A: one stored row turned back into `field -> text`, so an edit can
   ## be applied over it. The reserved columns are left out: they are set
   ## from the id being edited, not from the old row's rendering.
@@ -494,7 +494,7 @@ proc rowValues(s: Schema, A: openArray[uint8]): Table[string, string] {.
     i = i + 1
 
 proc cmdSet(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagWrite}.} =
+    tag: "cli|db|write".} =
   ## o: options; first argument is a row id, the rest are `field=value`.
   ##
   ## Fields NOT named keep what they had. A CLI edit that silently blanked
@@ -529,7 +529,7 @@ proc cmdSet(o: Options) {.role: actor,
     echo "updated row id ", id
 
 proc cmdDelete(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagDelete, tagWrite}.} =
+    tag: "cli|db|delete|write".} =
   ## o: options whose first argument is a row id.
   var
     id: RowId = 0'u64
@@ -546,7 +546,7 @@ proc cmdDelete(o: Options) {.role: actor,
 
 
 proc cmdTranspose(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagStatus, tagWrite}.} =
+    tag: "cli|db|status|write".} =
   ## o: report the column copy's state, and rebuild it unless only asked.
   ##
   ## One command for both questions, because they are the same question:
@@ -583,7 +583,7 @@ proc cmdTranspose(o: Options) {.role: actor,
   echo "rebuilt:       ", describeTransposeState(state.state, state.live,
     state.built)
 proc cmdSweep(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagMaintenance, tagSidecar, tagWrite}.} =
+    tag: "cli|db|maintenance|sidecar|write".} =
   ## o: options. Deletes sidecar payloads no stored row references -- in
   ## this database or in any of its backup slots.
   ##
@@ -603,7 +603,7 @@ proc cmdSweep(o: Options) {.role: actor,
   db.close()
 
 proc cmdCompact(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagMaintenance, tagWrite}.} =
+    tag: "cli|db|maintenance|write".} =
   ## o: options. Reclaims superseded versions and tombstones. Visible rows
   ## and their ids are untouched; the file gets smaller.
   var
@@ -618,7 +618,7 @@ proc cmdCompact(o: Options) {.role: actor,
       " (", done.removed, " reclaimed, ", db.entryCount(), " visible)"
 
 proc cmdList(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagRead}.} =
+    tag: "cli|db|read".} =
   ## o: options; --limit caps the output.
   var
     db: Session
@@ -639,7 +639,7 @@ proc cmdList(o: Options) {.role: actor,
   db.close()
 
 proc cmdGet(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagRead}.} =
+    tag: "cli|db|read".} =
   ## o: options whose first argument is a row index.
   var
     db: Session
@@ -659,7 +659,7 @@ proc cmdGet(o: Options) {.role: actor,
   db.close()
 
 proc cmdFind(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagRead}.} =
+    tag: "cli|db|read".} =
   ## o: options whose arguments are a field name and an exact value.
   ##
   ## Uses the column copy when there is one and it is current, because
@@ -714,7 +714,7 @@ proc cmdFind(o: Options) {.role: actor,
   db.close()
 
 proc cmdInfo(o: Options) {.role: actor,
-    metaTags: {tagCli, tagRead, tagStatus}.} =
+    tag: "cli|read|status".} =
   ## o: options. Needs the password when the database is encrypted.
   var
     db: Session
@@ -765,7 +765,7 @@ proc cmdInfo(o: Options) {.role: actor,
   db.close()
 
 proc cmdCheckpoint(o: Options) {.role: actor,
-    metaTags: {tagCli, tagDb, tagWrite}.} =
+    tag: "cli|db|write".} =
   ## o: options whose first argument is the checkpoint message.
   var
     at: uint32 = 0'u32
@@ -774,7 +774,7 @@ proc cmdCheckpoint(o: Options) {.role: actor,
     echo "journal row ", at, " appended"
 
 proc cmdBackup(o: Options) {.role: actor,
-    metaTags: {tagBackup, tagCli, tagWrite}.} =
+    tag: "backup|cli|write".} =
   ## o: options. Forces a rotation regardless of the configured triggers.
   var
     db: Session
@@ -796,7 +796,7 @@ proc cmdBackup(o: Options) {.role: actor,
   db.close()
 
 proc cmdRestore(o: Options) {.role: actor,
-    metaTags: {tagBackup, tagCli, tagWrite}.} =
+    tag: "backup|cli|write".} =
   ## o: options; --slot selects the rotation slot, 1 being most recent.
   var
     db: Session
@@ -818,7 +818,7 @@ proc cmdRestore(o: Options) {.role: actor,
   db.close()
 
 proc cmdRekey(o: Options) {.role: actor,
-    metaTags: {tagCli, tagCryptoBoundary, tagKeyLifecycle, tagWrite}.} =
+    tag: "cli|cryptoBoundary|keyLifecycle|write".} =
   ## o: options. Re-keys only the batches at their epoch high-water mark;
   ## a fresh keyRef is a fresh nonce space, so no global rewrite happens.
   var
@@ -848,7 +848,7 @@ proc cmdRekey(o: Options) {.role: actor,
   db.close()
 
 proc cmdKeygen(o: Options) {.role: actor,
-    metaTags: {tagCli, tagCryptoBoundary, tagNetworkSurface, tagWrite}.} =
+    tag: "cli|cryptoBoundary|networkSurface|write".} =
   ## o: options carrying --identity, --pin-out and --subject.
   var
     mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
@@ -871,7 +871,7 @@ proc cmdKeygen(o: Options) {.role: actor,
   echo ""
   echo describePin(pinOf(mine.key))
 
-proc cmdPresets() {.role: actor, metaTags: {tagCli, tagConfig, tagRead}.} =
+proc cmdPresets() {.role: actor, tag: "cli|config|read".} =
   ## The public preset catalog.
   for p in geistConfigPresets():
     echo alignLeft(p.name, 16), p.purpose
@@ -879,7 +879,7 @@ proc cmdPresets() {.role: actor, metaTags: {tagCli, tagConfig, tagRead}.} =
 ## --------------------------- remote commands ------------------------
 
 proc remotePut(o: Options, link: var GeistLink) {.role: actor,
-    metaTags: {tagCli, tagNetworkSurface, tagWrite}.} =
+    tag: "cli|networkSurface|write".} =
   ## o: options whose trailing arguments are `field=value` pairs.
   ## link: an open session to the daemon.
   ##
@@ -913,7 +913,7 @@ proc remotePut(o: Options, link: var GeistLink) {.role: actor,
   echo "stored ", sent.reply.matched, " row(s) remotely"
 
 proc connectRemote(o: Options): GeistLink {.role: orchestrator,
-    metaTags: {tagAme, tagCli, tagNetworkSurface, tagOrchestrator}.} =
+    tag: "ame|cli|networkSurface|orchestrator".} =
   ## o: options naming the peer, this side's identity and the peer's pin.
   ##
   ## Both halves of the pinning are required and neither has a default: a
@@ -943,8 +943,7 @@ proc connectRemote(o: Options): GeistLink {.role: orchestrator,
     fail("connect failed: " & got.err)
   result = got.link
 
-proc cmdSync(o: Options) {.role: orchestrator, metaTags: {tagAme, tagCli,
-    tagDb, tagNetworkSurface, tagOrchestrator, tagSync, tagWrite}.} =
+proc cmdSync(o: Options) {.role: orchestrator, tag: "ame|cli|db|networkSurface|orchestrator|sync|write".} =
   ## o: options naming BOTH a local database (--path) and a peer
   ## (--remote). This is the one command that is neither direct nor remote
   ## but both: it reads there and writes here.
@@ -979,7 +978,7 @@ proc cmdSync(o: Options) {.role: orchestrator, metaTags: {tagAme, tagCli,
     " request(s); now at log position ", caught.cursor
 
 proc runRemote(o: Options, q: Query) {.role: orchestrator,
-    metaTags: {tagAme, tagCli, tagNetworkSurface, tagOrchestrator}.} =
+    tag: "ame|cli|networkSurface|orchestrator".} =
   ## o: options carrying --remote.
   ## q: the same Query the direct path would have run locally.
   var
@@ -1007,7 +1006,7 @@ proc runRemote(o: Options, q: Query) {.role: orchestrator,
     echo answer.reply.rows.len, " row(s), ", answer.reply.matched, " matched"
 
 proc remoteQuery(o: Options): Query {.role: truthBuilder,
-    metaTags: {tagCli, tagNetworkSurface, tagParsing}.} =
+    tag: "cli|networkSurface|parsing".} =
   ## o: options translated into the Query a daemon can answer.
   result.limit = uint32(o.limit)
   case o.command
@@ -1050,7 +1049,7 @@ proc remoteQuery(o: Options): Query {.role: truthBuilder,
 ## ------------------------------ entry -------------------------------
 
 proc runGeistCli*(argv: seq[string]): int {.role: metaOrchestrator,
-    metaTags: {tagCli, tagEntrypoint, tagOrchestrator}.} =
+    tag: "cli|entrypoint|orchestrator".} =
   ## argv: command line without the executable name.
   var
     o: Options

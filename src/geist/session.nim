@@ -14,7 +14,7 @@ import std/[os, strutils, times]
 
 import tyr
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./format
 import ./lease
@@ -32,23 +32,20 @@ import ./show
 import ./transpose
 
 type
-  Subscription* {.role: truthState, metaTags: {tagAppApi, tagDb, tagSync,
-      tagTypes}.} = object
+  Subscription* {.role: truthState, tag: "appApi|db|sync|types".} = object
     ## id: caller-chosen name, stable across reconnects.
     ## cursor: last change ordinal delivered.
     id*: string
     cursor*: uint64
     createdAt*: Timestamp
 
-  ChangeKind* {.role: truthState, metaTags: {tagAppApi, tagDb, tagSync,
-      tagTypes}.} = enum
+  ChangeKind* {.role: truthState, tag: "appApi|db|sync|types".} = enum
     ## What happened to a row. A follower needs the distinction: an update
     ## replaces what it holds, a delete removes it, and both arrive as an
     ## appended row that looks the same on disk.
     ckAdded, ckUpdated, ckDeleted, ckJournal
 
-  ChangeEvent* {.role: truthState, metaTags: {tagAppApi, tagDb, tagSync,
-      tagTypes}.} = object
+  ChangeEvent* {.role: truthState, tag: "appApi|db|sync|types".} = object
     ## ordinal: monotonic within a session, and the cursor a subscriber
     ##   resumes from.
     ## rowId: WHICH row, in words a peer also understands. Zero for a
@@ -62,8 +59,7 @@ type
     rowIndex*: uint32
     at*: Timestamp
 
-  StorageStats* {.role: truthState, metaTags: {tagAppApi, tagDb, tagStatus,
-      tagTypes}.} = object
+  StorageStats* {.role: truthState, tag: "appApi|db|status|types".} = object
     ## What the column policy cost this session, per cluster and summed.
     ## `truncated` is the number that matters: `opTruncate` discards bytes
     ## by design and leaves nothing in the row to say so, so this counter
@@ -73,7 +69,7 @@ type
     externalised*: uint32
     truncatedIn*: seq[FieldName]
 
-  Session* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  Session* {.role: truthState, tag: "appApi|db|types".} = object
     ## The single runtime handle. `dirty` gates writes; `generation` is the
     ## number published in the manifest.
     config*: GeistConfig
@@ -128,23 +124,23 @@ type
     lastSaveAt*: Timestamp
 
 proc dataPath*(s: Session): string {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagStorageIo}.} =
+    tag: "appApi|db|storageIo".} =
   ## s: session whose live data file path is returned.
   result = s.baseDir / (s.baseName & ".ge1st" & generationSuffix(s.generation))
 
 proc keyPath*(s: Session): string {.role: helper,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagDb, tagStorageIo}.} =
+    tag: "appApi|cryptoBoundary|db|storageIo".} =
   ## s: session whose live key file path is returned.
   result = s.baseDir / (s.baseName & keySuffix & generationSuffix(s.generation))
 
 proc ledgerPath*(s: Session): string {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagLedger, tagStorageIo}.} =
+    tag: "appApi|db|ledger|storageIo".} =
   ## s: session whose live ledger path is returned.
   result = s.baseDir /
     (s.baseName & ledgerSuffix & generationSuffix(s.generation))
 
 proc artifactSet*(s: Session): seq[string] {.role: helper,
-    metaTags: {tagAppApi, tagBackup, tagDb, tagStorageIo}.} =
+    tag: "appApi|backup|db|storageIo".} =
   ## s: session whose three inseparable artifacts are listed together.
   ## Anything that copies, backs up or swaps a database must take all
   ## three: the data alone is unrecoverable without keys AND ledger.
@@ -154,7 +150,7 @@ proc artifactSet*(s: Session): seq[string] {.role: helper,
     result.add s.ledgerPath()
 
 proc backupStems*(s: Session): seq[string] {.role: helper,
-    metaTags: {tagAppApi, tagBackup, tagDb, tagStorageIo}.} =
+    tag: "appApi|backup|db|storageIo".} =
   ## s: session whose backup slot names are returned, WITHOUT a generation
   ## suffix.
   ##
@@ -170,7 +166,7 @@ proc backupStems*(s: Session): seq[string] {.role: helper,
 
 proc noteChange(S: var Session, role: ClusterRole, rowIndex: uint32,
     kind: ChangeKind = ckAdded, id: RowId = 0'u64) {.
-    role: stateController, metaTags: {tagDb, tagSync, tagWrite}.} =
+    role: actor, tag: "db|sync|write".} =
   ## S: session whose changefeed records one mutation.
   ## role/rowIndex: what moved, so a subscriber can fetch just that row.
   ## kind/id: what KIND of change, to which row -- the two things a remote
@@ -182,7 +178,7 @@ proc noteChange(S: var Session, role: ClusterRole, rowIndex: uint32,
 
 proc verifyGeneration*(baseDir, baseName: string, n: uint64,
     encrypted: bool): tuple[ok: bool, err: string] {.role: parser,
-    metaTags: {tagDb, tagKeyLifecycle, tagRead, tagStorageIo}.}
+    tag: "db|keyLifecycle|read|storageIo".}
   ## Forward-declared: opening a database has to check a generation before
   ## trusting it, and so does saving one.
 
@@ -213,7 +209,7 @@ const
     ## is how a follower finds that out instead of quietly diverging.
 
 proc readMetaCounter(s: Session, label: string): uint64 {.role: parser,
-    metaTags: {tagDb, tagRead}.} =
+    tag: "db|read".} =
   ## s/label: one stored bookkeeping number, zero when it was never written.
   var
     i: uint32 = 0'u32
@@ -225,14 +221,14 @@ proc readMetaCounter(s: Session, label: string): uint64 {.role: parser,
     i = i + 1
 
 proc readIdWatermark(s: Session): RowId {.role: parser,
-    metaTags: {tagDb, tagRead}.} =
+    tag: "db|read".} =
   ## s: session whose stored allocator position is returned, zero if none
   ## was ever written (a database from before this existed, or one that has
   ## never been saved).
   result = RowId(s.readMetaCounter(watermarkLabel))
 
 proc stampMetaCounters(S: var Session) {.role: dataWriter,
-    metaTags: {tagDb, tagWrite}.} =
+    tag: "db|write".} =
   ## S: session whose meta cluster is rewritten to carry exactly one row per
   ## bookkeeping number. The meta cluster is `cmMutable`, so replacing it is
   ## what it is for; two rows with the same label would be ambiguous.
@@ -275,7 +271,7 @@ proc stampMetaCounters(S: var Session) {.role: dataWriter,
   S.meta = fresh
 
 proc indexLive*(S: var Session) {.role: truthBuilder,
-    metaTags: {tagDb, tagRead, tagStore}.} =
+    tag: "db|read|store".} =
   ## S: session whose live view is rebuilt from the log it just loaded.
   ##
   ## One pass. For each row it reads `__rowId` and `__flags` and nothing
@@ -321,13 +317,13 @@ proc indexLive*(S: var Session) {.role: truthBuilder,
   S.logEpoch = S.readMetaCounter(logEpochLabel)
 
 proc hasIdentity*(s: Session): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: session asked whether its rows can be named, and therefore whether
   ## `set`, `delete` and `byId` are available at all.
   result = s.entries.schema.hasIdentity()
 
 proc requireIdentity(s: Session) {.role: sanitizer,
-    metaTags: {tagAppApi, tagDb, tagStatus}.} =
+    tag: "appApi|db|status".} =
   ## s: session checked before an operation that needs a row to have a name.
   if not s.hasIdentity():
     raise newException(ValueError,
@@ -338,7 +334,7 @@ proc requireIdentity(s: Session) {.role: sanitizer,
 
 proc resolveGeneration*(baseDir, baseName: string,
     encrypted: bool): tuple[n: uint64, repaired: bool] {.role: parser,
-    metaTags: {tagDb, tagKeyLifecycle, tagRead, tagStorageIo}.} =
+    tag: "db|keyLifecycle|read|storageIo".} =
   ## baseDir/baseName/encrypted: the database being opened.
   ##
   ## Normally this returns exactly what the manifest says. It walks down
@@ -370,8 +366,7 @@ proc resolveGeneration*(baseDir, baseName: string,
 proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
     c: GeistConfig = appConfig(), password: string = "",
     readOnly: bool = false): Session {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagOrchestrator,
-    tagStorageIo}.} =
+    role: orchestrator, tag: "appApi|db|orchestrator|storageIo".} =
   ## baseDir: store root holding the artifact set and the manifest.
   ## baseName: database stem, e.g. "main".
   ## schemaIn: entry-cluster schema. A schema loaded from an existing file
@@ -546,20 +541,19 @@ proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
 proc openSession*[T: object](baseDir, baseName: string,
     c: GeistConfig = appConfig(), password: string = "",
     readOnly: bool = false): Session {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagOrchestrator,
-    tagStorageIo}.} =
+    role: orchestrator, tag: "appApi|db|orchestrator|storageIo".} =
   ## baseDir/baseName/c/password/readOnly: as for `openSessionWithSchema`.
   ## T: object type whose declaration order defines the entry schema.
   result = openSessionWithSchema(baseDir, baseName, schemaFor[T](), c,
     password, readOnly)
 
 proc save*(S: var Session): tuple[ok: bool, err: string] {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagOrchestrator, tagStorageIo, tagWrite}.}
+    tag: "appApi|db|orchestrator|storageIo|write".}
   ## Forward-declared: the write policy below has to be reachable from
   ## `put`, and it decides by calling this.
 
 proc flushDue*(s: Session): bool {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagStatus}.} =
+    tag: "appApi|db|status".} =
   ## s: session asked whether its configuration wants a flush right now.
   ## Pure, so a caller driving `wmInterval` from its own event loop can ask
   ## without writing anything.
@@ -574,7 +568,7 @@ proc flushDue*(s: Session): bool {.role: parser,
         uint64(s.config.writeIntervalSeconds)
 
 proc maybeFlush*(S: var Session): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagStorageIo, tagWrite}.} =
+    role: orchestrator, tag: "appApi|db|storageIo|write".} =
   ## S: session flushed if and only if `writeMode` says so.
   ##
   ## Called after every mutation, and safe to call from a timer as well:
@@ -586,7 +580,7 @@ proc maybeFlush*(S: var Session): tuple[ok: bool, err: string] {.
   result = S.save()
 
 proc writeRefusal*(s: Session): string {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagStatus}.} =
+    tag: "appApi|db|status".} =
   ## s: read-only session explaining ITSELF, because "read-only" alone does
   ## not tell an operator whether to close another window or fix their code.
   if s.leaseHolder.len > 0:
@@ -596,7 +590,7 @@ proc writeRefusal*(s: Session): string {.role: helper,
 
 proc appendPacked(S: var Session, A: openArray[uint8], id: RowId,
     flags: uint64, kind: ChangeKind): uint32 {.role: dataWriter,
-    metaTags: {tagDb, tagStore, tagWrite}.} =
+    tag: "db|store|write".} =
   ## S: session receiving one already-packed row.
   ## A: the row bytes.
   ## id/flags: its identity, for the live view and the changefeed.
@@ -617,7 +611,7 @@ proc appendPacked(S: var Session, A: openArray[uint8], id: RowId,
 
 proc packFor[T: object](S: var Session, x: T, id: RowId,
     flags: uint64): ByteSeq {.role: encryptor,
-    metaTags: {tagDb, tagStore, tagWrite}.} =
+    tag: "db|store|write".} =
   ## S/x/id/flags: one object packed against the entry schema, with its
   ## identity columns filled in. Raises on a column policy violation, which
   ## is the caller's data being wrong rather than a defect here.
@@ -636,8 +630,8 @@ proc packFor[T: object](S: var Session, x: T, id: RowId,
     i = i + 1
   result = built.data
 
-proc nextRowId(S: var Session): RowId {.role: stateController,
-    metaTags: {tagDb, tagWrite}.} =
+proc nextRowId(S: var Session): RowId {.role: actor,
+    tag: "db|write".} =
   ## S: session allocating the next never-used identity. Zero when the
   ## database stores no identity, which is what tells the writers to skip
   ## the live view entirely.
@@ -646,7 +640,7 @@ proc nextRowId(S: var Session): RowId {.role: stateController,
   result = S.live.freshRowId()
 
 proc put*[T: object](S: var Session, x: T): RowId {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagOrchestrator, tagStore, tagWrite},
+    tag: "appApi|db|orchestrator|store|write",
     discardable.} =
   ## S: open session.
   ## x: object appended, then flushed if `writeMode` calls for it. A failed
@@ -665,8 +659,7 @@ proc put*[T: object](S: var Session, x: T): RowId {.role: orchestrator,
     raise newException(IOError, written.err)
 
 proc put*[T: object](S: var Session, A: openArray[T]): seq[RowId] {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagOrchestrator,
-    tagStore, tagWrite}, discardable.} =
+    role: orchestrator, tag: "appApi|db|orchestrator|store|write", discardable.} =
   ## S: open session.
   ## A: objects appended in order, then flushed ONCE. Under `wmOnChange`
   ##   that is the difference between one whole-file rewrite and `A.len` of
@@ -686,8 +679,7 @@ proc put*[T: object](S: var Session, A: openArray[T]): seq[RowId] {.
     raise newException(IOError, written.err)
 
 proc set*[T: object](S: var Session, id: RowId, x: T): bool {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagOrchestrator,
-    tagStore, tagWrite}, discardable.} =
+    role: orchestrator, tag: "appApi|db|orchestrator|store|write", discardable.} =
   ## S: open session.
   ## id: the row being replaced.
   ## x: its new contents.
@@ -710,7 +702,7 @@ proc set*[T: object](S: var Session, id: RowId, x: T): bool {.
   result = true
 
 proc delete*(S: var Session, id: RowId): bool {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagOrchestrator, tagStore, tagWrite},
+    tag: "appApi|db|orchestrator|store|write",
     discardable.} =
   ## S: open session.
   ## id: the row being removed.
@@ -741,7 +733,7 @@ proc delete*(S: var Session, id: RowId): bool {.role: orchestrator,
   result = true
 
 proc putRow*(S: var Session, r: Row): RowId {.role: dataWriter,
-    metaTags: {tagAppApi, tagDb, tagStore, tagWrite}, discardable.} =
+    tag: "appApi|db|store|write", discardable.} =
   ## S: open session.
   ## r: a row already built against `S.entries.schema` -- the path a
   ## schema-driven tool uses when it has no compile-time object type, and
@@ -784,16 +776,15 @@ proc putRow*(S: var Session, r: Row): RowId {.role: dataWriter,
   if not written.ok:
     raise newException(IOError, written.err)
 
-proc nextIdFor*(S: var Session): RowId {.role: stateController,
-    metaTags: {tagAppApi, tagDb, tagWrite}.} =
+proc nextIdFor*(S: var Session): RowId {.role: actor,
+    tag: "appApi|db|write".} =
   ## S: session handing out the id a schema-driven caller should stamp into
   ## the row it is about to build. Not consumed until that row is stored,
   ## so asking twice without storing gives the same answer.
   result = S.nextRowId()
 
 proc compact*(S: var Session): tuple[ok: bool, removed: uint32,
-    err: string] {.role: orchestrator, metaTags: {tagAppApi, tagDb,
-    tagOrchestrator, tagStorageIo, tagWrite}.} =
+    err: string] {.role: orchestrator, tag: "appApi|db|orchestrator|storageIo|write".} =
   ## S: session whose log is rewritten to hold only what is visible.
   ##
   ##   before  id1 v1 | id2 v1 | id1 v2 | id3 v1 | id3 tombstone
@@ -837,7 +828,7 @@ proc compact*(S: var Session): tuple[ok: bool, removed: uint32,
   result.ok = true
 
 proc storageStats*(s: Session): StorageStats {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## s: session reporting what its column policy cost.
   ##
   ## Read this after a bulk load. A non-zero `truncated` means values were
@@ -863,7 +854,7 @@ proc storageStats*(s: Session): StorageStats {.role: parser,
 ## needs -- and `compact` is what makes them equal again.
 
 proc entryCount*(s: Session): uint32 {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: session whose VISIBLE row count is returned: current versions,
   ## tombstones excluded.
   if not s.hasIdentity():
@@ -871,13 +862,13 @@ proc entryCount*(s: Session): uint32 {.role: parser, inline,
   result = s.live.liveCount()
 
 proc logCount*(s: Session): uint32 {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## s: session whose STORED row count is returned, superseded versions
   ## and tombstones included. The number `compact` reduces.
   result = s.entries.rowCount
 
 proc livePosition*(s: Session, i: uint32): uint32 {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/i: the i-th visible row resolved to its position in the log.
   ## Identity-free databases pass positions straight through, because there
   ## the log IS the view.
@@ -889,7 +880,7 @@ proc livePosition*(s: Session, i: uint32): uint32 {.role: parser,
   result = s.live.live[int(i)]
 
 proc rowIds*(s: Session): seq[RowId] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: the ids of every visible row, in view order -- what a caller
   ## iterates when it intends to `set` or `delete` afterwards.
   var
@@ -905,7 +896,7 @@ proc rowIds*(s: Session): seq[RowId] {.role: parser,
     i = i + 1
 
 proc get*[T: object](s: Session, i: uint32): T {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: session to read from.
   ## i: index into the VISIBLE rows, not into the log. Superseded versions
   ##   and tombstones are not addressable this way -- `get(0)` is the first
@@ -913,13 +904,13 @@ proc get*[T: object](s: Session, i: uint32): T {.role: parser,
   result = objectAt[T](s.entries, s.livePosition(i))
 
 proc rawRowAt*(s: Session, i: uint32): Row {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/i: one row of the LOG, by log position, exactly as stored. For
   ## replication and inspection: `get` is what an application wants.
   result = s.entries.rowAt(i)
 
 proc byId*[T: object](s: Session, id: RowId): tuple[found: bool, value: T] {.
-    role: parser, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    role: parser, tag: "appApi|db|read".} =
   ## s/id: the newest version of one row.
   ## `found` is false for an id that never existed AND for one that was
   ## deleted: both mean the caller has nothing to show.
@@ -936,7 +927,7 @@ proc byId*[T: object](s: Session, id: RowId): tuple[found: bool, value: T] {.
   result = (true, objectAt[T](s.entries, uint32(at)))
 
 proc idAt*(s: Session, i: uint32): RowId {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/i: the id of the i-th visible row, so a caller that found something
   ## by reading can name it when changing it.
   if not s.hasIdentity():
@@ -945,7 +936,7 @@ proc idAt*(s: Session, i: uint32): RowId {.role: parser,
     s.entries.rowBytesAt(s.livePosition(i)))
 
 proc find*[T: object](s: Session, field, value: string): seq[T] {.
-    role: parser, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    role: parser, tag: "appApi|db|read".} =
   ## s: session to search.
   ## field: object field name.
   ## value: exact text match.
@@ -973,7 +964,7 @@ proc find*[T: object](s: Session, field, value: string): seq[T] {.
     i = i + 1
 
 proc findIds*(s: Session, field, value: string): seq[RowId] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/field/value: the same search, returning IDS instead of objects --
   ## the call to make when the next step is `set` or `delete`.
   var
@@ -997,7 +988,7 @@ proc findIds*(s: Session, field, value: string): seq[RowId] {.role: parser,
 
 proc verifyGeneration*(baseDir, baseName: string, n: uint64,
     encrypted: bool): tuple[ok: bool, err: string] {.role: parser,
-    metaTags: {tagDb, tagKeyLifecycle, tagRead, tagStorageIo}.} =
+    tag: "db|keyLifecycle|read|storageIo".} =
   ## baseDir/baseName/n: the generation being checked, before or after it is
   ##   published.
   ## encrypted: whether a key file and ledger belong to the set.
@@ -1029,8 +1020,7 @@ proc verifyGeneration*(baseDir, baseName: string, n: uint64,
 
 proc publishGeneration(S: var Session, next: uint64,
     staged: tuple[ok: bool, err: string]): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagDb, tagKeyLifecycle, tagOrchestrator,
-    tagStorageIo, tagWrite}.} =
+    role: orchestrator, tag: "db|keyLifecycle|orchestrator|storageIo|write".} =
   ## S: session whose live generation is being replaced.
   ## next: the generation already written to disk under its own name.
   ## staged: how the writing went. A failure is passed straight through
@@ -1068,7 +1058,7 @@ proc publishGeneration(S: var Session, next: uint64,
   result = (true, "")
 
 proc transposeDue(S: Session): bool {.role: parser,
-    metaTags: {tagDb, tagStatus}.} =
+    tag: "db|status".} =
   ## S: whether this save should rebuild the column copy.
   ##
   ## `tmInterval` measures from the copy's own modification time rather
@@ -1095,7 +1085,7 @@ proc transposeDue(S: Session): bool {.role: parser,
 
 proc writeTransposedNow(S: Session,
     generation: uint64): tuple[ok: bool, err: string] {.role: orchestrator,
-    metaTags: {tagDb, tagStorageIo, tagWrite}.} =
+    tag: "db|storageIo|write".} =
   ## S/generation: build the column copy for one generation and drop the
   ## copies of every other. Old ones are not kept: nobody reads a stale
   ## column file, because a reader asks whether it is current first.
@@ -1193,8 +1183,7 @@ proc save*(S: var Session): tuple[ok: bool, err: string] =
   result = (true, "")
 
 proc checkpoint*(S: var Session, message: string = "checkpoint"): uint32 {.
-    role: stateController, metaTags: {tagAppApi, tagDb, tagStateController,
-    tagSync, tagWrite}, discardable.} =
+    role: actor, tag: "appApi|db|stateController|sync|write", discardable.} =
   ## S: session whose journal receives a hash-chained checkpoint row.
   ## message: human-readable reason.
   var
@@ -1214,9 +1203,8 @@ proc checkpoint*(S: var Session, message: string = "checkpoint"): uint32 {.
   if not written.ok:
     raise newException(IOError, written.err)
 
-proc close*(S: var Session) {.role: stateController,
-    metaTags: {tagAppApi, tagDb, tagLifecycle, tagStateController,
-    tagStorageIo}.} =
+proc close*(S: var Session) {.role: actor,
+    tag: "appApi|db|lifecycle|stateController|storageIo".} =
   ## S: session persisted if dirty, then cleared from memory.
   ##
   ## `wmVolatile` DISCARDS instead. That is the whole meaning of the mode:
@@ -1242,8 +1230,7 @@ proc close*(S: var Session) {.role: stateController,
   S.loaded = false
 
 proc restoreSlot*(S: var Session, slot: int): tuple[ok: bool,
-    err: string] {.role: orchestrator, metaTags: {tagAppApi, tagBackup,
-    tagDb, tagOrchestrator, tagStorageIo, tagWrite}.} =
+    err: string] {.role: orchestrator, tag: "appApi|backup|db|orchestrator|storageIo|write".} =
   ## S: session whose database is replaced by one of its backup slots.
   ## slot: 1 is the most recent copy.
   ##
@@ -1317,7 +1304,7 @@ proc restoreSlot*(S: var Session, slot: int): tuple[ok: bool,
 
 proc sidecarRefsIn(s: Schema, C: ClusterBuild,
     into: var seq[string]) {.role: parser,
-    metaTags: {tagDb, tagRead, tagSidecar}.} =
+    tag: "db|read|sidecar".} =
   ## s/C: schema and cluster whose external column values are collected.
   ## into: locators appended, duplicates and all -- the caller only ever
   ##   asks whether a locator is present.
@@ -1339,7 +1326,7 @@ proc sidecarRefsIn(s: Schema, C: ClusterBuild,
     i = i + 1
 
 proc sidecarRefs*(s: Session): seq[string] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead, tagSidecar}.} =
+    tag: "appApi|db|read|sidecar".} =
   ## s: session whose every stored row is scanned for sidecar references.
   ## Superseded versions count: they are still in the log, and a follower
   ## catching up will be sent them.
@@ -1349,7 +1336,7 @@ proc sidecarRefs*(s: Session): seq[string] {.role: parser,
 
 proc backupSidecarRefs(s: Session): tuple[ok: bool, refs: seq[string],
     err: string] {.role: parser,
-    metaTags: {tagBackup, tagDb, tagRead, tagSidecar}.} =
+    tag: "backup|db|read|sidecar".} =
   ## s: session whose BACKUP slots are scanned the same way.
   ##
   ## Each slot is opened where it lies, by copying the set into a scratch
@@ -1402,7 +1389,7 @@ proc backupSidecarRefs(s: Session): tuple[ok: bool, refs: seq[string],
 
 proc sweepSidecar*(S: var Session): tuple[ok: bool, removed: int,
     bytes: uint64, err: string] {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagMaintenance, tagSidecar, tagWrite}.} =
+    tag: "appApi|db|maintenance|sidecar|write".} =
   ## S: session whose sidecar payloads are reclaimed.
   ##
   ## Deletes every payload no stored row references -- in this database or
@@ -1461,7 +1448,7 @@ proc sweepSidecar*(S: var Session): tuple[ok: bool, removed: int,
 
 proc rowsSince*(s: Session, cursor: uint64, limit: int = 256,
     byteBudget: int = 0): seq[Row] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead, tagSync}.} =
+    tag: "appApi|db|read|sync".} =
   ## s: session being read from.
   ## cursor: the follower's log position -- how many rows it already has.
   ## limit: maximum rows per call.
@@ -1488,8 +1475,7 @@ proc rowsSince*(s: Session, cursor: uint64, limit: int = 256,
     i = i + 1'u32
 
 proc applyRow*(S: var Session, r: Row): tuple[ok: bool, id: RowId,
-    err: string] {.role: dataWriter, metaTags: {tagAppApi, tagDb, tagSync,
-    tagWrite}.} =
+    err: string] {.role: dataWriter, tag: "appApi|db|sync|write".} =
   ## S: session receiving one row FROM A PEER.
   ## r: the row exactly as the peer stored it, identity included.
   ##
@@ -1529,7 +1515,7 @@ proc applyRow*(S: var Session, r: Row): tuple[ok: bool, id: RowId,
 
 proc applyRows*(S: var Session, R: openArray[Row]): tuple[ok: bool,
     applied: int, err: string] {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagSync, tagWrite}.} =
+    tag: "appApi|db|sync|write".} =
   ## S/R: a batch from a peer, applied IN ORDER and flushed once.
   ##
   ## Order matters and is the sender's: two versions of one row must not
@@ -1552,8 +1538,8 @@ proc applyRows*(S: var Session, R: openArray[Row]): tuple[ok: bool,
 ## --------------------------- change following -----------------------
 
 proc subscribe*(S: var Session, id: string, replay: bool = false,
-    fromOrdinal: uint64 = 0'u64): Subscription {.role: stateController,
-    metaTags: {tagAppApi, tagDb, tagSync, tagWrite}, discardable.} =
+    fromOrdinal: uint64 = 0'u64): Subscription {.role: actor,
+    tag: "appApi|db|sync|write", discardable.} =
   ## S: session whose changefeed gains a cursor.
   ## id: stable subscription name, reused across reconnects.
   ## replay: true rewinds to `fromOrdinal`; the default starts at the
@@ -1574,7 +1560,7 @@ proc subscribe*(S: var Session, id: string, replay: bool = false,
 
 proc poll*(S: var Session, id: string,
     limit: int = 64): seq[ChangeEvent] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead, tagSync}.} =
+    tag: "appApi|db|read|sync".} =
   ## S: session to drain.
   ## id: subscription whose cursor advances past the returned events.
   ## limit: maximum events per call.
@@ -1595,8 +1581,8 @@ proc poll*(S: var Session, id: string,
     i = i + 1
   raise newException(ValueError, "no such subscription: " & id)
 
-proc unsubscribe*(S: var Session, id: string) {.role: stateController,
-    metaTags: {tagAppApi, tagDb, tagSync, tagWrite}.} =
+proc unsubscribe*(S: var Session, id: string) {.role: actor,
+    tag: "appApi|db|sync|write".} =
   ## S/id: session and subscription removed.
   var
     i: int = 0
@@ -1609,7 +1595,7 @@ proc unsubscribe*(S: var Session, id: string) {.role: stateController,
 ## --------------------------- observation ----------------------------
 
 proc observe*(path: string): tuple[ok: bool, f: GeistFile, err: string] {.
-    role: dataFetcher, metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    role: dataFetcher, tag: "appApi|db|read|status".} =
   ## path: a Geist file this process does NOT own.
   ## Reads only the header and cluster index, so a daemon can follow a
   ## database without loading rows, taking a lease, or decrypting anything.
@@ -1618,7 +1604,7 @@ proc observe*(path: string): tuple[ok: bool, f: GeistFile, err: string] {.
 proc observeStore*(baseDir: string,
     baseName: string = "main"): tuple[ok: bool, f: GeistFile, path: string,
     err: string] {.role: dataFetcher,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## baseDir/baseName: a store root this process does NOT own.
   ##
   ## Prefer this to `observe`. A save publishes a NEW generation, so the
@@ -1637,7 +1623,7 @@ proc observeStore*(baseDir: string,
 proc followStore*(before: GeistFile, baseDir: string,
     baseName: string = "main"): tuple[ok: bool, f: GeistFile,
     changed: seq[int], path: string, err: string] {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## before: the previous index read.
   ## baseDir/baseName: same store, re-resolved through the manifest.
   ##
@@ -1662,13 +1648,13 @@ proc followStore*(before: GeistFile, baseDir: string,
 ## lines of a million-row store costs twenty rows.
 
 proc visibleRow*(s: Session, i: uint32): Row {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/i: the i-th VISIBLE row -- superseded versions and tombstones are
   ## in the log, not in the list a person asked for.
   result = s.entries.rowAt(s.livePosition(i))
 
 proc shownSlice(s: Session, limit: int): tuple[rows: seq[Row], at: seq[int],
-    gapAfter: int] {.role: dataFetcher, metaTags: {tagDb, tagRead}.} =
+    gapAfter: int] {.role: dataFetcher, tag: "db|read".} =
   ## s/limit: the head and tail this style will print, and nothing else.
   var
     n: int = int(s.entryCount())
@@ -1680,7 +1666,7 @@ proc shownSlice(s: Session, limit: int): tuple[rows: seq[Row], at: seq[int],
 
 proc show*(s: Session,
     style: ShowStyle = defaultShowStyle()): string {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagFormatting, tagRead}.} =
+    tag: "appApi|db|formatting|read".} =
   ## s/style: the visible rows as an aligned table, elided by default.
   var
     slice: tuple[rows: seq[Row], at: seq[int], gapAfter: int]
@@ -1690,7 +1676,7 @@ proc show*(s: Session,
 
 proc showTransposed*(s: Session,
     style: ShowStyle = defaultShowStyle()): string {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagFormatting, tagRead}.} =
+    tag: "appApi|db|formatting|read".} =
   ## s/style: the same rows with the axes swapped -- one line per field.
   var
     swapped: ShowStyle = style
@@ -1702,7 +1688,7 @@ proc showTransposed*(s: Session,
     int(s.entryCount()), slice.gapAfter, swapped, transposed = true)
 
 proc `$`*(s: Session): string {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagFormatting, tagRead}.} =
+    tag: "appApi|db|formatting|read".} =
   ## `echo db`, with the default style. A Session that printed its object
   ## fields instead would print a key set and a lease, which is both
   ## useless and the last thing anyone wants in a log.
@@ -1717,8 +1703,7 @@ proc `$`*(s: Session): string {.role: helper,
 
 
 proc syncTransposed*(S: var Session): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagStorageIo,
-    tagWrite}.} =
+    role: orchestrator, tag: "appApi|db|storageIo|write".} =
   ## S: rebuild the column copy from what is on disk NOW, whatever the
   ## configured mode says.
   ##
@@ -1736,12 +1721,12 @@ proc syncTransposed*(S: var Session): tuple[ok: bool, err: string] {.
 
 proc transposeState*(S: Session): tuple[state: TransposeState, live: uint64,
     built: uint64, path: string] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## S: which of the two copies is ahead, read from the files themselves.
   result = transposeState(S.baseDir, S.baseName)
 
 proc transposedView*(S: Session): tuple[ok: bool, t: TransposedFile,
-    err: string] {.role: parser, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    err: string] {.role: parser, tag: "appApi|db|read".} =
   ## S: the column copy, opened for reading, IF it matches the live
   ## generation. A stale copy is refused rather than silently searched:
   ## the answer would be yesterday's rows, which is worse than a slow
@@ -1756,7 +1741,7 @@ proc transposedView*(S: Session): tuple[ok: bool, t: TransposedFile,
   result = openTransposed(state.path)
 
 proc visibleIndexOf*(s: Session, logPosition: uint32): int {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/logPosition: where a row of the LOG appears in the visible list, or
   ## -1 when it does not appear at all.
   ##

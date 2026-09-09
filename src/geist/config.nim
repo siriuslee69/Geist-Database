@@ -21,7 +21,7 @@
 
 import std/strutils
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./backup
 import ./crypto/batch
@@ -30,7 +30,7 @@ import ./crypto/hashing
 export hashing
 
 type
-  WriteMode* {.role: configurator, metaTags: {tagConfig, tagDb, tagTypes}.} = enum
+  WriteMode* {.role: configurator, tag: "config|db|types".} = enum
     ## When pending state reaches disk. Orthogonal to column policy.
     ## `Session.maybeFlush` is what acts on this, after every mutation.
     ##
@@ -45,8 +45,7 @@ type
     ## which is why it is not the default.
     wmOnChange, wmInterval, wmManual, wmVolatile
 
-  TransposeMode* {.role: configurator, metaTags: {tagConfig, tagDb,
-      tagTypes}.} = enum
+  TransposeMode* {.role: configurator, tag: "config|db|types".} = enum
     ## When the column-first copy of the entry rows is rebuilt.
     ##
     ##   tmNone      never; the store is row-major only
@@ -61,8 +60,7 @@ type
     ## numbers rather than a merge.
     tmNone, tmOnSave, tmInterval, tmManual
 
-  ColumnPolicy* {.role: configurator, metaTags: {tagAppApi, tagConfig, tagDb,
-      tagTypes}.} = object
+  ColumnPolicy* {.role: configurator, tag: "appApi|config|db|types".} = object
     ## One column's storage override, named by field.
     ##
     ##   field:      dotted name, matching the schema's own naming
@@ -78,8 +76,7 @@ type
     width*: uint32
     onOverflow*: OverflowPolicy
 
-  GeistConfig* {.role: configurator, metaTags: {tagAppApi, tagConfig, tagDb,
-      tagTypes}.} = object
+  GeistConfig* {.role: configurator, tag: "appApi|config|db|types".} = object
     name*: string
     ## ---- storage layout ----
     ## Storage is chosen per COLUMN, not per table. `columnPolicy` names
@@ -166,7 +163,7 @@ type
 
 proc fixedColumn*(field: FieldName, width: uint32 = defaultFixedWidth,
     onOverflow: OverflowPolicy = opError): ColumnPolicy {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb}.} =
+    tag: "appApi|config|db".} =
   ## field/width/onOverflow: an exact-width column that never externalises.
   ## Good for integers, timestamps, enums and identifiers that live outside
   ## Geist, where a ceiling is known and dense storage is wanted.
@@ -175,7 +172,7 @@ proc fixedColumn*(field: FieldName, width: uint32 = defaultFixedWidth,
 
 proc cappedColumn*(field: FieldName,
     width: uint32 = minCappedWidth): ColumnPolicy {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb}.} =
+    tag: "appApi|config|db".} =
   ## field/width: an exact-width column that keeps short values inline and
   ## sends long ones to the sidecar, storing the reference in the same
   ## space. Width is raised to `minCappedWidth` if a caller asks for less,
@@ -184,13 +181,13 @@ proc cappedColumn*(field: FieldName,
     width: max(width, minCappedWidth), onOverflow: opError)
 
 proc variableColumn*(field: FieldName): ColumnPolicy {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb}.} =
+    tag: "appApi|config|db".} =
   ## field: a length-prefixed column with no ceiling. The default for text
   ## and bytes, so this is only needed to override a narrower policy.
   result = ColumnPolicy(field: field, column: colVariable)
 
 proc baseConfig(name: string, c: CipherKind): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb}.} =
+    tag: "appApi|config|db".} =
   ## name: preset label retained for diagnostics.
   ## c: default cipher for this workload.
   result.name = name
@@ -228,7 +225,7 @@ proc baseConfig(name: string, c: CipherKind): GeistConfig {.role: configurator,
   result.discoversPeers = true
 
 proc normalizeGeistConfig*(c: GeistConfig): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb, tagRead}.} =
+    tag: "appApi|config|db|read".} =
   ## c: caller-composed configuration normalized before use.
   result = c
   if result.name.len == 0:
@@ -252,7 +249,7 @@ proc normalizeGeistConfig*(c: GeistConfig): GeistConfig {.role: configurator,
     result.macBytes = uint8(fullDigestBytes)
 
 proc validateGeistConfig*(c: GeistConfig): tuple[ok: bool, err: string] {.
-    role: sanitizer, metaTags: {tagAppApi, tagConfig, tagDb, tagRead}.} =
+    role: sanitizer, tag: "appApi|config|db|read".} =
   ## c: configuration checked at the public API boundary.
   var
     n: GeistConfig
@@ -305,13 +302,13 @@ proc validateGeistConfig*(c: GeistConfig): tuple[ok: bool, err: string] {.
   result = (true, "")
 
 proc appConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb}.} =
+    tag: "appApi|config|db".} =
   ## Ordinary local application records, unencrypted.
   result = baseConfig("app", ckNone)
   result = normalizeGeistConfig(result)
 
 proc collapsedConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb}.} =
+    tag: "appApi|config|db".} =
   ## Rare-write records with collapsing on. Every zero or empty field
   ## costs one bit instead of its bytes, which is the right trade for a
   ## sparse or wide schema written rarely and read whole.
@@ -325,7 +322,7 @@ proc collapsedConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc secureCollapsedConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagCryptoBoundary, tagDb}.} =
+    tag: "appApi|config|cryptoBoundary|db".} =
   ## Collapsed records with the cascade at rest. Sealing covers the
   ## bitmaps as well as the values, so which columns were set does not
   ## leak.
@@ -337,7 +334,7 @@ proc secureCollapsedConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc secureAppConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagCryptoBoundary, tagDb}.} =
+    tag: "appApi|config|cryptoBoundary|db".} =
   ## Local application records with the full cascade at rest.
   result = baseConfig("secure-app", ckCascade)
   # Two structurally independent primitives, deliberately: this preset
@@ -349,7 +346,7 @@ proc secureAppConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc chatConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagCryptoBoundary, tagDb, tagSync}.} =
+    tag: "appApi|config|cryptoBoundary|db|sync".} =
   ## Encrypted messaging. Random access by message id, so the batch stays
   ## small: a large N would decrypt many neighbours for every point read.
   result = baseConfig("chat", ckChaCha20)
@@ -359,7 +356,7 @@ proc chatConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc iotConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb, tagStream}.} =
+    tag: "appApi|config|db|stream".} =
   ## Fixed-width telemetry. Leave every column `colFixed` and collapsing
   ## off and the schema stays dense: rows are contiguous, addressable by
   ## arithmetic, and there is no offset table to carry.
@@ -379,7 +376,7 @@ proc iotConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc archiveConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagCryptoBoundary, tagDb, tagStorageIo}.} =
+    tag: "appApi|config|cryptoBoundary|db|storageIo".} =
   ## Scan-heavy long-term storage. Large batches are cheap here because
   ## reads are sequential and the Merkle path keeps point checks logarithmic.
   result = baseConfig("archive", ckCascade)
@@ -392,7 +389,7 @@ proc archiveConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc streamConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb, tagStream}.} =
+    tag: "appApi|config|db|stream".} =
   ## Volatile low-latency chunks: rows live in RAM and are never written
   ## unless a caller explicitly calls `save`. `close` discards them.
   ##
@@ -408,7 +405,7 @@ proc streamConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc ledgerConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagCryptoBoundary, tagDb, tagLedger}.} =
+    tag: "appApi|config|cryptoBoundary|db|ledger".} =
   ## Append-only hash-chained records with aggressive durability.
   ##
   ## The only preset that flushes per write. A hash-linked record exists to
@@ -436,7 +433,7 @@ proc ledgerConfig*(): GeistConfig {.role: configurator,
   result = normalizeGeistConfig(result)
 
 proc geistConfigPreset*(name: string): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb, tagRead}.} =
+    tag: "appApi|config|db|read".} =
   ## name: canonical preset name or a documented alias.
   case name.strip().toLowerAscii()
   of "app", "local-app": result = appConfig()
@@ -452,7 +449,7 @@ proc geistConfigPreset*(name: string): GeistConfig {.role: configurator,
     raise newException(ValueError, "unknown Geist config preset '" & name & "'")
 
 proc geistConfigPresets*(): seq[tuple[name, purpose: string]] {.
-    role: configurator, metaTags: {tagAppApi, tagConfig, tagDb, tagRead}.} =
+    role: configurator, tag: "appApi|config|db|read".} =
   ## The public preset catalog, for CLIs and diagnostics.
   result = @[
     (name: "app", purpose: "ordinary local application records"),
@@ -467,7 +464,7 @@ proc geistConfigPresets*(): seq[tuple[name, purpose: string]] {.
 
 proc applyColumnPolicy*(c: GeistConfig,
     s: Schema): tuple[ok: bool, s: Schema, err: string] {.role: configurator,
-    metaTags: {tagAppApi, tagConfig, tagDb, tagTypes}.} =
+    tag: "appApi|config|db|types".} =
   ## c: configuration naming the columns that want a non-default policy.
   ## s: schema derived from the object type, with per-type defaults.
   ##
@@ -528,7 +525,7 @@ proc applyColumnPolicy*(c: GeistConfig,
   result.ok = true
 
 proc columnGroupsFor*(c: GeistConfig, s: Schema): seq[ColumnGroup] {.
-    role: truthBuilder, metaTags: {tagBatch, tagConfig, tagCryptoBoundary}.} =
+    role: truthBuilder, tag: "batch|config|cryptoBoundary".} =
   ## c: configuration naming groups by field name.
   ## s: schema resolving those names to slot indices.
   ## Field names that do not exist in this schema are skipped rather than

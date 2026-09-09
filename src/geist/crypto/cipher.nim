@@ -25,7 +25,7 @@
 
 import tyr
 
-import geistPragmas
+import runePragmas
 import ../types
 
 const
@@ -40,7 +40,7 @@ const
     ## triggers for multi-gigabyte bulk encrypt/decrypt passes.
 
 type
-  StreamKeys* {.role: truthState, metaTags: {tagCryptoBoundary, tagTypes}.} = object
+  StreamKeys* {.role: truthState, tag: "cryptoBoundary|types".} = object
     ## Two independent keys and nonces, one per cascade leg.
     chachaKey*: ByteSeq
     chachaNonce*: ByteSeq
@@ -48,7 +48,7 @@ type
     aesNonce*: ByteSeq
 
 proc deriveStreamKeys*(base: Secret, aad: openArray[uint8]): StreamKeys {.
-    role: encryptor, metaTags: {tagCryptoBoundary, tagBatch}.} =
+    role: encryptor, tag: "cryptoBoundary|batch".} =
   ## base: batch key material.
   ## aad: position binding (database, column group, batch index, epoch).
   ## Distinct labels keep the two cascade legs independent, which is what
@@ -66,7 +66,7 @@ proc deriveStreamKeys*(base: Secret, aad: openArray[uint8]): StreamKeys {.
   result.aesNonce = seedB[cipherKeyBytes ..< cipherKeyBytes + aesNonceBytes]
 
 proc advanceCounter(n: openArray[uint8], blocks: uint64): ByteSeq {.
-    role: math, metaTags: {tagCryptoBoundary}.} =
+    role: math, tag: "cryptoBoundary".} =
   ## n: 16-byte AES-CTR counter block.
   ## blocks: number of blocks to skip. Tyr exposes no seek for AES-CTR, so
   ## the counter is advanced here as a big-endian 128-bit add.
@@ -83,13 +83,13 @@ proc advanceCounter(n: openArray[uint8], blocks: uint64): ByteSeq {.
     i = i - 1
 
 proc chachaKeystream(k: StreamKeys, startBlock: uint64, n: int): ByteSeq {.
-    role: encryptor, metaTags: {tagCryptoBoundary}.} =
+    role: encryptor, tag: "cryptoBoundary".} =
   ## k/startBlock/n: keys, first 64-byte block index, and byte count.
   result = @(chacha20TyrStream(k.chachaKey, k.chachaNonce, n,
     uint32(startBlock)))
 
 proc aesKeystream(k: StreamKeys, startBlock: uint64, n: int): ByteSeq {.
-    role: encryptor, metaTags: {tagCryptoBoundary}.} =
+    role: encryptor, tag: "cryptoBoundary".} =
   ## k/startBlock/n: keys, first 16-byte block index, and byte count.
   var
     zeros: ByteSeq = @[]
@@ -117,7 +117,7 @@ when compileOption("threads"):
       i = i + 1
 
 proc cascadeKeystreamParallel(k: StreamKeys, chachaStart, aesStart: uint64,
-    n: int): ByteSeq {.role: encryptor, metaTags: {tagCryptoBoundary}.} =
+    n: int): ByteSeq {.role: encryptor, tag: "cryptoBoundary".} =
   ## k/chachaStart/aesStart/n: keys, per-leg first block, byte count.
   ## Only reached above `parallelThresholdBytes`.
   result = newSeq[uint8](n)
@@ -150,7 +150,7 @@ proc cascadeKeystreamParallel(k: StreamKeys, chachaStart, aesStart: uint64,
       i = i + 1
 
 proc keystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,
-    n: int): ByteSeq {.role: encryptor, metaTags: {tagCryptoBoundary}.} =
+    n: int): ByteSeq {.role: encryptor, tag: "cryptoBoundary".} =
   ## c: cipher selection.
   ## k: derived stream keys.
   ## byteOffset: absolute offset inside the batch payload; the whole point
@@ -196,7 +196,7 @@ proc keystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,
 
 proc applyKeystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,
     A: openArray[uint8]): ByteSeq {.role: encryptor,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## c/k/byteOffset: cipher, keys and absolute offset of `A` in the batch.
   ## A: plaintext or ciphertext; the operation is its own inverse.
   var
@@ -209,6 +209,6 @@ proc applyKeystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,
     i = i + 1
 
 proc isSeekable*(c: CipherKind): bool {.role: parser, inline,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## c: cipher whose single-row decrypt capability is reported.
   result = c in {ckChaCha20, ckAesCtr, ckCascade}

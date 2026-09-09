@@ -17,13 +17,12 @@
 ##
 ## See docs/DESIGN_RATIONALE.md section 10.
 
-import geistPragmas
+import runePragmas
 import ../types
 import ./batch
 
 type
-  Piece* {.role: truthState, metaTags: {tagBatch, tagCryptoBoundary,
-      tagTypes}.} = object
+  Piece* {.role: truthState, tag: "batch|cryptoBoundary|types".} = object
     ## One contiguous run of bytes belonging to a batch, as an offset into
     ## the cluster's row region. There is no second region to point at.
     at*: int
@@ -31,7 +30,7 @@ type
 
 proc piecesFor*(s: Schema, rows: ByteSeq, rowIndex: uint32,
     slots: seq[int]): seq[Piece] {.role: truthBuilder,
-    metaTags: {tagBatch, tagCryptoBoundary, tagRead}.} =
+    tag: "batch|cryptoBoundary|read".} =
   ## s: cluster schema; MUST be dense.
   ## rows: the cluster's contiguous row region.
   ## rowIndex/slots: the row and the group's column indices.
@@ -49,7 +48,7 @@ proc piecesFor*(s: Schema, rows: ByteSeq, rowIndex: uint32,
     i = i + 1
 
 proc gather(rows: ByteSeq, P: seq[Piece]): ByteSeq {.role: helper,
-    metaTags: {tagBatch, tagCryptoBoundary, tagRead}.} =
+    tag: "batch|cryptoBoundary|read".} =
   ## rows: the cluster's row region.
   ## P: pieces copied out in order to form one contiguous batch buffer.
   var
@@ -63,7 +62,7 @@ proc gather(rows: ByteSeq, P: seq[Piece]): ByteSeq {.role: helper,
     i = i + 1
 
 proc scatter(rows: var ByteSeq, P: seq[Piece], A: ByteSeq) {.
-    role: dataWriter, metaTags: {tagBatch, tagCryptoBoundary, tagWrite}.} =
+    role: dataWriter, tag: "batch|cryptoBoundary|write".} =
   ## rows: row region written back in place.
   ## P/A: the same piece list and the transformed bytes.
   var
@@ -80,7 +79,7 @@ proc scatter(rows: var ByteSeq, P: seq[Piece], A: ByteSeq) {.
 
 proc batchPieces(s: Schema, rows: ByteSeq, first, last: uint32,
     slots: seq[int]): tuple[pieces: seq[Piece], rowLens: seq[int]] {.
-    role: truthBuilder, metaTags: {tagBatch, tagCryptoBoundary}.} =
+    role: truthBuilder, tag: "batch|cryptoBoundary".} =
   ## s/rows: schema and fixed-row region.
   ## first/last: inclusive row range of this batch.
   ## slots: the column group.
@@ -105,7 +104,7 @@ proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
     databaseId: string, schemaVersion: uint16,
     cipher: CipherKind, mac: MacKind, keyRef: KeyId,
     treeHash: HashKind = hkBlake3) {.role: encryptor,
-    metaTags: {tagAppApi, tagBatch, tagCryptoBoundary, tagWrite}.} =
+    tag: "appApi|batch|cryptoBoundary|write".} =
   ## master/L: key material and the ledger receiving one entry per batch.
   ## s/rows/rowCount: the cluster being sealed in place.
   ## databaseId/schemaVersion: AAD components binding each batch's position.
@@ -165,7 +164,7 @@ proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
 proc openCluster*(master: Secret, L: Ledger, s: Schema,
     rows: var ByteSeq, rowCount: uint32,
     databaseId: string, schemaVersion: uint16) {.role: decryptor,
-    metaTags: {tagAppApi, tagBatch, tagCryptoBoundary, tagRead}.} =
+    tag: "appApi|batch|cryptoBoundary|read".} =
   ## master/L: key material and the ledger holding each batch's coordinates.
   ## s/rows/rowCount: the cluster decrypted in place.
   ## databaseId/schemaVersion: the same AAD components used when sealing.
@@ -216,7 +215,7 @@ proc sealPacked*(master: Secret, L: var Ledger, rows: var ByteSeq,
     offsets: seq[uint32], rowCount: uint32, databaseId: string,
     schemaVersion: uint16, cipher: CipherKind, mac: MacKind, keyRef: KeyId,
     treeHash: HashKind = hkBlake3) {.role: encryptor,
-    metaTags: {tagAppApi, tagBatch, tagCryptoBoundary, tagWrite}.} =
+    tag: "appApi|batch|cryptoBoundary|write".} =
   ## master/L: key material and the ledger receiving one entry per batch.
   ## rows/offsets/rowCount: the varying cluster, sealed in place.
   ## The offset table stays in CLEAR: encrypting it would make the rows
@@ -271,7 +270,7 @@ proc sealPacked*(master: Secret, L: var Ledger, rows: var ByteSeq,
 proc openPacked*(master: Secret, L: Ledger, rows: var ByteSeq,
     offsets: seq[uint32], rowCount: uint32, databaseId: string,
     schemaVersion: uint16) {.role: decryptor,
-    metaTags: {tagAppApi, tagBatch, tagCryptoBoundary, tagRead}.} =
+    tag: "appApi|batch|cryptoBoundary|read".} =
   ## master/L/rows/offsets/rowCount: the inverse of `sealPacked`.
   var
     b: uint32 = 0'u32

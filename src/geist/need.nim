@@ -41,7 +41,7 @@
 
 import std/[os, strutils]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./durable
 import ./address
@@ -62,7 +62,7 @@ const
     ## the next call resumes from it.
 
 type
-  NeedCursor* {.role: truthState, metaTags: {tagSync, tagTypes}.} = object
+  NeedCursor* {.role: truthState, tag: "sync|types".} = object
     ## remote: the peer's address, exactly as it was dialled. Two names for
     ##   one host are two cursors, which is correct: nothing here can prove
     ##   they are the same database, and the epoch check catches it if they
@@ -73,8 +73,7 @@ type
     epoch*: uint64
     cursor*: uint64
 
-  NeedOutcome* {.role: truthState, metaTags: {tagStatus, tagSync,
-      tagTypes}.} = tuple
+  NeedOutcome* {.role: truthState, tag: "status|sync|types".} = tuple
     ## What one catch-up did. Named because three procs return it and a
     ## six-field tuple written out three times is three chances to reorder
     ## two of the fields.
@@ -85,8 +84,7 @@ type
     rewound: bool
     err: string
 
-  SyncRound* {.role: wrapper, metaTags: {tagNetworkSurface, tagSync,
-      tagTypes}.} = proc (cursor: uint64, limit: uint32): tuple[ok: bool,
+  SyncRound* {.role: truthBuilder, tag: "networkSurface|sync|types".} = proc (cursor: uint64, limit: uint32): tuple[ok: bool,
         reply: Reply, err: string] {.closure.}
     ## One `qoSync` request, however it happens to travel.
     ##
@@ -96,12 +94,12 @@ type
     ## worth retrying elsewhere.
 
 proc cursorPath*(baseDir: string): string {.role: parser, inline,
-    metaTags: {tagStorageIo, tagSync}.} =
+    tag: "storageIo|sync".} =
   ## baseDir: store root whose peer positions are named.
   result = baseDir / needCursorFile
 
 proc parseCursorLine(line: string): tuple[ok: bool, c: NeedCursor] {.
-    role: parser, metaTags: {tagParsing, tagSync}.} =
+    role: parser, tag: "parsing|sync".} =
   ## line: one `<remote> <epoch> <cursor>` record.
   ##
   ## A malformed line is DROPPED rather than raised on. This file is a
@@ -121,7 +119,7 @@ proc parseCursorLine(line: string): tuple[ok: bool, c: NeedCursor] {.
     result = (false, NeedCursor())
 
 proc loadCursors*(baseDir: string): seq[NeedCursor] {.role: parser,
-    metaTags: {tagRead, tagStorageIo, tagSync}.} =
+    tag: "read|storageIo|sync".} =
   ## baseDir: store root. An absent file means nothing has been needed from
   ## any peer yet, which is not an error -- it is the first run.
   var
@@ -137,7 +135,7 @@ proc loadCursors*(baseDir: string): seq[NeedCursor] {.role: parser,
 
 proc saveCursors*(baseDir: string,
     C: openArray[NeedCursor]): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagStorageIo, tagSync, tagWrite}.} =
+    role: dataWriter, tag: "storageIo|sync|write".} =
   ## baseDir: store root.
   ## C: every known position, written as one atomic replacement.
   ##
@@ -154,7 +152,7 @@ proc saveCursors*(baseDir: string,
   result = replaceDurable(cursorPath(baseDir), text)
 
 proc indexOfRemote(C: openArray[NeedCursor], remote: string): int {.
-    role: parser, metaTags: {tagSync}.} =
+    role: parser, tag: "sync".} =
   ## C: known positions.
   ## remote: peer looked for; -1 when this side has never needed from it.
   var
@@ -166,7 +164,7 @@ proc indexOfRemote(C: openArray[NeedCursor], remote: string): int {.
     i = i + 1
 
 proc cursorFor*(C: openArray[NeedCursor], remote: string): NeedCursor {.
-    role: parser, metaTags: {tagSync}.} =
+    role: parser, tag: "sync".} =
   ## C/remote: this side's position in one peer's log, or a zero position
   ## when there is none, which is what "send me everything" looks like.
   var
@@ -174,7 +172,7 @@ proc cursorFor*(C: openArray[NeedCursor], remote: string): NeedCursor {.
   result = if at < 0: NeedCursor(remote: remote) else: C[at]
 
 proc noteCursor*(C: var seq[NeedCursor], c: NeedCursor) {.
-    role: stateController, metaTags: {tagSync}.} =
+    role: actor, tag: "sync".} =
   ## C: the table updated in place.
   ## c: the new position for `c.remote`, replacing any older one.
   var
@@ -186,8 +184,7 @@ proc noteCursor*(C: var seq[NeedCursor], c: NeedCursor) {.
 
 proc needLoop(S: var Session, remote: string, limit: uint32,
     maxRounds: int, round: SyncRound): NeedOutcome {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagNetworkSurface, tagOrchestrator,
-    tagSync, tagWrite}.} =
+    tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
   ## S: the LOCAL database, open for writing, that the peer's rows land in.
   ## remote: the name this peer's cursor is filed under.
   ## limit: rows per request.
@@ -275,8 +272,7 @@ proc needLoop(S: var Session, remote: string, limit: uint32,
 proc needRemote*(S: var Session, link: var GeistLink, remote: string,
     limit: uint32 = 256'u32,
     maxRounds: int = needRoundLimit): NeedOutcome {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagNetworkSurface, tagOrchestrator,
-    tagSync, tagWrite}.} =
+    tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
   ## S: the LOCAL database, open for writing.
   ## link: an OPEN link to the peer, dialled directly.
   ## remote: the peer's address, used as the name its cursor is filed under.
@@ -296,8 +292,7 @@ proc needRemote*(S: var Session, link: var GeistLink, remote: string,
 proc needVia*(S: var Session, client: var GeistClient, address: string,
     limit: uint32 = 256'u32,
     maxRounds: int = needRoundLimit): NeedOutcome {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagNetworkSurface, tagOrchestrator,
-    tagSync, tagWrite}.} =
+    tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
   ## S: the LOCAL database, open for writing.
   ## client: a routed client, which picks the hop and fails over.
   ## address: what to catch up WITH -- `geist://fjord/mail/alice/inbox`.

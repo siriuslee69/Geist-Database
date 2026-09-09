@@ -52,7 +52,7 @@ import std/[base64, strutils]
 
 import tyr
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./secret
 import ./crypto/cipher
@@ -94,15 +94,13 @@ const
     ## password.
 
 type
-  PasswordParams* {.role: truthState, metaTags: {tagCryptoBoundary,
-      tagTypes}.} = object
+  PasswordParams* {.role: truthState, tag: "cryptoBoundary|types".} = object
     ## The cost one particular hash was made with, read back out of it.
     passes*: uint32
     memoryKiB*: uint32
     lanes*: uint32
 
-  PasswordRecord* {.role: truthState, metaTags: {tagCryptoBoundary,
-      tagTypes}.} = object
+  PasswordRecord* {.role: truthState, tag: "cryptoBoundary|types".} = object
     ## A stored hash, taken apart. `encoded` is the line that goes in the
     ## database; the rest is what `verifyPassword` needs to recompute it.
     ok*: bool
@@ -112,8 +110,7 @@ type
     hash*: ByteSeq
     err*: string
 
-  SealedBlob* {.role: truthState, metaTags: {tagCryptoBoundary,
-      tagTypes}.} = object
+  SealedBlob* {.role: truthState, tag: "cryptoBoundary|types".} = object
     ## Something sealed with a password: the salt it was derived with, the
     ## ciphertext, and the tag that proves both.
     ##
@@ -124,14 +121,14 @@ type
     err*: string
 
 proc defaultPasswordParams*(): PasswordParams {.role: configurator,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## Today's cost, for a password being hashed now.
   result.passes = defaultPasswordPasses
   result.memoryKiB = defaultPasswordMemoryKiB
   result.lanes = defaultPasswordLanes
 
 proc checkPassword*(password: string): string {.role: sanitizer,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## password: refused with a reason, or "" when it is usable.
   ##
   ## This is not a strength policy and deliberately does not try to be.
@@ -146,7 +143,7 @@ proc checkPassword*(password: string): string {.role: sanitizer,
   result = ""
 
 proc randomSalt*(n: int = passwordSaltBytes): ByteSeq {.role: helper,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## n: fresh bytes from the platform generator.
   ##
   ## Exported because a caller sealing several things at once may want to
@@ -155,7 +152,7 @@ proc randomSalt*(n: int = passwordSaltBytes): ByteSeq {.role: helper,
   result = @(cryptoRandomBytes(n))
 
 proc encodeSalt*(salt: openArray[uint8]): string {.role: helper,
-    metaTags: {tagCryptoBoundary, tagFormatting}.} =
+    tag: "cryptoBoundary|formatting".} =
   ## salt: as text, so it can live in a packed row beside a password hash.
   ##
   ## One encoding for the whole codebase. A salt written as hex in one
@@ -164,7 +161,7 @@ proc encodeSalt*(salt: openArray[uint8]): string {.role: helper,
   result = encode(salt)
 
 proc decodeSalt*(s: string): ByteSeq {.role: parser,
-    metaTags: {tagCryptoBoundary, tagParsing}.} =
+    tag: "cryptoBoundary|parsing".} =
   ## s: back to bytes. An unreadable value comes back EMPTY rather than
   ## raising, and an empty salt derives a key that will simply not open
   ## anything -- which is the correct outcome for a corrupted record, and
@@ -176,7 +173,7 @@ proc decodeSalt*(s: string): ByteSeq {.role: parser,
 
 proc kdf(password: string, salt: openArray[uint8], domain: string,
     p: PasswordParams, outLen: int): ByteSeq {.role: encryptor,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## password/salt/domain/p/outLen: the one call into Tyr.
   ##
   ## The domain is mixed into the SALT rather than the password, so two
@@ -189,12 +186,12 @@ proc kdf(password: string, salt: openArray[uint8], domain: string,
     int(p.passes), int(p.memoryKiB), int(p.lanes), outLen)
 
 proc encodeParams(p: PasswordParams): string {.role: helper,
-    metaTags: {tagCryptoBoundary, tagFormatting}.} =
+    tag: "cryptoBoundary|formatting".} =
   ## p: the `m=..,t=..,p=..` field of an encoded hash.
   result = "m=" & $p.memoryKiB & ",t=" & $p.passes & ",p=" & $p.lanes
 
 proc decodeParams(s: string): tuple[ok: bool, p: PasswordParams] {.
-    role: parser, metaTags: {tagCryptoBoundary, tagParsing}.} =
+    role: parser, tag: "cryptoBoundary|parsing".} =
   ## s: `m=..,t=..,p=..`, or a failure. Nothing raises: this text came out
   ## of a database that a person may have edited.
   var
@@ -228,7 +225,7 @@ proc decodeParams(s: string): tuple[ok: bool, p: PasswordParams] {.
 
 proc hashPassword*(password: string,
     p: PasswordParams = defaultPasswordParams()): PasswordRecord {.
-    role: encryptor, metaTags: {tagCryptoBoundary, tagWrite}.} =
+    role: encryptor, tag: "cryptoBoundary|write".} =
   ## password: what the person typed.
   ## p: the cost. The default is today's; passing an older one is only
   ##   useful to a test.
@@ -249,7 +246,7 @@ proc hashPassword*(password: string,
   result.ok = true
 
 proc parsePasswordHash*(encoded: string): PasswordRecord {.role: parser,
-    metaTags: {tagCryptoBoundary, tagParsing}.} =
+    tag: "cryptoBoundary|parsing".} =
   ## encoded: a stored line, taken apart.
   ##
   ## Nothing raises. This string comes out of a database and may have
@@ -285,7 +282,7 @@ proc parsePasswordHash*(encoded: string): PasswordRecord {.role: parser,
   result.ok = true
 
 proc verifyPassword*(password, encoded: string): bool {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## password: what was typed now.
   ## encoded: what the database holds.
   ##
@@ -312,7 +309,7 @@ proc verifyPassword*(password, encoded: string): bool {.role: sanitizer,
 
 proc needsRehash*(encoded: string,
     p: PasswordParams = defaultPasswordParams()): bool {.role: parser,
-    metaTags: {tagCryptoBoundary, tagStatus}.} =
+    tag: "cryptoBoundary|status".} =
   ## encoded: a stored hash.
   ## p: the cost this server would use today.
   ##
@@ -334,7 +331,7 @@ proc needsRehash*(encoded: string,
 
 proc deriveKey*(password: string, salt: openArray[uint8],
     p: PasswordParams = defaultPasswordParams()): Secret {.role: encryptor,
-    metaTags: {tagCryptoBoundary, tagKeyLifecycle}.} =
+    tag: "cryptoBoundary|keyLifecycle".} =
   ## password/salt: what unlocks a local store.
   ## p: the cost. Match whatever the store was sealed with.
   ##
@@ -358,7 +355,7 @@ const
 proc sealWithPassword*(password: string, plain: openArray[uint8],
     aad: openArray[uint8] = [], p: PasswordParams = defaultPasswordParams()):
     SealedBlob {.role: encryptor,
-    metaTags: {tagCryptoBoundary, tagWrite}.} =
+    tag: "cryptoBoundary|write".} =
   ## password: what will be needed to open it.
   ## plain: the bytes to protect.
   ## aad: context bound to the ciphertext but not hidden -- a filename, an
@@ -396,7 +393,7 @@ proc sealWithPassword*(password: string, plain: openArray[uint8],
 proc openWithPassword*(password: string, blob: openArray[uint8],
     aad: openArray[uint8] = [], p: PasswordParams = defaultPasswordParams()):
     SealedBlob {.role: decryptor,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## password/blob/aad/p: the reverse of `sealWithPassword`.
   ##
   ## A WRONG PASSWORD AND A TAMPERED BLOB ARE THE SAME ANSWER, and that is

@@ -28,11 +28,10 @@
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
-import geistPragmas
+import runePragmas
 
 type
-  GeistTier* {.role: configurator, metaTags: {tagAme, tagConfig,
-      tagCryptoBoundary, tagNetworkSurface, tagTypes}.} = enum
+  GeistTier* {.role: configurator, tag: "ame|config|cryptoBoundary|networkSurface|types".} = enum
     gtTelemetry = 0'u8,
     gtUserData,
     gtStandard,
@@ -40,28 +39,25 @@ type
     gtArchive,
     gtRecovery
 
-  TriggerKind* {.role: configurator, metaTags: {tagAme, tagConfig,
-      tagNetworkSurface, tagTypes}.} = enum
+  TriggerKind* {.role: configurator, tag: "ame|config|networkSurface|types".} = enum
     ## When a session should climb to the next tier.
     tkManual,        ## only an explicit control call moves the tier
     tkTransferred,   ## after N mebibytes of committed application plaintext
     tkElapsed,       ## after N milliseconds of session lifetime
     tkDisabled       ## this tier is never entered automatically
 
-  TierTrigger* {.role: configurator, metaTags: {tagAme, tagConfig,
-      tagNetworkSurface, tagTypes}.} = object
+  TierTrigger* {.role: configurator, tag: "ame|config|networkSurface|types".} = object
     kind*: TriggerKind
     threshold*: uint64
 
-  TriggerPolicy* {.role: configurator, metaTags: {tagAme, tagConfig,
-      tagNetworkSurface, tagTypes}.} = object
+  TriggerPolicy* {.role: configurator, tag: "ame|config|networkSurface|types".} = object
     ## One trigger row per tier. The starting tier retires its own row and
     ## every row below it, so a session never "escalates" downwards.
     startTier*: GeistTier
     rows*: array[GeistTier, TierTrigger]
 
 proc geistKemSlots*(): bfx.AmeKemAlgorithms {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## Masks are MSB-first, so bit 7 selects slot 0.
   ##
   ## Slots 0..3 are FRAME-SIZED: Kyber1024 (1568 B), NTRU-HPS4096821
@@ -88,7 +84,7 @@ proc geistKemSlots*(): bfx.AmeKemAlgorithms {.role: configurator,
     bfx.akaNtruHps2048677])
 
 proc geistSignatureSlots*(): bfx.AmeSignatureAlgorithms {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## Ordered strongest-first. Ed25519 sits last so it is present at every
   ## tier as a fast classical check alongside the post-quantum stacks;
   ## SPHINCS+ is hash-based and survives a lattice break outright.
@@ -99,27 +95,27 @@ proc geistSignatureSlots*(): bfx.AmeSignatureAlgorithms {.role: configurator,
     bfx.asaEd25519])
 
 proc geistCipherSlots*(): bfx.AmeCipherAlgorithms {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## Matches the at-rest cascade: XChaCha20 and AES-CTR are both seekable.
   result = bfx.initAmeCipherAlgorithms([bfx.acaXChaCha20, bfx.acaAesCtr])
 
 proc geistMacSlots*(): bfx.AmeMacAlgorithms {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## BLAKE3 and Gimli, the same pair combined at rest.
   result = bfx.initAmeMacAlgorithms([bfx.amaBlake3, bfx.amaGimli])
 
 proc geistHashSlots*(): bfx.AmeHashAlgorithms {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## Distinct constructions: BLAKE3 is a tree, SHA3 a sponge.
   result = bfx.initAmeHashAlgorithms([bfx.ahaBlake3, bfx.ahaSha3])
 
 proc geistKdfSlots*(): bfx.AmeKdfAlgorithms {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## BLAKE3 for speed, Gimli XOF as an independent fallback.
   result = bfx.initAmeKdfAlgorithms([bfx.akfaBlake3, bfx.akfaGimliXof])
 
 proc geistLayout*(): bfx.AmeSuiteLayout {.role: configurator,
-    metaTags: {tagAme, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|cryptoBoundary|networkSurface".} =
   ## The complete Geist suite layout. `defaultAmeLayout` is deliberately
   ## NOT used: it fixes the signature slots to Ed25519 + Falcon512, and the
   ## signature stack is one of the things Geist wants to choose per tier.
@@ -127,7 +123,7 @@ proc geistLayout*(): bfx.AmeSuiteLayout {.role: configurator,
     geistMacSlots(), geistHashSlots(), geistSignatureSlots(), geistKdfSlots())
 
 proc tierMasks*(t: GeistTier): bfx.AmeTierMasks {.role: configurator,
-    metaTags: {tagAme, tagConfig, tagCryptoBoundary, tagNetworkSurface}.} =
+    tag: "ame|config|cryptoBoundary|networkSurface".} =
   ## t: tier whose slot selection is returned, MSB-first over the layout.
   ## KEM bits widen fastest because a KEM break is the one failure that
   ## retroactively exposes recorded traffic.
@@ -152,14 +148,13 @@ proc tierMasks*(t: GeistTier): bfx.AmeTierMasks {.role: configurator,
       0xF0'u8, 0xC0'u8)
 
 proc tierOf*(L: bfx.AmeSuiteLayout, t: GeistTier): bfx.AmeMaskTier {.
-    role: configurator, metaTags: {tagAme, tagCryptoBoundary,
-    tagNetworkSurface}.} =
+    role: configurator, tag: "ame|cryptoBoundary|networkSurface".} =
   ## L: the Geist suite layout.
   ## t: tier resolved to a validated Bifrost mask tier.
   result = bfx.initAmeMaskTier(L, uint32(ord(t)) + 1'u32, tierMasks(t))
 
 proc defaultTriggerPolicy*(): TriggerPolicy {.role: configurator,
-    metaTags: {tagAme, tagConfig, tagNetworkSurface}.} =
+    tag: "ame|config|networkSurface".} =
   ## Standard start, climbing on transferred volume. Thresholds are in
   ## mebibytes for tkTransferred and milliseconds for tkElapsed.
   result.startTier = gtStandard
@@ -171,8 +166,7 @@ proc defaultTriggerPolicy*(): TriggerPolicy {.role: configurator,
   result.rows[gtRecovery] = TierTrigger(kind: tkManual, threshold: 0'u64)
 
 proc validateTriggerPolicy*(p: TriggerPolicy): tuple[ok: bool, err: string] {.
-    role: sanitizer, metaTags: {tagAme, tagConfig, tagNetworkSurface,
-    tagRead}.} =
+    role: sanitizer, tag: "ame|config|networkSurface|read".} =
   ## p: policy checked for monotonic thresholds and a usable start tier.
   var
     t: GeistTier = gtTelemetry
@@ -191,8 +185,7 @@ proc validateTriggerPolicy*(p: TriggerPolicy): tuple[ok: bool, err: string] {.
   result = (true, "")
 
 proc supportedTierPath*(p: TriggerPolicy): bfx.AmeTierPath {.
-    role: configurator, metaTags: {tagAme, tagCryptoBoundary,
-    tagNetworkSurface}.} =
+    role: configurator, tag: "ame|cryptoBoundary|networkSurface".} =
   ## p: policy whose reachable tiers become the advertised path. Tiers at
   ## or below the start tier are retired, so a peer cannot negotiate the
   ## session down to a weaker suite than the operator configured.

@@ -24,7 +24,7 @@
 
 import std/[json, os]
 
-import geistPragmas
+import runePragmas
 import ./config
 import ./toml_read
 import ./layout
@@ -34,7 +34,7 @@ const
   userConfigName* = "userconfig.toml"
 
 type
-  GeistDefaults* {.role: configurator, metaTags: {tagConfig, tagTypes}.} = object
+  GeistDefaults* {.role: configurator, tag: "config|types".} = object
     ## Library-wide defaults, read once and used wherever a caller does not
     ## say otherwise. Deliberately small: anything that varies per database
     ## belongs in `GeistConfig`, which a caller passes explicitly.
@@ -61,8 +61,7 @@ type
     transposeEverySeconds*: uint32
     loadedFrom*: string
 
-  UserConfig* {.role: configurator, metaTags: {tagCli, tagConfig,
-      tagTypes}.} = object
+  UserConfig* {.role: configurator, tag: "cli|config|types".} = object
     ## What one installation does. Every field maps to a command line
     ## option, and the option WINS: a config file is a way to stop typing,
     ## not a way to override what was typed.
@@ -80,7 +79,7 @@ type
     loadedFrom*: string
 
 proc builtinDefaults*(): GeistDefaults {.role: configurator,
-    metaTags: {tagConfig}.} =
+    tag: "config".} =
   ## What the library does with no config.toml at all. These are the same
   ## values the presets carry, restated here so a reader can see them
   ## without reading config.nim.
@@ -92,7 +91,7 @@ proc builtinDefaults*(): GeistDefaults {.role: configurator,
 
 proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     defaults: GeistDefaults, err: string] {.role: configurator,
-    metaTags: {tagConfig, tagParsing, tagRead}.} =
+    tag: "config|parsing|read".} =
   ## path: `config.toml`, relative to the working directory unless given.
   ##
   ##   [storage]
@@ -158,7 +157,7 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   result.ok = true
 
 proc applyDefaults*(c: GeistConfig, d: GeistDefaults): GeistConfig {.
-    role: configurator, metaTags: {tagAppApi, tagConfig}.} =
+    role: configurator, tag: "appApi|config".} =
   ## c: a configuration, usually straight from a preset.
   ## d: the library defaults read from config.toml.
   ##
@@ -205,21 +204,21 @@ proc applyDefaults*(c: GeistConfig, d: GeistDefaults): GeistConfig {.
 var
   activeDefaults: GeistDefaults = builtinDefaults()
 
-proc useGeistDefaults*(d: GeistDefaults) {.role: stateController,
-    metaTags: {tagConfig, tagLifecycle}.} =
+proc useGeistDefaults*(d: GeistDefaults) {.role: actor,
+    tag: "config|lifecycle".} =
   ## d: defaults every later `defaultGeistConfig` is built from.
   {.gcsafe.}:
     activeDefaults = d
 
 proc geistDefaults*(): GeistDefaults {.role: parser,
-    metaTags: {tagConfig, tagRead}.} =
+    tag: "config|read".} =
   ## The defaults in force, built-in unless a config.toml replaced them.
   {.gcsafe.}:
     result = activeDefaults
 
 proc initGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     err: string] {.role: configurator,
-    metaTags: {tagConfig, tagLifecycle, tagRead}.} =
+    tag: "config|lifecycle|read".} =
   ## path: config.toml, read and adopted in one step. A missing file is
   ## success -- the built-in defaults ARE the answer in that case.
   var
@@ -231,7 +230,7 @@ proc initGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   result = (true, "")
 
 proc defaultGeistConfig*(): GeistConfig {.role: configurator,
-    metaTags: {tagAppApi, tagConfig}.} =
+    tag: "appApi|config".} =
   ## The preset config.toml names, with the settings it names applied. This
   ## is what a caller who has no opinion should open with.
   result = applyDefaults(geistConfigPreset(geistDefaults().preset),
@@ -239,7 +238,7 @@ proc defaultGeistConfig*(): GeistConfig {.role: configurator,
 
 proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
     user: UserConfig, err: string] {.role: configurator,
-    metaTags: {tagCli, tagConfig, tagParsing, tagRead}.} =
+    tag: "cli|config|parsing|read".} =
   ## path: `userconfig.toml`.
   ##
   ##   [database]
@@ -295,7 +294,7 @@ proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
   result.ok = true
 
 proc firstExisting*(candidates: openArray[string]): string {.role: parser,
-    metaTags: {tagCli, tagConfig, tagRead}.} =
+    tag: "cli|config|read".} =
   ## candidates: paths tried in order; the first that exists is returned,
   ## and an empty string when none does.
   var
@@ -307,7 +306,7 @@ proc firstExisting*(candidates: openArray[string]): string {.role: parser,
 
 proc userConfigCandidates*(explicit: string = "",
     role: NodeRole = nrClient): seq[string] {.role: parser,
-    metaTags: {tagCli, tagConfig, tagRead}.} =
+    tag: "cli|config|read".} =
   ## explicit: a path named on the command line, which always wins.
   ## role: which Geist folder to look in when nothing was named.
   ##

@@ -25,7 +25,7 @@
 
 import std/[os, times]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./config
 import ./session
@@ -35,8 +35,7 @@ export config
 export session
 
 type
-  Collection*[T] {.role: truthState, metaTags: {tagAppApi, tagDb,
-      tagTypes}.} = object
+  Collection*[T] {.role: truthState, tag: "appApi|db|types".} = object
     ## A typed view of one object kind. `session` stays public because
     ## narrowing the surface must never mean losing access to it.
     session*: Session
@@ -45,7 +44,7 @@ proc openCollection*[T: object](baseDir, name: string,
     c: GeistConfig = appConfig(), password: string = "",
     autoSave: bool = true, readOnly: bool = false): Collection[T] {.
     role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagOrchestrator, tagStorageIo}.} =
+    tag: "appApi|db|orchestrator|storageIo".} =
   ## baseDir: store root.
   ## name: database stem, e.g. "notes".
   ## c: configuration; a preset or a caller-composed value.
@@ -73,7 +72,7 @@ proc openCollection*[T: object](baseDir, name: string,
 proc openEncryptedCollection*[T: object](baseDir, name,
     password: string, c: GeistConfig = secureAppConfig(),
     autoSave: bool = true): Collection[T] {.role: orchestrator,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagDb, tagOrchestrator}.} =
+    tag: "appApi|cryptoBoundary|db|orchestrator".} =
   ## baseDir/name/password: as above, with the password required rather
   ## than optional. Exists so that "encrypted" is a spelling difference at
   ## the call site instead of a configuration detail a caller can forget.
@@ -87,12 +86,12 @@ proc openEncryptedCollection*[T: object](baseDir, name,
   result = openCollection[T](baseDir, name, c, password, autoSave)
 
 proc len*[T](C: Collection[T]): int {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C: collection whose stored object count is returned.
   result = int(C.session.entryCount())
 
 proc add*[T](C: var Collection[T], x: T): RowId {.role: dataWriter,
-    metaTags: {tagAppApi, tagDb, tagWrite}, discardable.} =
+    tag: "appApi|db|write", discardable.} =
   ## C: collection receiving one object.
   ## x: value appended; its ID is returned -- the name to use later with
   ## `[]=`, `delete` or `byId`. Whether it reaches disk now is the
@@ -100,14 +99,14 @@ proc add*[T](C: var Collection[T], x: T): RowId {.role: dataWriter,
   result = C.session.put(x)
 
 proc add*[T](C: var Collection[T], A: openArray[T]): seq[RowId] {.
-    role: dataWriter, metaTags: {tagAppApi, tagDb, tagWrite}, discardable.} =
+    role: dataWriter, tag: "appApi|db|write", discardable.} =
   ## C/A: collection and objects appended in order.
   ## Flushes ONCE at the end rather than per element, so a bulk add costs
   ## one file write instead of `A.len` of them.
   result = C.session.put(A)
 
 proc `[]=`*[T](C: var Collection[T], id: RowId, x: T) {.role: dataWriter,
-    metaTags: {tagAppApi, tagDb, tagWrite}.} =
+    tag: "appApi|db|write".} =
   ## C/id/x: replace one row BY NAME.
   ##
   ##   notes[id] = Note(title: "corrected")
@@ -119,42 +118,42 @@ proc `[]=`*[T](C: var Collection[T], id: RowId, x: T) {.role: dataWriter,
     raise newException(KeyError, "no row with id " & $id)
 
 proc setRow*[T](C: var Collection[T], id: RowId, x: T): bool {.
-    role: dataWriter, metaTags: {tagAppApi, tagDb, tagWrite}, discardable.} =
+    role: dataWriter, tag: "appApi|db|write", discardable.} =
   ## C/id/x: the same replacement, REPORTING an unknown id instead of
   ## raising -- for a caller that is checking rather than asserting.
   result = C.session.set(id, x)
 
 proc delete*[T](C: var Collection[T], id: RowId): bool {.role: dataWriter,
-    metaTags: {tagAppApi, tagDb, tagDelete, tagWrite}, discardable.} =
+    tag: "appApi|db|delete|write", discardable.} =
   ## C/id: remove one row. False when there was nothing there to remove.
   ## The row leaves the collection at once; its space comes back at
   ## `compact`.
   result = C.session.delete(id)
 
 proc byId*[T](C: Collection[T], id: RowId): tuple[found: bool, value: T] {.
-    role: parser, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    role: parser, tag: "appApi|db|read".} =
   ## C/id: the current version of one row, or `found = false` when it is
   ## not there any more.
   result = byId[T](C.session, id)
 
 proc contains*[T](C: Collection[T], id: RowId): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C/id: `id in notes`, for the check that needs no value.
   result = C.byId(id).found
 
 proc ids*[T](C: Collection[T]): seq[RowId] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C: the id of every visible row, in view order.
   result = C.session.rowIds()
 
 proc idAt*[T](C: Collection[T], i: int): RowId {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C/i: the id of the i-th visible row -- what turns a position from
   ## `pairs` into something that can be changed afterwards.
   result = C.session.idAt(uint32(i))
 
 proc compact*[T](C: var Collection[T]): tuple[ok: bool, removed: uint32,
-    err: string] {.role: orchestrator, metaTags: {tagAppApi, tagDb, tagWrite},
+    err: string] {.role: orchestrator, tag: "appApi|db|write",
     discardable.} =
   ## C: collection whose superseded versions and tombstones are reclaimed.
   ## Nothing visible changes; the file gets smaller.
@@ -162,7 +161,7 @@ proc compact*[T](C: var Collection[T]): tuple[ok: bool, removed: uint32,
 
 proc sweepSidecar*[T](C: var Collection[T]): tuple[ok: bool, removed: int,
     bytes: uint64, err: string] {.role: orchestrator,
-    metaTags: {tagAppApi, tagDb, tagSidecar, tagWrite}, discardable.} =
+    tag: "appApi|db|sidecar|write", discardable.} =
   ## C: collection whose orphaned sidecar payloads are deleted.
   ##
   ## Run it after `compact`: a value referenced by a superseded version
@@ -170,14 +169,14 @@ proc sweepSidecar*[T](C: var Collection[T]): tuple[ok: bool, removed: int,
   result = C.session.sweepSidecar()
 
 proc autoSaves*[T](C: Collection[T]): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C: collection reporting whether a mutation reaches disk by itself.
   ## True for the interval mode too: it flushes without being asked, just
   ## not on every write.
   result = C.session.config.writeMode in {wmOnChange, wmInterval}
 
 proc `[]`*[T](C: Collection[T], i: int): T {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C/i: collection and index. Addressing is arithmetic, not a scan.
   if i < 0 or i >= C.len:
     raise newException(IndexDefect,
@@ -185,7 +184,7 @@ proc `[]`*[T](C: Collection[T], i: int): T {.role: parser,
   result = C.session.get[:T](uint32(i))
 
 iterator items*[T](C: Collection[T]): T {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C: collection iterated in stored order.
   var
     i: uint32 = 0'u32
@@ -194,7 +193,7 @@ iterator items*[T](C: Collection[T]): T {.role: parser,
     i = i + 1'u32
 
 iterator pairs*[T](C: Collection[T]): tuple[index: int, value: T] {.
-    role: parser, metaTags: {tagAppApi, tagDb, tagRead}.} =
+    role: parser, tag: "appApi|db|read".} =
   ## C: collection iterated with indices, for callers that need to address
   ## a row again afterwards.
   var
@@ -204,13 +203,13 @@ iterator pairs*[T](C: Collection[T]): tuple[index: int, value: T] {.
     i = i + 1'u32
 
 proc find*[T](C: Collection[T], field, value: string): seq[T] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C: collection to search.
   ## field/value: exact text match on one field.
   result = C.session.find[:T](field, value)
 
 proc toSeq*[T](C: Collection[T]): seq[T] {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C: whole collection materialised. Named explicitly rather than offered
   ## as an implicit conversion, because for a large database this is the
   ## expensive call and it should look like one.
@@ -218,50 +217,50 @@ proc toSeq*[T](C: Collection[T]): seq[T] {.role: parser,
     result.add x
 
 proc save*[T](C: var Collection[T]): tuple[ok: bool, err: string] {.
-    role: orchestrator, metaTags: {tagAppApi, tagDb, tagWrite}.} =
+    role: orchestrator, tag: "appApi|db|write".} =
   ## C: collection flushed to its artifact set.
   result = C.session.save()
 
-proc close*[T](C: var Collection[T]) {.role: stateController,
-    metaTags: {tagAppApi, tagDb, tagLifecycle}.} =
+proc close*[T](C: var Collection[T]) {.role: actor,
+    tag: "appApi|db|lifecycle".} =
   ## C: collection persisted if dirty, then cleared.
   C.session.close()
 
 proc checkpoint*[T](C: var Collection[T],
-    message: string = "checkpoint"): uint32 {.role: stateController,
-    metaTags: {tagAppApi, tagDb, tagWrite}, discardable.} =
+    message: string = "checkpoint"): uint32 {.role: actor,
+    tag: "appApi|db|write", discardable.} =
   ## C/message: hash-chained journal entry, when the configuration keeps
   ## history.
   result = C.session.checkpoint(message)
 
 proc schema*[T](C: Collection[T]): Schema {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## C: collection whose stored schema is returned -- the one read back
   ## from the file, which may differ from `schemaFor[T]()` if the file was
   ## written by an older version of the type.
   result = C.session.entries.schema
 
 proc isEncrypted*[T](C: Collection[T]): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagDb, tagRead}.} =
+    tag: "appApi|cryptoBoundary|db|read".} =
   ## C: collection reporting whether its rows are sealed at rest.
   result = C.session.encrypted
 
 proc isWritable*[T](C: Collection[T]): bool {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## C: collection reporting whether `add` will be accepted.
   ## False when another process holds the write lease -- ask BEFORE offering
   ## the user an edit button, rather than after catching the exception.
   result = not C.session.readOnly
 
 proc blockedBy*[T](C: Collection[T]): string {.role: parser, inline,
-    metaTags: {tagAppApi, tagDb, tagRead, tagStatus}.} =
+    tag: "appApi|db|read|status".} =
   ## C: collection naming who holds the write lease, empty when nobody does.
   ## Show this: "held by pid 4711 on thinkpad" is something a person can act
   ## on, and "read-only" is not.
   result = C.session.leaseHolder
 
 proc artifacts*[T](C: Collection[T]): seq[string] {.role: parser, inline,
-    metaTags: {tagAppApi, tagBackup, tagDb, tagRead}.} =
+    tag: "appApi|backup|db|read".} =
   ## C: the file set that must move together. Copying the data file alone
   ## produces an unrecoverable database when encryption is on.
   result = C.session.artifactSet()

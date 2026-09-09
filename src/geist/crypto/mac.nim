@@ -24,7 +24,7 @@
 ##
 ## See docs/DESIGN_RATIONALE.md section 8.
 
-import geistPragmas
+import runePragmas
 import ../types
 import ./hashing
 
@@ -39,7 +39,7 @@ const
 
 proc authTag*(m: MacKind, key: Secret, msg, aad: openArray[uint8],
     outLen: int = tagBytes): ByteSeq {.role: encryptor,
-    metaTags: {tagCryptoBoundary, tagBatch}.} =
+    tag: "cryptoBoundary|batch".} =
   ## m: authenticator selection.
   ## key: batch key material.
   ## msg: ciphertext being authenticated.
@@ -58,7 +58,7 @@ proc authTag*(m: MacKind, key: Secret, msg, aad: openArray[uint8],
 
 proc verifyTag*(m: MacKind, key: Secret, msg, aad,
     expected: openArray[uint8]): bool {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagBatch, tagRead}.} =
+    tag: "cryptoBoundary|batch|read".} =
   ## m/key/msg/aad: as for `authTag`.
   ## expected: stored tag. Its length selects the width to recompute at,
   ## so a narrowed config verifies without a second parameter, and the
@@ -74,7 +74,7 @@ proc verifyTag*(m: MacKind, key: Secret, msg, aad,
 
 proc leafHash*(key: Secret, i: uint32, A: openArray[uint8],
     h: HashKind = hkBlake3): ByteSeq {.role: helper,
-    metaTags: {tagCryptoBoundary, tagBatch}.} =
+    tag: "cryptoBoundary|batch".} =
   ## key: batch key, so leaves are unpredictable to an observer.
   ## i: row index inside the batch, bound in to prevent leaf reordering.
   ## A: row bytes.
@@ -96,7 +96,7 @@ proc leafHash*(key: Secret, i: uint32, A: openArray[uint8],
 
 proc nodeHash*(l, r: openArray[uint8],
     h: HashKind = hkBlake3): ByteSeq {.role: helper,
-    metaTags: {tagCryptoBoundary, tagBatch}.} =
+    tag: "cryptoBoundary|batch".} =
   ## l/r: child hashes combined into their parent.
   ## h: tree hash family.
   var
@@ -107,14 +107,14 @@ proc nodeHash*(l, r: openArray[uint8],
   result = geistHash(h, buf, fullDigestBytes)
 
 proc emptyLeaf*(h: HashKind = hkBlake3): ByteSeq {.role: helper,
-    metaTags: {tagCryptoBoundary, tagBatch}.} =
+    tag: "cryptoBoundary|batch".} =
   ## Domain-separated padding leaf. Distinct from any keyed real leaf, so
   ## padding can never be confused with data.
   result = geistHash(h, cast[ByteSeq](nodeDomain & "-empty"), fullDigestBytes)
 
 proc padToPowerOfTwo(L: seq[ByteSeq],
     h: HashKind = hkBlake3): seq[ByteSeq] {.role: helper,
-    metaTags: {tagCryptoBoundary, tagBatch}.} =
+    tag: "cryptoBoundary|batch".} =
   ## L: leaves padded up to the next power of two.
   ## Promoting an odd level instead would make some levels contribute no
   ## proof element, and a verifier replaying the path has no way to know
@@ -133,7 +133,7 @@ proc padToPowerOfTwo(L: seq[ByteSeq],
     result.add pad
 
 proc merkleRoot*(L: seq[ByteSeq], h: HashKind = hkBlake3): ByteSeq {.
-    role: truthBuilder, metaTags: {tagCryptoBoundary, tagBatch}.} =
+    role: truthBuilder, tag: "cryptoBoundary|batch".} =
   ## L: leaf hashes in row order.
   ## h: tree hash family.
   var
@@ -154,7 +154,7 @@ proc merkleRoot*(L: seq[ByteSeq], h: HashKind = hkBlake3): ByteSeq {.
 
 proc merkleProof*(L: seq[ByteSeq], index: int,
     h: HashKind = hkBlake3): seq[ByteSeq] {.role: truthBuilder,
-    metaTags: {tagCryptoBoundary, tagBatch, tagRead}.} =
+    tag: "cryptoBoundary|batch|read".} =
   ## L: leaf hashes in row order.
   ## index: row whose sibling path is returned. Verification cost is
   ## 32 bytes per level instead of re-hashing every row in the batch.
@@ -179,7 +179,7 @@ proc merkleProof*(L: seq[ByteSeq], index: int,
 
 proc verifyMerkle*(leaf: ByteSeq, index: int, proof: seq[ByteSeq],
     root: openArray[uint8], h: HashKind = hkBlake3): bool {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagBatch, tagRead}.} =
+    tag: "cryptoBoundary|batch|read".} =
   ## leaf: hash of the row being checked.
   ## index/proof: position and sibling path from `merkleProof`.
   ## root: value stored in the ledger row.

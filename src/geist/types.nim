@@ -12,7 +12,7 @@
 ## `Row` is the ONLY type the on-disk codec knows. Every other struct
 ## reaches disk through `toRow[T]`, so adding a model type costs no codec.
 
-import geistPragmas
+import runePragmas
 import ./secret
 import ./crypto/hashwidths
 
@@ -33,13 +33,12 @@ type
 
   ## ------------------------------ schema ------------------------------
 
-  SlotKind* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = enum
+  SlotKind* {.role: truthState, tag: "appApi|db|types".} = enum
     ## How to read a slot. Fixed slots hold the value; variable slots hold
     ## an (u32 start, u32 len) pair into the cluster's overflow region.
     skNull, skInt, skFloat, skText, skBytes, skSealed, skRef
 
-  ColumnKind* {.role: configurator, metaTags: {tagAppApi, tagConfig, tagDb,
-      tagTypes}.} = enum
+  ColumnKind* {.role: configurator, tag: "appApi|config|db|types".} = enum
     ## HOW a column is stored, chosen per column rather than per table.
     ## This is what used to be `CellLayout`, moved down one level: a table
     ## no longer picks one storage strategy for all of its columns.
@@ -50,15 +49,14 @@ type
                   ## reference in the same space. Needs `minCappedWidth`.
     colVariable   ## u32 length prefix then the payload; no ceiling.
 
-  OverflowPolicy* {.role: configurator, metaTags: {tagAppApi, tagConfig,
-      tagDb, tagTypes}.} = enum
+  OverflowPolicy* {.role: configurator, tag: "appApi|config|db|types".} = enum
     ## What a `colFixed` column does with a value wider than its width.
     ## There is no silent default: truncation loses data and rejection
     ## loses the write, so the schema has to say which is intended.
     opError,      ## refuse the write and say which column and by how much
     opTruncate    ## cut at width and count it; never chosen implicitly
 
-  Slot* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  Slot* {.role: truthState, tag: "appApi|db|types".} = object
     ## A column's declaration: what it MEANS (`kind`) and how it is STORED
     ## (`column`, `width`, `onOverflow`).
     ##
@@ -72,7 +70,7 @@ type
     width*: uint32          ## colFixed / colCapped only
     onOverflow*: OverflowPolicy
 
-  Schema* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  Schema* {.role: truthState, tag: "appApi|db|types".} = object
     ## Derived from T at compile time, stored once per cluster.
     ## names: interned field names. Cold path only (migration/inspection);
     ## the pack/unpack hot path addresses slots positionally.
@@ -88,17 +86,17 @@ type
     aliases*: seq[tuple[old, current: string]]
     autoCollapse*: bool
 
-  Row* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  Row* {.role: truthState, tag: "appApi|db|types".} = object
     ## The runtime packed tuple. One allocation per stored object.
     schemaId*: uint16
     data*: ByteSeq
 
   ## ---------------------------- cluster -------------------------------
 
-  ClusterRole* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = enum
+  ClusterRole* {.role: truthState, tag: "appApi|db|types".} = enum
     crMeta, crSchema, crKeyLedger, crJournal, crVersion, crEntry
 
-  ClusterMode* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = enum
+  ClusterMode* {.role: truthState, tag: "appApi|db|types".} = enum
     ## cmMutable: rewritten in place.
     ## cmAppend:  rows only ever appended.
     ## cmChained: appended AND each row carries its predecessor's hash.
@@ -111,8 +109,7 @@ type
 
   ## ---------------------------- crypto --------------------------------
 
-  CipherKind* {.role: truthState, metaTags: {tagAppApi, tagCryptoBoundary,
-      tagTypes}.} = enum
+  CipherKind* {.role: truthState, tag: "appApi|cryptoBoundary|types".} = enum
     ## Seekability is a declared property: a seekable cipher decrypts one
     ## row out of a batch, a non-seekable one must decrypt the whole batch.
     ckNone,
@@ -120,14 +117,12 @@ type
     ckAesCtr,        ## seekable via counter pre-advance
     ckCascade        ## ChaCha20 keystream XOR AES-CTR keystream
 
-  MacKind* {.role: truthState, metaTags: {tagAppApi, tagCryptoBoundary,
-      tagTypes}.} = enum
+  MacKind* {.role: truthState, tag: "appApi|cryptoBoundary|types".} = enum
     mkBlake3,        ## BLAKE3 keyed HMAC
     mkGimli,         ## Gimli keyed HMAC
     mkCombined       ## BLAKE3 HMAC XOR Gimli HMAC (sound PRF combiner)
 
-  Sealed* {.role: truthState, metaTags: {tagAppApi, tagCryptoBoundary,
-      tagDb, tagTypes}.} = object
+  Sealed* {.role: truthState, tag: "appApi|cryptoBoundary|db|types".} = object
     ## The encrypted object. Nonce is never stored: it derives from
     ## (keyRef, groupId, batchIndex, epoch) so reuse is structurally
     ## impossible. `root` is a Merkle root, enabling single-row proofs.
@@ -144,13 +139,13 @@ type
 
   ## ---------------------------- model ---------------------------------
 
-  RefTarget* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = enum
+  RefTarget* {.role: truthState, tag: "appApi|db|types".} = enum
     rtSidecar,     ## own file; the hash IS the path, so it must be full width
     rtPacked,      ## a row of a shared sidecar cluster, at (fileId, slot)
     rtEntry,       ## another entry, possibly in another database
     rtExternal     ## hash-bound target outside Geist
 
-  Ref* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  Ref* {.role: truthState, tag: "appApi|db|types".} = object
     ## The reference cell. Two addressing modes, because the filesystem
     ## makes one file per value uneconomical below about one block:
     ##
@@ -174,13 +169,13 @@ type
     entryId*: EntryId    ## rtEntry only
     databaseId*: string  ## rtEntry / rtExternal only
 
-  RecordKind* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = enum
+  RecordKind* {.role: truthState, tag: "appApi|db|types".} = enum
     ## Same shape, different meaning: this is where a discriminant earns
     ## its place. Journal, version commits, evidence and checkpoints all
     ## carry (kind, target, time, status, label, payload).
     rkJournal, rkVersion, rkEvidence, rkCheckpoint
 
-  Record* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  Record* {.role: truthState, tag: "appApi|db|types".} = object
     kind*: RecordKind
     targetId*: uint64
     at*: Timestamp
@@ -189,8 +184,7 @@ type
     parentHash*: ByteSeq
     payload*: ByteSeq
 
-  KeyRecord* {.role: truthState, metaTags: {tagAppApi, tagCryptoBoundary,
-      tagLedger, tagTypes}.} = object
+  KeyRecord* {.role: truthState, tag: "appApi|cryptoBoundary|ledger|types".} = object
     ## The key ledger row. Public material only; the private half lives
     ## sealed in the separate key file.
     keyId*: KeyId
@@ -200,8 +194,7 @@ type
     retiredAt*: Timestamp
     publicPart*: ByteSeq
 
-  Peer* {.role: truthState, metaTags: {tagAppApi, tagNetworkSurface,
-      tagPeerDirectory, tagTypes}.} = object
+  Peer* {.role: truthState, tag: "appApi|networkSurface|peerDirectory|types".} = object
     nodeId*: string
     endpoint*: string
     capabilities*: seq[string]
@@ -209,8 +202,7 @@ type
 
   ## ---------------------------- asking ---------------------------------
 
-  PeerRight* {.role: configurator, metaTags: {tagAme, tagNetworkSurface,
-      tagServer, tagTypes}.} = enum
+  PeerRight* {.role: configurator, tag: "ame|networkSurface|server|types".} = enum
     ## What a trusted peer may ask for. A right is granted by the operator
     ## alongside the pin, so a peer cannot request its own privileges.
     ##
@@ -219,8 +211,7 @@ type
     ##   prAdmin  reserved for operations that change the database's shape
     prRead, prWrite, prAdmin
 
-  PeerContext* {.role: truthState, metaTags: {tagAme, tagNetworkSurface,
-      tagServer, tagTypes}.} = object
+  PeerContext* {.role: truthState, tag: "ame|networkSurface|server|types".} = object
     ## What a handler is told about WHO is asking. A handler that decided
     ## by subject alone would be trusting a name; these rights come from
     ## the pin the handshake actually verified.
@@ -235,20 +226,18 @@ type
 
   ## ---------------------------- query ---------------------------------
 
-  QueryOp* {.role: truthState, metaTags: {tagAppApi, tagDb, tagNetworkSurface,
-      tagTypes}.} = enum
+  QueryOp* {.role: truthState, tag: "appApi|db|networkSurface|types".} = enum
     ## Doubles as the wire message kind: a serialized Query IS the request
     ## body, which is why there is no separate exchange-kind enum.
     qoGet, qoPut, qoFind, qoDelete, qoSync, qoFetch, qoSubscribe, qoPoll
 
-  Predicate* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  Predicate* {.role: truthState, tag: "appApi|db|types".} = object
     field*: FieldName
     text*: string
     num*: int64
     isText*: bool
 
-  Query* {.role: truthState, metaTags: {tagAppApi, tagDb, tagNetworkSurface,
-      tagTypes}.} = object
+  Query* {.role: truthState, tag: "appApi|db|networkSurface|types".} = object
     op*: QueryOp
     collection*: string
     where*: seq[Predicate]
@@ -257,8 +246,7 @@ type
     subscriptionId*: string
     payload*: ByteSeq
 
-  Reply* {.role: truthState, metaTags: {tagAppApi, tagDb, tagNetworkSurface,
-      tagTypes}.} = object
+  Reply* {.role: truthState, tag: "appApi|db|networkSurface|types".} = object
     ## cursor: for a sync or poll, the log position the follower has now
     ##   reached -- what it sends back next time.
     ## matched: rows answered, or for a sync the total the server holds, so
@@ -276,8 +264,7 @@ type
 
   ## ---------------------------- stats ---------------------------------
 
-  LengthHistogram* {.role: truthState, metaTags: {tagAppApi, tagDb,
-      tagTypes}.} = object
+  LengthHistogram* {.role: truthState, tag: "appApi|db|types".} = object
     ## 16 buckets, O(1) update, enough to compute cost(w) for any candidate
     ## width without retaining individual lengths.
     buckets*: array[16, uint32]
@@ -285,7 +272,7 @@ type
     totalLen*: uint64
     maxLen*: uint32
 
-  FieldStats* {.role: truthState, metaTags: {tagAppApi, tagDb, tagTypes}.} = object
+  FieldStats* {.role: truthState, tag: "appApi|db|types".} = object
     field*: FieldName
     width*: uint32
     hist*: LengthHistogram
@@ -345,7 +332,7 @@ const
     ## 33 B: tag | hash32
 
 proc validRef*(r: Ref): bool {.role: sanitizer,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## r: reference whose invariant is checked at an API boundary.
   ## An rtSidecar reference needs a full-width hash because that hash is
   ## its address; an rtPacked one needs a hash and nothing more, because
@@ -357,12 +344,12 @@ proc validRef*(r: Ref): bool {.role: sanitizer,
   of rtExternal: result = r.hash.len > 0 and r.databaseId.len > 0
 
 proc nullBitmapBytes*(slots: int): int {.role: helper, inline,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## slots: column count whose bitmap width is returned.
   result = (slots + 7) div 8
 
 proc hasCapped*(s: Schema): bool {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema holding at least one column that may externalise.
   ## Decides whether rows carry a second bitmap saying which values took
   ## the sidecar escape -- schemas without such a column never pay for it.
@@ -374,7 +361,7 @@ proc hasCapped*(s: Schema): bool {.role: parser,
     i = i + 1
 
 proc isDense*(s: Schema): bool {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema every row of which has the same byte width.
   ##
   ## True only when every column is `colFixed` AND collapsing is off. Then
@@ -395,7 +382,7 @@ proc isDense*(s: Schema): bool {.role: parser,
   result = true
 
 proc headerBytesOf*(s: Schema): int {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema whose per-row bitmap prefix width is returned.
   ## Each bitmap is emitted only when the schema can use it.
   if s.autoCollapse:
@@ -404,7 +391,7 @@ proc headerBytesOf*(s: Schema): int {.role: helper,
     result = result + nullBitmapBytes(s.slots.len)
 
 proc rowBytes*(s: Schema): uint32 {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema whose row width is returned when rows are dense.
   ## Zero for a schema whose rows vary -- callers must consult the offset
   ## table instead, and a zero here is what tells them so.
@@ -417,7 +404,7 @@ proc rowBytes*(s: Schema): uint32 {.role: helper,
     i = i + 1
 
 proc slotAt*(s: Schema, i: int): uint32 {.role: helper,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s/i: schema and column whose byte offset inside a DENSE row is
   ## returned. Prefix sum over widths, so a non-uniform dense schema still
   ## addresses arithmetically.
@@ -427,8 +414,8 @@ proc slotAt*(s: Schema, i: int): uint32 {.role: helper,
     result = result + s.slots[j].width
     j = j + 1
 
-proc intern*(S: var Schema, n: string): NameId {.role: stateController,
-    metaTags: {tagAppApi, tagDb, tagWrite}.} =
+proc intern*(S: var Schema, n: string): NameId {.role: actor,
+    tag: "appApi|db|write".} =
   ## S: schema whose name table receives the field name.
   ## n: field name, dotted for nested structs (`attachment.locator`).
   var
@@ -441,7 +428,7 @@ proc intern*(S: var Schema, n: string): NameId {.role: stateController,
   result = NameId(S.names.len - 1)
 
 proc nameOf*(s: Schema, id: NameId): string {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema holding the name table.
   ## id: interned name identifier.
   result = ""
@@ -449,7 +436,7 @@ proc nameOf*(s: Schema, id: NameId): string {.role: parser,
     result = s.names[int(id)]
 
 proc hasIdentityColumns*(s: Schema): bool {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema asked whether its rows carry identity.
   ##
   ## DERIVED from the columns themselves, never stored as a separate flag:
@@ -460,7 +447,7 @@ proc hasIdentityColumns*(s: Schema): bool {.role: parser,
     s.nameOf(s.slots[1].nameId) == rowFlagsColumn
 
 proc slotIndex*(s: Schema, n: string): int {.role: parser,
-    metaTags: {tagAppApi, tagDb, tagRead}.} =
+    tag: "appApi|db|read".} =
   ## s: schema to search.
   ## n: field name, possibly matched through the alias table.
   var

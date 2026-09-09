@@ -25,16 +25,14 @@
 
 import std/[os, json, strutils]
 
-import geistPragmas
+import runePragmas
 import ../geist/wire
 
 type
-  Verb {.role: configurator, metaTags: {tagCli, tagEntrypoint,
-      tagTypes}.} = enum
+  Verb {.role: configurator, tag: "cli|entrypoint|types".} = enum
     vSend, vPoll, vPin
 
-  Options* {.role: configurator, metaTags: {tagCli, tagConfig, tagEntrypoint,
-      tagStream, tagTypes}.} = object
+  Options* {.role: configurator, tag: "cli|config|entrypoint|stream|types".} = object
     verb*: Verb
     remote*: string
     identity*: string
@@ -86,7 +84,7 @@ geist-relay <verb> [options]
 """
 
 proc parseOptions*(argv: openArray[string]): Options {.role: parser,
-    metaTags: {tagCli, tagEntrypoint, tagParsing}.} =
+    tag: "cli|entrypoint|parsing".} =
   ## argv: command line without the executable name.
   var
     i: int = 0
@@ -161,7 +159,7 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     result.consumer = result.subject
 
 proc withUserConfig*(o: Options): Options {.role: configurator,
-    metaTags: {tagCli, tagConfig, tagParsing}.} =
+    tag: "cli|config|parsing".} =
   ## o: options straight off the command line, completed from
   ## `[relayClient]`.
   ##
@@ -218,7 +216,7 @@ proc withUserConfig*(o: Options): Options {.role: configurator,
     result.intervalMs = client.setting("intervalMs", result.intervalMs)
 
 proc identityPassword(o: Options): string {.role: sanitizer,
-    metaTags: {tagCli, tagCryptoBoundary}.} =
+    tag: "cli|cryptoBoundary".} =
   ## o: the password sealing this client's identity file.
   if o.identityPasswordFile.len > 0:
     if not fileExists(o.identityPasswordFile):
@@ -228,7 +226,7 @@ proc identityPassword(o: Options): string {.role: sanitizer,
   result = o.identityPassword
 
 proc mineFor(o: Options): AmeIdentityKey {.role: configurator,
-    metaTags: {tagCli, tagCryptoBoundary}.} =
+    tag: "cli|cryptoBoundary".} =
   ## o: this client's signing identity, created on first use.
   var
     loaded: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
@@ -243,7 +241,7 @@ proc mineFor(o: Options): AmeIdentityKey {.role: configurator,
   result = loaded.key
 
 proc connectRelay(o: Options): GeistLink {.role: orchestrator,
-    metaTags: {tagCli, tagNetworkSurface, tagOrchestrator}.} =
+    tag: "cli|networkSurface|orchestrator".} =
   ## o: options naming the relay and the pin it is checked against.
   var
     address: tuple[ok: bool, a: GeistDacAddress]
@@ -268,7 +266,7 @@ proc connectRelay(o: Options): GeistLink {.role: orchestrator,
 
 proc sendOne(link: var GeistLink, o: Options,
     body: ByteSeq): tuple[ok: bool, answer: ByteSeq, err: string] {.
-    role: orchestrator, metaTags: {tagCli, tagNetworkSurface, tagWrite}.} =
+    role: orchestrator, tag: "cli|networkSurface|write".} =
   ## link/o/body: one message, and whatever the far side answered.
   ##
   ## The body is the payload RAW -- no envelope, no row encoding. A relay
@@ -287,7 +285,7 @@ proc sendOne(link: var GeistLink, o: Options,
   result.ok = true
 
 proc cmdSend(o: Options): int {.role: metaOrchestrator,
-    metaTags: {tagCli, tagEntrypoint, tagStream, tagWrite}.} =
+    tag: "cli|entrypoint|stream|write".} =
   ## o: read the input and hand it over, one message or one per line.
   var
     link: GeistLink
@@ -332,12 +330,12 @@ proc cmdSend(o: Options): int {.role: metaOrchestrator,
   result = 0
 
 proc showMessage(m: RelayMessage, format: RelayFormat) {.role: helper,
-    metaTags: {tagCli, tagFormatting, tagStream}.} =
+    tag: "cli|formatting|stream".} =
   ## m/format: one collected message, written out.
   stdout.write(render(m, format))
 
 proc cmdPoll(o: Options): int {.role: metaOrchestrator,
-    metaTags: {tagCli, tagEntrypoint, tagRead, tagStream}.} =
+    tag: "cli|entrypoint|read|stream".} =
   ## o: collect what the relay is holding for this reader, once or forever.
   var
     link: GeistLink
@@ -376,7 +374,7 @@ proc cmdPoll(o: Options): int {.role: metaOrchestrator,
   result = 0
 
 proc cmdPin(o: Options): int {.role: orchestrator,
-    metaTags: {tagCli, tagCryptoBoundary, tagEntrypoint}.} =
+    tag: "cli|cryptoBoundary|entrypoint".} =
   ## o: write this client's pin, which the relay must be given to trust it.
   var
     written: tuple[ok: bool, err: string]
@@ -392,7 +390,7 @@ proc cmdPin(o: Options): int {.role: orchestrator,
   result = 0
 
 proc runRelayClient*(argv: seq[string]): int {.role: metaOrchestrator,
-    metaTags: {tagCli, tagEntrypoint, tagOrchestrator}.} =
+    tag: "cli|entrypoint|orchestrator".} =
   ## argv: command line without the executable name.
   var
     o: Options

@@ -31,7 +31,7 @@
 
 import std/os
 
-import geistPragmas
+import runePragmas
 
 when defined(posix):
   import std/posix
@@ -42,7 +42,7 @@ elif defined(windows):
     stdcall, dynlib: "kernel32".}
 
 proc syncHandle(f: File): bool {.role: dataWriter,
-    metaTags: {tagStorageIo, tagWrite}.} =
+    tag: "storageIo|write".} =
   ## f: open file whose bytes are pushed from the kernel's cache to the
   ## device. Everything else in this module is bookkeeping around this call.
   when defined(posix):
@@ -53,7 +53,7 @@ proc syncHandle(f: File): bool {.role: dataWriter,
     result = true
 
 proc syncDir*(dir: string): tuple[ok: bool, err: string] {.role: dataWriter,
-    metaTags: {tagStorageIo, tagWrite}.} =
+    tag: "storageIo|write".} =
   ## dir: directory whose ENTRY LIST is made durable, which is what a
   ## rename actually changes. Renaming without this can leave a committed
   ## manifest pointing at a name the directory forgot.
@@ -75,7 +75,7 @@ proc syncDir*(dir: string): tuple[ok: bool, err: string] {.role: dataWriter,
     discard close(fd)
 
 proc writeDurable*(path: string, A: openArray[uint8]): tuple[ok: bool,
-    err: string] {.role: dataWriter, metaTags: {tagStorageIo, tagWrite}.} =
+    err: string] {.role: dataWriter, tag: "storageIo|write".} =
   ## path: destination, created or truncated.
   ## A: payload written, flushed and fsynced before this returns.
   ##
@@ -104,7 +104,7 @@ proc writeDurable*(path: string, A: openArray[uint8]): tuple[ok: bool,
     result = (false, exc.msg)
 
 proc replaceDurable*(path: string, A: openArray[uint8]): tuple[ok: bool,
-    err: string] {.role: dataWriter, metaTags: {tagStorageIo, tagWrite}.} =
+    err: string] {.role: dataWriter, tag: "storageIo|write".} =
   ## path: file replaced ATOMICALLY -- a reader sees the old bytes or the
   ##   new ones, never a mixture, and never an empty file.
   ## A: payload.
@@ -123,7 +123,7 @@ proc replaceDurable*(path: string, A: openArray[uint8]): tuple[ok: bool,
   result = syncDir(parentDir(path))
 
 proc replaceDurable*(path, s: string): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagStorageIo, tagWrite}.} =
+    role: dataWriter, tag: "storageIo|write".} =
   ## path/s: the same replacement for text -- the manifest and the lock
   ## file, both of which are one line a person may want to read.
   result = replaceDurable(path, toOpenArrayByte(s, 0, s.len - 1))

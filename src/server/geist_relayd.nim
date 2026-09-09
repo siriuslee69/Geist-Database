@@ -40,12 +40,11 @@
 
 import std/[json, os, strutils, times]
 
-import geistPragmas
+import runePragmas
 import ../geist/wire
 
 type
-  RelayConfig* {.role: configurator, metaTags: {tagConfig, tagEntrypoint,
-      tagServer, tagStream, tagTypes}.} = object
+  RelayConfig* {.role: configurator, tag: "config|entrypoint|server|stream|types".} = object
     listen*: string
     subject*: string
     identity*: string
@@ -110,8 +109,8 @@ Every status line is written to stderr, so --to stdout stays a clean pipe.
 var
   shutdownRequested: bool = false
 
-proc requestShutdown*() {.role: stateController,
-    metaTags: {tagEntrypoint, tagLifecycle, tagServer}.} =
+proc requestShutdown*() {.role: actor,
+    tag: "entrypoint|lifecycle|server".} =
   ## Ask the serve loop to stop after the request in flight.
   shutdownRequested = true
 
@@ -123,20 +122,20 @@ when defined(posix):
     requestShutdown()
 
 proc installSignalHandlers*() {.role: orchestrator,
-    metaTags: {tagEntrypoint, tagLifecycle, tagServer}.} =
+    tag: "entrypoint|lifecycle|server".} =
   ## Make SIGTERM and SIGINT request a graceful stop.
   when defined(posix):
     signal(SIGTERM, onSignal)
     signal(SIGINT, onSignal)
 
 proc note(c: RelayConfig, line: string) {.role: helper,
-    metaTags: {tagServer, tagStatus}.} =
+    tag: "server|status".} =
   ## c/line: one status line, on stderr because stdout may be the product.
   if not c.quiet:
     stderr.writeLine(line)
 
 proc parseSink*(name: string): RelaySink {.role: parser,
-    metaTags: {tagConfig, tagParsing, tagStream}.} =
+    tag: "config|parsing|stream".} =
   ## name: `--to` as the sink it selects.
   case name.toLowerAscii()
   of "", "spool", "queue", "none": result = rsSpool
@@ -148,7 +147,7 @@ proc parseSink*(name: string): RelaySink {.role: parser,
       "--to must be spool, stdout, file or exec, got '" & name & "'")
 
 proc parseFormat*(name: string): RelayFormat {.role: parser,
-    metaTags: {tagConfig, tagFormatting, tagParsing, tagStream}.} =
+    tag: "config|formatting|parsing|stream".} =
   ## name: `--format` as the layout it selects.
   case name.toLowerAscii()
   of "", "lines", "line", "plain", "text": result = rfLines
@@ -159,7 +158,7 @@ proc parseFormat*(name: string): RelayFormat {.role: parser,
       "--format must be lines, json or raw, got '" & name & "'")
 
 proc parseArgs*(argv: openArray[string]): RelayConfig {.role: parser,
-    metaTags: {tagEntrypoint, tagParsing, tagServer}.} =
+    tag: "entrypoint|parsing|server".} =
   ## argv: command line without the executable name.
   var
     i: int = 0
@@ -219,7 +218,7 @@ proc parseArgs*(argv: openArray[string]): RelayConfig {.role: parser,
     i = i + 1
 
 proc relayConfigCandidates*(named: string): seq[string] {.role: parser,
-    metaTags: {tagConfig, tagParsing, tagServer}.} =
+    tag: "config|parsing|server".} =
   ## named: `--config`, or nothing.
   ##
   ## The same two places `geistd` looks, because an operator running both
@@ -230,7 +229,7 @@ proc relayConfigCandidates*(named: string): seq[string] {.role: parser,
     getConfigDir() / "geist" / "userconfig.toml"]
 
 proc withUserConfig*(c: RelayConfig): RelayConfig {.role: configurator,
-    metaTags: {tagConfig, tagParsing, tagServer}.} =
+    tag: "config|parsing|server".} =
   ## c: options straight off the command line.
   ##
   ## Fills in only what was NOT typed, from the `[relay]` section. A relay
@@ -294,7 +293,7 @@ proc withUserConfig*(c: RelayConfig): RelayConfig {.role: configurator,
     result.idleSeconds = relay.setting("idleSeconds", result.idleSeconds)
 
 proc resolveConfig*(argv: openArray[string]): RelayConfig {.role: parser,
-    metaTags: {tagEntrypoint, tagParsing, tagServer}.} =
+    tag: "entrypoint|parsing|server".} =
   ## argv: command line, merged with the config file and then checked.
   ## The check happens AFTER the merge, or a setting supplied by the file
   ## would be reported missing.
@@ -305,7 +304,7 @@ proc resolveConfig*(argv: openArray[string]): RelayConfig {.role: parser,
     raise newException(ValueError, "--to file needs --file <path>")
 
 proc resolveIdentityPassword(c: RelayConfig): string {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagServer}.} =
+    tag: "cryptoBoundary|server".} =
   ## c: relay config. A password file wins over the inline form, which is
   ## visible in the process list.
   if c.identityPasswordFile.len > 0:
@@ -317,7 +316,7 @@ proc resolveIdentityPassword(c: RelayConfig): string {.role: sanitizer,
 
 proc collectTrust(c: RelayConfig): tuple[ok: bool, peers: seq[TrustedPeer],
     err: string] {.role: configurator,
-    metaTags: {tagCryptoBoundary, tagServer}.} =
+    tag: "cryptoBoundary|server".} =
   ## c: relay config whose pin files become the trust list.
   ##
   ## The FLAG grants the right, not the peer: `--trust` may collect from
@@ -349,7 +348,7 @@ proc collectTrust(c: RelayConfig): tuple[ok: bool, peers: seq[TrustedPeer],
   result.ok = true
 
 proc deskFor*(c: RelayConfig): RelayDesk {.role: configurator,
-    metaTags: {tagConfig, tagServer, tagStream}.} =
+    tag: "config|server|stream".} =
   ## c: relay options resolved to the pipe they describe.
   result = initRelayDesk(parseSink(c.to), parseFormat(c.format))
   result.file = c.file
@@ -359,8 +358,7 @@ proc deskFor*(c: RelayConfig): RelayDesk {.role: configurator,
   result.streams = c.streams
 
 proc runRelayd*(argv: seq[string]): int {.role: metaOrchestrator,
-    metaTags: {tagEntrypoint, tagLifecycle, tagOrchestrator, tagServer,
-    tagStream}.} =
+    tag: "entrypoint|lifecycle|orchestrator|server|stream".} =
   ## argv: command line without the executable name.
   var
     c: RelayConfig

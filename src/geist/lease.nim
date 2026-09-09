@@ -32,7 +32,7 @@
 
 import std/[exitprocs, locks, nativesockets, os, strutils, times]
 
-import geistPragmas
+import runePragmas
 import ./durable
 
 const
@@ -44,8 +44,7 @@ const
     ## for the rest of the session.
 
 type
-  LeaseInfo* {.role: truthState, metaTags: {tagDb, tagStorageIo,
-      tagTypes}.} = object
+  LeaseInfo* {.role: truthState, tag: "db|storageIo|types".} = object
     ## What the lock file says. `pid` and `host` exist to be shown to a
     ## person: "held by pid 4711 on thinkpad" is an actionable message and
     ## "database is locked" is not.
@@ -53,7 +52,7 @@ type
     host*: string
     at*: int64
 
-  Lease* {.role: truthState, metaTags: {tagDb, tagStorageIo, tagTypes}.} = object
+  Lease* {.role: truthState, tag: "db|storageIo|types".} = object
     ## held: false means every write path must refuse.
     ## path: the lock file, kept so release does not have to recompute it.
     ## root: the normalised store root, which is the registry key below.
@@ -63,17 +62,17 @@ type
     info*: LeaseInfo
 
 proc leasePath*(dir: string): string {.role: helper, inline,
-    metaTags: {tagDb, tagStorageIo}.} =
+    tag: "db|storageIo".} =
   ## dir: store root whose lock file path is returned.
   result = dir / leaseName
 
 proc encodeLease(i: LeaseInfo): string {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagWrite}.} =
+    tag: "codecBoundary|write".} =
   ## i: lease contents rendered as one human-readable line.
   result = $i.pid & " " & i.host & " " & $i.at & "\n"
 
 proc decodeLease(s: string): tuple[ok: bool, info: LeaseInfo] {.role: parser,
-    metaTags: {tagCodecBoundary, tagRead}.} =
+    tag: "codecBoundary|read".} =
   ## s: one lock file's contents.
   var
     parts: seq[string] = @[]
@@ -111,7 +110,7 @@ var
 initLock(leaseRegistryLock)
 
 proc indexOfRoot(A: openArray[LeaseClaim], root: string): int {.role: parser,
-    metaTags: {tagDb, tagLifecycle}.} =
+    tag: "db|lifecycle".} =
   ## A/root: the claim list and the store path looked up in it, or -1.
   ##
   ## Takes the list as a PARAMETER rather than reading the global: the
@@ -126,8 +125,8 @@ proc indexOfRoot(A: openArray[LeaseClaim], root: string): int {.role: parser,
       return i
     i = i + 1
 
-proc claimLocally(root, path: string, pid: int): bool {.role: stateController,
-    metaTags: {tagDb, tagLifecycle}.} =
+proc claimLocally(root, path: string, pid: int): bool {.role: actor,
+    tag: "db|lifecycle".} =
   ## root/path/pid: the claim being recorded.
   ## Returns false when this process already holds it, in which case
   ## nothing is registered and the caller must not proceed.
@@ -138,8 +137,8 @@ proc claimLocally(root, path: string, pid: int): bool {.role: stateController,
       leaseRegistry.add (root: root, path: path, pid: pid)
       result = true
 
-proc releaseLocally(root: string) {.role: stateController,
-    metaTags: {tagDb, tagLifecycle}.} =
+proc releaseLocally(root: string) {.role: actor,
+    tag: "db|lifecycle".} =
   ## root: normalised store path dropped from the registry.
   var
     i: int = 0
@@ -150,7 +149,7 @@ proc releaseLocally(root: string) {.role: stateController,
         leaseRegistry.delete(i)
 
 proc dropLockFile(path: string, pid: int) {.role: dataWriter,
-    metaTags: {tagDb, tagLifecycle, tagStorageIo}.} =
+    tag: "db|lifecycle|storageIo".} =
   ## path/pid: remove a lock file only if it is still OURS. A lease we
   ## broke as stale may since have been re-taken by a third process.
   var
@@ -184,7 +183,7 @@ proc releaseHeldLeases() {.noconv.} =
 addExitProc(releaseHeldLeases)
 
 proc processAlive*(pid: int): bool {.role: parser,
-    metaTags: {tagDb, tagStatus}.} =
+    tag: "db|status".} =
   ## pid: process identifier probed WITHOUT signalling it.
   ##
   ## On Linux `/proc/<pid>` answers this with no permissions and no risk of
@@ -197,7 +196,7 @@ proc processAlive*(pid: int): bool {.role: parser,
     result = true
 
 proc readLease*(dir: string): tuple[ok: bool, info: LeaseInfo] {.role: dataFetcher,
-    metaTags: {tagDb, tagRead, tagStorageIo}.} =
+    tag: "db|read|storageIo".} =
   ## dir: store root whose current holder is reported, if any.
   var
     p: string = ""
@@ -210,13 +209,13 @@ proc readLease*(dir: string): tuple[ok: bool, info: LeaseInfo] {.role: dataFetch
     result = (false, LeaseInfo())
 
 proc describeLease*(i: LeaseInfo): string {.role: helper,
-    metaTags: {tagDb, tagStatus}.} =
+    tag: "db|status".} =
   ## i: lease rendered for an error message a person has to act on.
   result = "held by pid " & $i.pid & " on " & i.host & ", " &
     $(getTime().toUnix() - i.at) & "s ago"
 
 proc breakable(i: LeaseInfo): bool {.role: parser,
-    metaTags: {tagDb, tagStatus}.} =
+    tag: "db|status".} =
   ## i: existing lease tested for abandonment.
   ## Both conditions must hold: old ENOUGH and its process is gone. A stale
   ## timestamp alone is a busy writer; a dead pid alone may be a pid that
@@ -225,8 +224,8 @@ proc breakable(i: LeaseInfo): bool {.role: parser,
     not processAlive(i.pid)
 
 proc acquireLease*(dir: string): tuple[ok: bool, lease: Lease,
-    err: string] {.role: stateController,
-    metaTags: {tagDb, tagLifecycle, tagStorageIo, tagWrite}.} =
+    err: string] {.role: actor,
+    tag: "db|lifecycle|storageIo|write".} =
   ## dir: store root claimed for writing.
   ##
   ## Returns ok = false with a description of the holder rather than raising,
@@ -264,8 +263,8 @@ proc acquireLease*(dir: string): tuple[ok: bool, lease: Lease,
   result.lease.held = true
   result.ok = true
 
-proc refreshLease*(S: var Lease) {.role: stateController,
-    metaTags: {tagDb, tagStorageIo, tagWrite}.} =
+proc refreshLease*(S: var Lease) {.role: actor,
+    tag: "db|storageIo|write".} =
   ## S: lease whose timestamp is moved forward, called on every save so a
   ## long-lived writer never looks abandoned to anyone else.
   if not S.held:
@@ -273,8 +272,8 @@ proc refreshLease*(S: var Lease) {.role: stateController,
   S.info.at = getTime().toUnix()
   discard replaceDurable(S.path, encodeLease(S.info))
 
-proc releaseLease*(S: var Lease) {.role: stateController,
-    metaTags: {tagDb, tagLifecycle, tagStorageIo, tagWrite}.} =
+proc releaseLease*(S: var Lease) {.role: actor,
+    tag: "db|lifecycle|storageIo|write".} =
   ## S: lease removed, both from disk and from this process's registry.
   if not S.held:
     return

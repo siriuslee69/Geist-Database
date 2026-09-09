@@ -9,7 +9,7 @@
 ## `crypto/hashing` re-exports everything here, so ordinary callers import
 ## that one and never name this module.
 
-import geistPragmas
+import runePragmas
 
 const
   fullDigestBytes* = 32
@@ -22,8 +22,7 @@ const
     ## 16 bytes puts that at 2^128 rather than 2^64.
 
 type
-  HashKind* {.role: truthState, metaTags: {tagAppApi, tagCryptoBoundary,
-      tagTypes}.} = enum
+  HashKind* {.role: truthState, tag: "appApi|cryptoBoundary|types".} = enum
     ## Structurally independent families, so a break in one construction
     ## does not imply a break in another: BLAKE3 is a tree, SHA3 a sponge,
     ## Gimli a lightweight permutation sponge.
@@ -37,7 +36,7 @@ type
     hkBlake3, hkSha3, hkGimli
 
 proc hashName*(k: HashKind): string {.role: helper,
-    metaTags: {tagCryptoBoundary, tagFormatting}.} =
+    tag: "cryptoBoundary|formatting".} =
   ## k: hash family rendered for config output and error messages.
   case k
   of hkBlake3: result = "blake3"
@@ -46,7 +45,7 @@ proc hashName*(k: HashKind): string {.role: helper,
 
 proc parseHashKind*(s: string): tuple[ok: bool, kind: HashKind,
     err: string] {.role: parser,
-    metaTags: {tagConfig, tagCryptoBoundary, tagParsing}.} =
+    tag: "config|cryptoBoundary|parsing".} =
   ## s: algorithm name from a config file or command line.
   case s
   of "blake3", "b3": result = (true, hkBlake3, "")
@@ -57,14 +56,14 @@ proc parseHashKind*(s: string): tuple[ok: bool, kind: HashKind,
       "unknown hash '" & s & "'; expected blake3, sha3 or gimli")
 
 proc validDigestBytes*(n: int): bool {.role: sanitizer, inline,
-    metaTags: {tagConfig, tagCryptoBoundary, tagRead}.} =
+    tag: "config|cryptoBoundary|read".} =
   ## n: candidate digest width. Only the two documented widths are legal;
   ## an arbitrary truncation would silently weaken a guarantee nobody
   ## re-derived at the call site.
   result = n == shortDigestBytes or n == fullDigestBytes
 
 proc constantTimeEq*(a, b: openArray[uint8]): bool {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagRead}.} =
+    tag: "cryptoBoundary|read".} =
   ## a/b: byte strings compared without an early exit, so a caller cannot
   ## time its way to a matching prefix.
   var

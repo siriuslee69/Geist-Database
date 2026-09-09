@@ -50,7 +50,7 @@
 
 import std/[os, strutils, tables]
 
-import geistPragmas
+import runePragmas
 import ./secret
 import ./keys
 import ./types
@@ -68,8 +68,7 @@ const
     ## larger is data, and data belongs in the database.
 
 type
-  KeyProvider* {.role: configurator, metaTags: {tagConfig, tagCryptoBoundary,
-      tagTypes}.} = enum
+  KeyProvider* {.role: configurator, tag: "config|cryptoBoundary|types".} = enum
     ## Where the bytes end up.
     ##
     ##   kpFile     an Argon2id-sealed file. Portable, and the default
@@ -81,8 +80,7 @@ type
     ##              one-shot session may prefer.
     kpFile, kpAndroid, kpMemory
 
-  KeyStatus* {.role: truthState, metaTags: {tagCryptoBoundary, tagStatus,
-      tagTypes}.} = enum
+  KeyStatus* {.role: truthState, tag: "cryptoBoundary|status|types".} = enum
     ## What is known about one name.
     ##
     ##   ksAbsent       never stored, or dropped
@@ -98,7 +96,7 @@ type
     ##                  from ksInvalidated.
     ksAbsent, ksPresent, ksInvalidated, ksUnavailable
 
-  Keystore* {.role: truthState, metaTags: {tagCryptoBoundary, tagTypes}.} =
+  Keystore* {.role: truthState, tag: "cryptoBoundary|types".} =
       object
     ## One place keys are kept.
     ##
@@ -112,8 +110,7 @@ type
     note*: string
     held: Table[string, seq[uint8]]
 
-  KeyResult* {.role: truthState, metaTags: {tagCryptoBoundary, tagStatus,
-      tagTypes}.} = object
+  KeyResult* {.role: truthState, tag: "cryptoBoundary|status|types".} = object
     ## The answer to a `get`, with the reason when there is not one.
     ok*: bool
     status*: KeyStatus
@@ -121,7 +118,7 @@ type
     err*: string
 
 proc describeProvider*(p: KeyProvider): string {.role: helper,
-    metaTags: {tagCryptoBoundary, tagStatus}.} =
+    tag: "cryptoBoundary|status".} =
   ## p: one line an application can show a person.
   case p
   of kpFile:
@@ -132,7 +129,7 @@ proc describeProvider*(p: KeyProvider): string {.role: helper,
     result = "memory only -- nothing is saved and nothing survives a restart"
 
 proc describeStatus*(s: KeyStatus): string {.role: helper,
-    metaTags: {tagCryptoBoundary, tagStatus}.} =
+    tag: "cryptoBoundary|status".} =
   ## s: one line an application can show a person.
   case s
   of ksAbsent: result = "not stored"
@@ -165,7 +162,7 @@ when defined(android):
     importc: "geist_android_ks_status", cdecl.}
 
 proc androidUsable*(): bool {.role: parser,
-    metaTags: {tagCryptoBoundary, tagCompat}.} =
+    tag: "cryptoBoundary|compat".} =
   ## Is the Android Keystore reachable from this process?
   ##
   ## False everywhere except an Android build whose app has loaded the
@@ -181,7 +178,7 @@ proc androidUsable*(): bool {.role: parser,
 
 proc openKeystore*(dir: string, password: string = "",
     want: KeyProvider = kpFile): Keystore {.role: configurator,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagLifecycle}.} =
+    tag: "appApi|cryptoBoundary|lifecycle".} =
   ## dir: where a file provider keeps its entries. Created on first write.
   ## password: required by kpFile; ignored by the others, which do not
   ##   have anything for it to protect.
@@ -202,7 +199,7 @@ proc openKeystore*(dir: string, password: string = "",
       "falling back to " & describeProvider(kpFile)
 
 proc downgraded*(k: Keystore): bool {.role: parser, inline,
-    metaTags: {tagCryptoBoundary, tagStatus}.} =
+    tag: "cryptoBoundary|status".} =
   ## k: did this keystore end up weaker than it was asked to be?
   ##
   ## The thing a password manager shows a warning for. It is a single
@@ -213,12 +210,12 @@ proc downgraded*(k: Keystore): bool {.role: parser, inline,
 ## ---------------------------- the file provider ---------------------
 
 proc pathFor(k: Keystore, name: string): string {.role: helper,
-    metaTags: {tagCryptoBoundary}.} =
+    tag: "cryptoBoundary".} =
   ## k/name: where the file provider keeps one entry.
   result = k.dir / name & keystoreSuffix
 
 proc checkName*(name: string): string {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagParsing}.} =
+    tag: "cryptoBoundary|parsing".} =
   ## name: the complaint, empty when there is none.
   ##
   ## A name becomes a path segment, so `..` and separators are refused
@@ -240,7 +237,7 @@ proc checkName*(name: string): string {.role: sanitizer,
 
 proc putFile(k: Keystore, name: string, value: openArray[uint8]): tuple[
     ok: bool, err: string] {.role: encryptor,
-    metaTags: {tagCryptoBoundary, tagStorageIo, tagWrite}.} =
+    tag: "cryptoBoundary|storageIo|write".} =
   ## k/name/value: sealed with the same key file the database uses.
   ##
   ## One KeySet per entry: dropping one key must not require rewriting
@@ -263,7 +260,7 @@ proc putFile(k: Keystore, name: string, value: openArray[uint8]): tuple[
   result = writeKeyFile(k.pathFor(name), k.password, K)
 
 proc getFile(k: Keystore, name: string): KeyResult {.role: decryptor,
-    metaTags: {tagCryptoBoundary, tagRead, tagStorageIo}.} =
+    tag: "cryptoBoundary|read|storageIo".} =
   ## k/name: unsealed, or the reason it was not.
   ##
   ## A file that is THERE and will not open is reported as a failure with
@@ -292,7 +289,7 @@ proc getFile(k: Keystore, name: string): KeyResult {.role: decryptor,
 
 proc put*(S: var Keystore, name: string,
     value: openArray[uint8]): tuple[ok: bool, err: string] {.
-    role: dataWriter, metaTags: {tagAppApi, tagCryptoBoundary, tagWrite}.} =
+    role: dataWriter, tag: "appApi|cryptoBoundary|write".} =
   ## S/name/value: store one secret under one name, replacing any before.
   var
     err: string = checkName(name)
@@ -321,7 +318,7 @@ proc put*(S: var Keystore, name: string,
       result = (false, "this build has no Android Keystore")
 
 proc get*(s: Keystore, name: string): KeyResult {.role: dataFetcher,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagRead}.} =
+    tag: "appApi|cryptoBoundary|read".} =
   ## s/name: the secret, or why not.
   ##
   ## Check `status` before `err` when showing a person anything:
@@ -361,8 +358,7 @@ proc get*(s: Keystore, name: string): KeyResult {.role: dataFetcher,
       result.err = "this build has no Android Keystore"
 
 proc drop*(S: var Keystore, name: string): tuple[ok: bool, err: string] {.
-    role: stateController, metaTags: {tagAppApi, tagCryptoBoundary,
-    tagDelete}.} =
+    role: actor, tag: "appApi|cryptoBoundary|delete".} =
   ## S/name: forget one secret. Dropping something that is not there is a
   ## SUCCESS -- the caller asked for it to be gone and it is gone.
   var
@@ -388,7 +384,7 @@ proc drop*(S: var Keystore, name: string): tuple[ok: bool, err: string] {.
       result = (false, "this build has no Android Keystore")
 
 proc status*(s: Keystore, name: string): KeyStatus {.role: parser,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagStatus}.} =
+    tag: "appApi|cryptoBoundary|status".} =
   ## s/name: what is known about this entry, without unsealing it.
   ##
   ## Cheap on purpose: a startup path that wants to know whether to show
@@ -412,7 +408,7 @@ proc status*(s: Keystore, name: string): KeyStatus {.role: parser,
       result = ksUnavailable
 
 proc names*(s: Keystore): seq[string] {.role: parser,
-    metaTags: {tagAppApi, tagCryptoBoundary, tagRead}.} =
+    tag: "appApi|cryptoBoundary|read".} =
   ## s: every name this keystore holds.
   ##
   ## The Android provider does not answer this: its entries are enumerable
@@ -435,8 +431,8 @@ proc names*(s: Keystore): seq[string] {.role: parser,
   of kpAndroid:
     discard
 
-proc closeKeystore*(S: var Keystore) {.role: stateController,
-    metaTags: {tagCryptoBoundary, tagLifecycle}.} =
+proc closeKeystore*(S: var Keystore) {.role: actor,
+    tag: "cryptoBoundary|lifecycle".} =
   ## S: forget everything held in memory. The file and Android providers
   ## have nothing to close; the memory one has everything.
   for key in S.held.keys:

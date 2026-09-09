@@ -43,12 +43,11 @@
 
 import std/[os, strutils, tables, times]
 
-import geistPragmas
+import runePragmas
 import ../geist/network
 
 type
-  DaemonConfig* {.role: configurator, metaTags: {tagConfig, tagEntrypoint,
-      tagServer, tagTypes}.} = object
+  DaemonConfig* {.role: configurator, tag: "config|entrypoint|server|types".} = object
     path*: string
     listen*: string
     preset*: string
@@ -73,8 +72,7 @@ type
     ## value alone cannot say whether a config file may overwrite them.
     given*: seq[string]
 
-  DaemonState* {.role: truthState, metaTags: {tagServer, tagStatus,
-      tagTypes}.} = object
+  DaemonState* {.role: truthState, tag: "server|status|types".} = object
     ## session: the database, open for the whole life of the daemon.
     ## cursors: one log position per named subscription, kept HERE rather
     ##   than in the session, because a reload replaces the session and a
@@ -119,8 +117,8 @@ geistd --path <dir> [options]
 var
   shutdownRequested: bool = false
 
-proc requestShutdown*() {.role: stateController,
-    metaTags: {tagEntrypoint, tagLifecycle, tagServer}.} =
+proc requestShutdown*() {.role: actor,
+    tag: "entrypoint|lifecycle|server".} =
   ## Ask the serve loop to stop after the request in flight.
   shutdownRequested = true
 
@@ -132,14 +130,14 @@ when defined(posix):
     requestShutdown()
 
 proc installSignalHandlers*() {.role: orchestrator,
-    metaTags: {tagEntrypoint, tagLifecycle, tagServer}.} =
+    tag: "entrypoint|lifecycle|server".} =
   ## Make SIGTERM and SIGINT request a graceful stop.
   when defined(posix):
     signal(SIGTERM, onSignal)
     signal(SIGINT, onSignal)
 
 proc parseArgs*(argv: openArray[string]): DaemonConfig {.role: parser,
-    metaTags: {tagEntrypoint, tagParsing, tagServer}.} =
+    tag: "entrypoint|parsing|server".} =
   ## argv: command line without the executable name.
   var
     i: int = 0
@@ -198,7 +196,7 @@ proc parseArgs*(argv: openArray[string]): DaemonConfig {.role: parser,
     i = i + 1
 
 proc withUserConfig(c: DaemonConfig): DaemonConfig {.role: configurator,
-    metaTags: {tagConfig, tagParsing, tagServer}.} =
+    tag: "config|parsing|server".} =
   ## c: options straight off the command line.
   ##
   ## Fills in only what was NOT given. A daemon is the thing most likely
@@ -236,7 +234,7 @@ proc withUserConfig(c: DaemonConfig): DaemonConfig {.role: configurator,
     result.allowWrite = loaded.user.allowWrite
 
 proc resolveConfig*(argv: openArray[string]): DaemonConfig {.role: parser,
-    metaTags: {tagEntrypoint, tagParsing, tagServer}.} =
+    tag: "entrypoint|parsing|server".} =
   ## argv: command line, merged with userconfig.toml and then checked.
   ## The check happens AFTER the merge, or a setting supplied by the file
   ## would be reported missing.
@@ -246,7 +244,7 @@ proc resolveConfig*(argv: openArray[string]): DaemonConfig {.role: parser,
       "--path is required (or [database] path in userconfig.toml)")
 
 proc resolvePassword(c: DaemonConfig): string {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagServer}.} =
+    tag: "cryptoBoundary|server".} =
   ## c: daemon config. A password file wins over the inline form, which is
   ## visible in the process list.
   if c.passwordFile.len > 0:
@@ -256,7 +254,7 @@ proc resolvePassword(c: DaemonConfig): string {.role: sanitizer,
   result = c.password
 
 proc resolveIdentityPassword(c: DaemonConfig): string {.role: sanitizer,
-    metaTags: {tagCryptoBoundary, tagServer}.} =
+    tag: "cryptoBoundary|server".} =
   ## c: daemon config. Falls back to the at-rest password so a simple
   ## deployment needs one secret, but keeping them separate is better.
   if c.identityPasswordFile.len > 0:
@@ -269,7 +267,7 @@ proc resolveIdentityPassword(c: DaemonConfig): string {.role: sanitizer,
   result = resolvePassword(c)
 
 proc storeParts(path: string): tuple[dir, name: string] {.role: parser,
-    metaTags: {tagParsing, tagServer, tagStorageIo}.} =
+    tag: "parsing|server|storageIo".} =
   ## path: directory, or a `<dir>/<name>` stem.
   result.dir = path
   result.name = "main"
@@ -279,7 +277,7 @@ proc storeParts(path: string): tuple[dir, name: string] {.role: parser,
 
 proc collectTrust(c: DaemonConfig): tuple[ok: bool, peers: seq[TrustedPeer],
     err: string] {.role: configurator,
-    metaTags: {tagCryptoBoundary, tagServer}.} =
+    tag: "cryptoBoundary|server".} =
   ## c: daemon config whose pin files become the trust list.
   ##
   ## The FLAG grants the right, not the peer: `--trust` may read,
@@ -311,15 +309,15 @@ proc collectTrust(c: DaemonConfig): tuple[ok: bool, peers: seq[TrustedPeer],
   result.ok = true
 
 proc daemonConfigFor(c: DaemonConfig): GeistConfig {.role: configurator,
-    metaTags: {tagConfig, tagServer}.} =
+    tag: "config|server".} =
   ## c: daemon options resolved to the configuration a session opens with.
   ## The preset the operator named, adjusted by whatever config.toml sets
   ## for this installation.
   result = applyDefaults(geistConfigPreset(c.preset), geistDefaults())
 
 proc reloadIfChanged*(S: var DaemonState,
-    c: DaemonConfig): bool {.role: stateController,
-    metaTags: {tagServer, tagStatus, tagStorageIo}.} =
+    c: DaemonConfig): bool {.role: actor,
+    tag: "server|status|storageIo".} =
   ## S: daemon state whose session is refreshed when the file moved.
   ## c: config supplying the preset and password to reopen with.
   ## Costs ONE index read per call -- header plus cluster index -- so it
@@ -353,7 +351,7 @@ proc reloadIfChanged*(S: var DaemonState,
   result = true
 
 proc handleQuery*(S: var DaemonState, q: Query, p: PeerContext): Reply {.
-    role: actor, metaTags: {tagAppApi, tagDb, tagRead, tagServer}.} =
+    role: actor, tag: "appApi|db|read|server".} =
   ## S/q/p: the daemon's thin wrapper around `answerQuery`.
   ##
   ## What the protocol MEANS lives in the library (geist/answer.nim), so an
@@ -364,7 +362,7 @@ proc handleQuery*(S: var DaemonState, q: Query, p: PeerContext): Reply {.
     S.applied = S.applied + int(result.matched)
 
 proc runGeistd*(argv: seq[string]): int {.role: metaOrchestrator,
-    metaTags: {tagEntrypoint, tagLifecycle, tagOrchestrator, tagServer}.} =
+    tag: "entrypoint|lifecycle|orchestrator|server".} =
   ## argv: command line without the executable name.
   var
     c: DaemonConfig

@@ -27,22 +27,20 @@
 
 import tyr
 
-import geistPragmas
+import runePragmas
 import ../types
 import ../format
 import ./cipher
 import ./mac
 
 type
-  ColumnGroup* {.role: configurator, metaTags: {tagBatch, tagConfig,
-      tagCryptoBoundary, tagTypes}.} = object
+  ColumnGroup* {.role: configurator, tag: "batch|config|cryptoBoundary|types".} = object
     ## groupId: stable identifier bound into the nonce and the AAD.
     ## slots: slot indices encrypted together.
     groupId*: uint16
     slots*: seq[int]
 
-  LedgerEntry* {.role: truthState, metaTags: {tagBatch, tagCryptoBoundary,
-      tagLedger, tagTypes}.} = object
+  LedgerEntry* {.role: truthState, tag: "batch|cryptoBoundary|ledger|types".} = object
     ## One (batch, column group) tuple. No nonce -- it derives.
     ## `treeHash` is stored per entry for the same reason `cipher` and
     ## `mac` are: a database written under one configuration must stay
@@ -57,7 +55,7 @@ type
     epoch*: uint64
     root*: ByteSeq
 
-  Ledger* {.role: truthState, metaTags: {tagBatch, tagLedger, tagTypes}.} = object
+  Ledger* {.role: truthState, tag: "batch|ledger|types".} = object
     ## Rows are batches, columns are groups. Lookup is O(1) division;
     ## no scan, because the mapping is arithmetic.
     databaseId*: string
@@ -66,7 +64,7 @@ type
     entries*: seq[LedgerEntry]
 
 proc ledgerRowOf*(rowIndex: uint32, batchRows: uint32): uint32 {.role: math,
-    inline, metaTags: {tagBatch, tagRead}.} =
+    inline, tag: "batch|read".} =
   ## rowIndex: data row.
   ## batchRows: N. Row 33 with N=10 lands in ledger row 3.
   if batchRows == 0'u32:
@@ -74,12 +72,12 @@ proc ledgerRowOf*(rowIndex: uint32, batchRows: uint32): uint32 {.role: math,
   result = rowIndex div batchRows
 
 proc entrySlot(L: Ledger, batchIndex: uint32, groupId: uint16): int {.
-    role: parser, metaTags: {tagBatch, tagLedger, tagRead}.} =
+    role: parser, tag: "batch|ledger|read".} =
   ## L/batchIndex/groupId: ledger coordinates resolved to a storage index.
   result = int(batchIndex) * max(1, L.groups.len) + int(groupId)
 
 proc ensureCapacity*(L: var Ledger, batchIndex: uint32) {.
-    role: stateController, metaTags: {tagBatch, tagLedger, tagWrite}.} =
+    role: actor, tag: "batch|ledger|write".} =
   ## L: ledger grown so `batchIndex` is addressable for every group.
   var
     need: int = 0
@@ -89,7 +87,7 @@ proc ensureCapacity*(L: var Ledger, batchIndex: uint32) {.
 
 proc entryAt*(L: Ledger, batchIndex: uint32,
     groupId: uint16): LedgerEntry {.role: parser,
-    metaTags: {tagAppApi, tagBatch, tagLedger, tagRead}.} =
+    tag: "appApi|batch|ledger|read".} =
   ## L/batchIndex/groupId: direct arithmetic lookup, no search.
   var
     i: int = 0
@@ -99,7 +97,7 @@ proc entryAt*(L: Ledger, batchIndex: uint32,
 
 proc buildAad*(databaseId: string, groupId: uint16, batchIndex: uint32,
     epoch: uint64, schemaVersion: uint16): ByteSeq {.role: truthBuilder,
-    metaTags: {tagBatch, tagCryptoBoundary}.} =
+    tag: "batch|cryptoBoundary".} =
   ## databaseId/groupId/batchIndex/epoch/schemaVersion: the full position
   ## of this batch. Authenticating it is what stops a batch being relocated.
   result = @[]
@@ -111,7 +109,7 @@ proc buildAad*(databaseId: string, groupId: uint16, batchIndex: uint32,
 
 proc deriveBatchKey*(master: Secret, keyRef: KeyId, groupId: uint16,
     batchIndex: uint32, epoch: uint64): Secret {.role: encryptor,
-    metaTags: {tagBatch, tagCryptoBoundary, tagKeyLifecycle}.} =
+    tag: "batch|cryptoBoundary|keyLifecycle".} =
   ## master: long-lived key material from the key file.
   ## keyRef/groupId/batchIndex/epoch: full batch coordinates. A new keyRef
   ##   is a fresh nonce space, which is what makes per-batch rekey safe.
@@ -127,7 +125,7 @@ proc deriveBatchKey*(master: Secret, keyRef: KeyId, groupId: uint16,
 proc sealBatch*(master: Secret, e: var LedgerEntry, databaseId: string,
     schemaVersion: uint16, A: openArray[uint8],
     R: seq[ByteSeq]): ByteSeq {.role: encryptor,
-    metaTags: {tagAppApi, tagBatch, tagCryptoBoundary, tagWrite}.} =
+    tag: "appApi|batch|cryptoBoundary|write".} =
   ## master: key material.
   ## e: ledger entry; its epoch is incremented here, never reused.
   ## databaseId/schemaVersion: AAD components binding the batch in place.
@@ -151,7 +149,7 @@ proc sealBatch*(master: Secret, e: var LedgerEntry, databaseId: string,
 
 proc openBatch*(master: Secret, e: LedgerEntry, databaseId: string,
     schemaVersion: uint16, A: openArray[uint8]): ByteSeq {.role: decryptor,
-    metaTags: {tagAppApi, tagBatch, tagCryptoBoundary, tagRead}.} =
+    tag: "appApi|batch|cryptoBoundary|read".} =
   ## master/e/databaseId/schemaVersion: as for `sealBatch`.
   ## A: the whole ciphertext for this (batch, group).
   var
@@ -166,7 +164,7 @@ proc openBatch*(master: Secret, e: LedgerEntry, databaseId: string,
 proc openRow*(master: Secret, e: LedgerEntry, databaseId: string,
     schemaVersion: uint16, byteOffset: uint64,
     A: openArray[uint8]): ByteSeq {.role: decryptor,
-    metaTags: {tagAppApi, tagBatch, tagCryptoBoundary, tagRead}.} =
+    tag: "appApi|batch|cryptoBoundary|read".} =
   ## Decrypt ONE row out of a batch without touching the others.
   ## byteOffset: that row's offset inside the batch payload.
   ## Only valid for a seekable cipher; callers must check `isSeekable`
@@ -185,8 +183,7 @@ proc openRow*(master: Secret, e: LedgerEntry, databaseId: string,
 
 proc verifyRow*(master: Secret, e: LedgerEntry, rowIndex: uint32,
     rowPlain: openArray[uint8], proof: seq[ByteSeq]): bool {.
-    role: sanitizer, metaTags: {tagAppApi, tagBatch, tagCryptoBoundary,
-    tagRead}.} =
+    role: sanitizer, tag: "appApi|batch|cryptoBoundary|read".} =
   ## Verify one row against the batch root with a log2(N) sibling path
   ## instead of re-hashing every row in the batch.
   var
@@ -197,7 +194,7 @@ proc verifyRow*(master: Secret, e: LedgerEntry, rowIndex: uint32,
   result = verifyMerkle(leaf, int(rowIndex), proof, e.root, e.treeHash)
 
 proc encodeLedgerEntry*(e: LedgerEntry): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagLedger, tagWrite}.} =
+    tag: "codecBoundary|ledger|write".} =
   ## e: ledger tuple serialised as algo | keyRef | epoch | root.
   result = @[]
   result.add uint8(ord(e.cipher))
@@ -211,7 +208,7 @@ proc encodeLedgerEntry*(e: LedgerEntry): ByteSeq {.role: encryptor,
   result.addBytes(e.root)
 
 proc decodeLedgerEntry*(A: openArray[uint8], o: var int): LedgerEntry {.
-    role: parser, metaTags: {tagCodecBoundary, tagLedger, tagRead}.} =
+    role: parser, tag: "codecBoundary|ledger|read".} =
   ## A/o: buffer and cursor advanced past one encoded ledger tuple.
   var
     n: int = 0
@@ -232,7 +229,7 @@ proc decodeLedgerEntry*(A: openArray[uint8], o: var int): LedgerEntry {.
   o = o + n
 
 proc needsRekey*(e: LedgerEntry, highWater: uint64 = defaultRekeyAtEpoch): bool {.
-    role: parser, inline, metaTags: {tagBatch, tagKeyLifecycle, tagRead}.} =
+    role: parser, inline, tag: "batch|keyLifecycle|read".} =
   ## e: ledger entry whose epoch is checked against the rekey high-water
   ##   mark. Rekeying ONE batch is enough: a fresh keyRef is a fresh nonce
   ##   space, so an epoch approaching wrap never forces a global rekey.

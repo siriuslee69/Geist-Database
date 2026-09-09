@@ -46,7 +46,7 @@
 import std/[base64, json, os, osproc, streams, strtabs, strutils, tables,
   times, unicode]
 
-import geistPragmas
+import runePragmas
 import ./types
 import ./address
 import ./format
@@ -72,8 +72,7 @@ const
     ## "do not wait", which is the fire-and-forget trigger.
 
 type
-  RelaySink* {.role: configurator, metaTags: {tagConfig, tagStream,
-      tagTypes}.} = enum
+  RelaySink* {.role: configurator, tag: "config|stream|types".} = enum
     ## Where an accepted message goes.
     ##
     ##   rsSpool   nowhere but the queue; a reader collects it later
@@ -82,8 +81,7 @@ type
     ##   rsExec    a command's stdin; its stdout becomes the reply
     rsSpool, rsStdout, rsFile, rsExec
 
-  RelayFormat* {.role: configurator, metaTags: {tagConfig, tagFormatting,
-      tagStream, tagTypes}.} = enum
+  RelayFormat* {.role: configurator, tag: "config|formatting|stream|types".} = enum
     ## How a message is written to stdout or a file.
     ##
     ##   rfLines  one plain line: when, who, which stream, the text
@@ -91,7 +89,7 @@ type
     ##   rfRaw    the bytes, nothing added -- for piping audio onward
     rfLines, rfJson, rfRaw
 
-  RelayMessage* {.role: truthState, metaTags: {tagStream, tagTypes}.} = object
+  RelayMessage* {.role: truthState, tag: "stream|types".} = object
     ## One thing a peer sent.
     ##
     ## `at` is when THIS node accepted it, not when the sender claims it
@@ -104,7 +102,7 @@ type
     ordinal*: uint64
     body*: ByteSeq
 
-  RelayStream {.role: truthState, metaTags: {tagStream, tagTypes}.} = object
+  RelayStream {.role: truthState, tag: "stream|types".} = object
     ## accepted: messages ever taken on this stream, which is also the
     ##   ordinal of the newest.
     ## queue: the ones still held, oldest first.
@@ -113,8 +111,7 @@ type
     dropped: uint64
     queue: seq[RelayMessage]
 
-  RelayDesk* {.role: truthState, metaTags: {tagServer, tagStream,
-      tagTypes}.} = object
+  RelayDesk* {.role: truthState, tag: "server|stream|types".} = object
     ## The whole relay: what to do with a message, and what it is holding.
     ##
     ## streams: the accept-list. Empty means any stream is welcome; naming
@@ -142,7 +139,7 @@ type
 
 proc initRelayDesk*(sink: RelaySink = rsSpool,
     format: RelayFormat = rfLines): RelayDesk {.role: configurator,
-    metaTags: {tagConfig, tagServer, tagStream}.} =
+    tag: "config|server|stream".} =
   ## sink/format: the two decisions everything else follows from.
   result.sink = sink
   result.format = format
@@ -154,7 +151,7 @@ proc initRelayDesk*(sink: RelaySink = rsSpool,
 ## --------------------------- the envelope ---------------------------
 
 proc encodeMessage*(m: RelayMessage): ByteSeq {.role: encryptor,
-    metaTags: {tagCodecBoundary, tagStream, tagWrite}.} =
+    tag: "codecBoundary|stream|write".} =
   ## m: one message, serialised for the body of a relayed row.
   result = @[]
   result.addText(m.stream)
@@ -165,7 +162,7 @@ proc encodeMessage*(m: RelayMessage): ByteSeq {.role: encryptor,
   result.addBytes(m.body)
 
 proc decodeMessage*(A: openArray[uint8]): RelayMessage {.role: parser,
-    metaTags: {tagCodecBoundary, tagRead, tagStream}.} =
+    tag: "codecBoundary|read|stream".} =
   ## A: bytes produced by `encodeMessage`.
   ##
   ## Every length is checked against what actually arrived. These bytes
@@ -190,28 +187,28 @@ proc decodeMessage*(A: openArray[uint8]): RelayMessage {.role: parser,
     result.body[i] = A[o + i]
 
 proc asRow*(m: RelayMessage): Row {.role: helper,
-    metaTags: {tagCodecBoundary, tagStream}.} =
+    tag: "codecBoundary|stream".} =
   ## m: message wrapped as the row a Reply carries it in.
   result = Row(schemaId: relayEnvelopeId, data: encodeMessage(m))
 
 ## --------------------------- how it reads ---------------------------
 
 proc asText*(body: openArray[uint8]): string {.role: helper,
-    metaTags: {tagFormatting, tagStream}.} =
+    tag: "formatting|stream".} =
   ## body: bytes as a string, with no interpretation at all.
   result = newString(body.len)
   for i in 0 ..< body.len:
     result[i] = char(body[i])
 
 proc asBytes*(s: string): ByteSeq {.role: helper,
-    metaTags: {tagFormatting, tagStream}.} =
+    tag: "formatting|stream".} =
   ## s: a string as bytes, with no interpretation at all.
   result = newSeq[uint8](s.len)
   for i in 0 ..< s.len:
     result[i] = uint8(s[i])
 
 proc isPrintableText(body: openArray[uint8]): bool {.role: parser,
-    metaTags: {tagFormatting, tagStream}.} =
+    tag: "formatting|stream".} =
   ## body: whether these bytes can be shown as text.
   ##
   ## Valid UTF-8 with no NUL. Anything else is base64'd rather than
@@ -223,7 +220,7 @@ proc isPrintableText(body: openArray[uint8]): bool {.role: parser,
   result = validateUtf8(asText(body)) < 0
 
 proc oneLine(body: openArray[uint8]): string {.role: sanitizer,
-    metaTags: {tagFormatting, tagStream}.} =
+    tag: "formatting|stream".} =
   ## body: text flattened to a single line.
   ##
   ## A plain-lines log promises one line per message; a message containing
@@ -245,12 +242,12 @@ proc oneLine(body: openArray[uint8]): string {.role: sanitizer,
         result.add c
 
 proc stamp*(at: int64): string {.role: helper,
-    metaTags: {tagFormatting, tagStream}.} =
+    tag: "formatting|stream".} =
   ## at: a unix second as an ISO-8601 UTC instant.
   result = utc(fromUnix(at)).format("yyyy-MM-dd'T'HH:mm:ss'Z'")
 
 proc render*(m: RelayMessage, f: RelayFormat): string {.role: helper,
-    metaTags: {tagFormatting, tagStream, tagWrite}.} =
+    tag: "formatting|stream|write".} =
   ## m/f: one message as it is written to stdout or a log.
   ##
   ## `rfRaw` adds NOTHING -- not even a separator. It is the format for
@@ -283,28 +280,28 @@ proc render*(m: RelayMessage, f: RelayFormat): string {.role: helper,
 ## ---------------------------- the spool -----------------------------
 
 proc holds*(D: RelayDesk, stream: string): int {.role: parser, inline,
-    metaTags: {tagStatus, tagStream}.} =
+    tag: "status|stream".} =
   ## D/stream: messages currently queued on one stream.
   if D.held.hasKey(stream):
     return D.held[stream].queue.len
   result = 0
 
 proc streamCount*(D: RelayDesk, stream: string): uint64 {.role: parser, inline,
-    metaTags: {tagStatus, tagStream}.} =
+    tag: "status|stream".} =
   ## D/stream: messages ever accepted on one stream.
   if D.held.hasKey(stream):
     return D.held[stream].accepted
   result = 0'u64
 
 proc droppedFrom*(D: RelayDesk, stream: string): uint64 {.role: parser, inline,
-    metaTags: {tagStatus, tagStream}.} =
+    tag: "status|stream".} =
   ## D/stream: messages that fell off the back before anyone read them.
   if D.held.hasKey(stream):
     return D.held[stream].dropped
   result = 0'u64
 
-proc queue(D: var RelayDesk, m: RelayMessage) {.role: stateController,
-    metaTags: {tagStream, tagWrite}.} =
+proc queue(D: var RelayDesk, m: RelayMessage) {.role: actor,
+    tag: "stream|write".} =
   ## D/m: hold one message for whoever reads this stream next.
   ##
   ## The ring evicts the OLDEST, and counts what it evicted. A relay that
@@ -324,7 +321,7 @@ proc queue(D: var RelayDesk, m: RelayMessage) {.role: stateController,
   D.held[m.stream] = s
 
 proc nextOrdinal(D: var RelayDesk, stream: string): uint64 {.
-    role: stateController, metaTags: {tagStream, tagWrite}.} =
+    role: actor, tag: "stream|write".} =
   ## D/stream: the ordinal the next message on this stream will carry.
   var
     s: RelayStream
@@ -335,7 +332,7 @@ proc nextOrdinal(D: var RelayDesk, stream: string): uint64 {.
   D.held[stream] = s
 
 proc readerKey(consumer, stream: string): string {.role: helper, inline,
-    metaTags: {tagStream}.} =
+    tag: "stream".} =
   ## consumer/stream: one reader's position on one stream.
   ##
   ## Two names joined by a byte neither can contain, so a reader called
@@ -344,7 +341,7 @@ proc readerKey(consumer, stream: string): string {.role: helper, inline,
 
 proc drain(D: var RelayDesk, consumer, stream: string,
     limit: int): tuple[msgs: seq[RelayMessage], cursor: uint64] {.
-    role: stateController, metaTags: {tagRead, tagStream, tagSync}.} =
+    role: actor, tag: "read|stream|sync".} =
   ## D/consumer/stream/limit: everything this reader has not seen yet.
   ##
   ## A cursor is an ORDINAL, not an index into the queue: the queue moves
@@ -371,8 +368,8 @@ proc drain(D: var RelayDesk, consumer, stream: string,
 
 ## ---------------------------- the sinks -----------------------------
 
-proc reap*(D: var RelayDesk) {.role: stateController,
-    metaTags: {tagLifecycle, tagServer, tagStream}.} =
+proc reap*(D: var RelayDesk) {.role: actor,
+    tag: "lifecycle|server|stream".} =
   ## D: collect any fire-and-forget command that has finished.
   ##
   ## `--exec-timeout-ms 0` starts a command and does not wait for it. Some
@@ -389,7 +386,7 @@ proc reap*(D: var RelayDesk) {.role: stateController,
   D.running = alive
 
 proc childEnv(m: RelayMessage): StringTableRef {.role: configurator,
-    metaTags: {tagStream}.} =
+    tag: "stream".} =
   ## m: the environment a delivered command is told about its input in.
   ##
   ## The BODY is not here. It goes on stdin, where a command reads data;
@@ -405,7 +402,7 @@ proc childEnv(m: RelayMessage): StringTableRef {.role: configurator,
 
 proc runExec(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
     output: ByteSeq, err: string] {.role: orchestrator,
-    metaTags: {tagServer, tagStream, tagWrite}.} =
+    tag: "server|stream|write".} =
   ## D/m: hand one message to the operator's command.
   ##
   ## The command string comes from this daemon's own flags and is
@@ -463,7 +460,7 @@ proc runExec(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
 
 proc writeOut(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
     err: string] {.role: orchestrator,
-    metaTags: {tagServer, tagStream, tagWrite}.} =
+    tag: "server|stream|write".} =
   ## D/m: the stdout and file sinks, which differ only in the handle.
   ##
   ## Flushed on every message. A log that is a relay's only record of what
@@ -491,7 +488,7 @@ proc writeOut(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
 
 proc deliver*(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
     output: ByteSeq, err: string] {.role: orchestrator,
-    metaTags: {tagServer, tagStream, tagWrite}.} =
+    tag: "server|stream|write".} =
   ## D/m: one accepted message, handed to whatever this relay is for.
   ##
   ## The spool is fed WHATEVER the sink is, so a relay that pipes to a
@@ -512,8 +509,8 @@ proc deliver*(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
     D.failed = D.failed + 1
     D.lastErr = result.err
 
-proc closeRelay*(D: var RelayDesk) {.role: stateController,
-    metaTags: {tagLifecycle, tagServer, tagStream}.} =
+proc closeRelay*(D: var RelayDesk) {.role: actor,
+    tag: "lifecycle|server|stream".} =
   ## D: release the log handle and wait out any command still running.
   if D.logOpen:
     try:
@@ -533,20 +530,19 @@ proc closeRelay*(D: var RelayDesk) {.role: stateController,
 ## --------------------------- the handler ----------------------------
 
 proc refuse(err: string): Reply {.role: helper,
-    metaTags: {tagServer, tagStatus, tagStream}.} =
+    tag: "server|status|stream".} =
   ## err: a refusal, said in full.
   result = Reply(ok: false, err: err)
 
 proc welcome(D: RelayDesk, stream: string): bool {.role: parser,
-    metaTags: {tagServer, tagStream}.} =
+    tag: "server|stream".} =
   ## D/stream: whether this relay takes messages on this stream.
   if D.streams.len == 0:
     return true
   result = stream in D.streams
 
 proc answerRelay*(D: var RelayDesk, q: Query, p: PeerContext): Reply {.
-    role: actor, metaTags: {tagAppApi, tagNetworkSurface, tagServer,
-    tagStream, tagWrite}.} =
+    role: actor, tag: "appApi|networkSurface|server|stream|write".} =
   ## D: the pipe and what it is holding.
   ## q: the request.
   ## p: who is asking, and what their pin permits.

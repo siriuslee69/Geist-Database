@@ -25,13 +25,12 @@
 
 import std/[json, os, strutils]
 
-import geistPragmas
+import runePragmas
 import ./masks
 import ./toml_read
 
 type
-  TransportDefaults* {.role: configurator, metaTags: {tagAme, tagConfig,
-      tagNetworkSurface, tagTypes}.} = object
+  TransportDefaults* {.role: configurator, tag: "ame|config|networkSurface|types".} = object
     ## startTier: where a session begins.
     ## secretAtMiB / archiveAtMiB: how many mebibytes it has to have moved
     ##   before it rekeys upward into a wider algorithm set -- a
@@ -44,7 +43,7 @@ type
     loadedFrom*: string
 
 proc builtinTransportDefaults*(): TransportDefaults {.role: configurator,
-    metaTags: {tagAme, tagConfig}.} =
+    tag: "ame|config".} =
   ## What the library does with no config.toml at all: exactly the policy
   ## `masks.nim` ships, restated so a reader can see it here.
   result.startTier = defaultTriggerPolicy().startTier
@@ -52,7 +51,7 @@ proc builtinTransportDefaults*(): TransportDefaults {.role: configurator,
   result.archiveAtMiB = defaultTriggerPolicy().rows[gtArchive].threshold
 
 proc parseTierName*(name: string): tuple[ok: bool, tier: GeistTier] {.
-    role: parser, metaTags: {tagAme, tagConfig, tagParsing}.} =
+    role: parser, tag: "ame|config|parsing".} =
   ## name: a tier as written in the file, case and hyphens forgiven.
   case name.strip().toLowerAscii()
   of "telemetry": result = (true, gtTelemetry)
@@ -65,7 +64,7 @@ proc parseTierName*(name: string): tuple[ok: bool, tier: GeistTier] {.
 
 proc loadTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     defaults: TransportDefaults, err: string] {.role: configurator,
-    metaTags: {tagAme, tagConfig, tagParsing, tagRead}.} =
+    tag: "ame|config|parsing|read".} =
   ## path: `config.toml`; only its `[transport]` section is read.
   var
     doc: tuple[ok: bool, node: JsonNode, err: string]
@@ -101,22 +100,22 @@ proc loadTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
 var
   activeTransport: TransportDefaults = builtinTransportDefaults()
 
-proc useTransportDefaults*(d: TransportDefaults) {.role: stateController,
-    metaTags: {tagAme, tagConfig, tagLifecycle}.} =
+proc useTransportDefaults*(d: TransportDefaults) {.role: actor,
+    tag: "ame|config|lifecycle".} =
   ## d: the policy every later `defaultTierPolicy` is built from. Set it
   ## ONCE, before connecting anything.
   {.gcsafe.}:
     activeTransport = d
 
 proc transportDefaults*(): TransportDefaults {.role: parser,
-    metaTags: {tagAme, tagConfig, tagRead}.} =
+    tag: "ame|config|read".} =
   ## The transport defaults in force, built-in unless a file replaced them.
   {.gcsafe.}:
     result = activeTransport
 
 proc initTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     err: string] {.role: configurator,
-    metaTags: {tagAme, tagConfig, tagLifecycle, tagRead}.} =
+    tag: "ame|config|lifecycle|read".} =
   ## path: config.toml, read and adopted in one step. A missing file is
   ## success -- the built-in policy IS the answer in that case.
   var
@@ -128,7 +127,7 @@ proc initTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   result = (true, "")
 
 proc defaultsTriggerPolicy*(d: TransportDefaults): TriggerPolicy {.
-    role: configurator, metaTags: {tagAme, tagConfig, tagNetworkSurface}.} =
+    role: configurator, tag: "ame|config|networkSurface".} =
   ## d: transport defaults turned into the policy a handshake climbs by.
   result = defaultTriggerPolicy()
   result.startTier = d.startTier
@@ -138,6 +137,6 @@ proc defaultsTriggerPolicy*(d: TransportDefaults): TriggerPolicy {.
     threshold: d.archiveAtMiB)
 
 proc defaultTierPolicy*(): TriggerPolicy {.role: configurator,
-    metaTags: {tagAme, tagConfig, tagNetworkSurface}.} =
+    tag: "ame|config|networkSurface".} =
   ## The tier policy in force, from whatever config.toml was adopted.
   result = defaultsTriggerPolicy(transportDefaults())
