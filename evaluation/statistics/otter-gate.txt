@@ -1,8 +1,5 @@
-Otter gate report for the tracked tree. Regenerate with:
-  submodules/Otter-RepoEvaluation/tools/agent_hooks/otter-gate.sh --force .
-(run it against a clean checkout: an untracked .geist-legacy/ triples every
- count and buries the real findings)
-
+Otter measured /mnt/temp/CodingMain/Geist-Database/build/measure.
+Fix what is listed here before moving on; each item maps to a rule in CONVENTIONS.md.
 
 SECRETS — 14 candidate(s). Remove or move behind config:
   docs/relay.md:257  key  /run…21…-id

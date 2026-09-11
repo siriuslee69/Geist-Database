@@ -250,16 +250,55 @@ task stats, "Measure the repository with Otter and record the numbers":
   ## The measurement is of the TRACKED tree. Untracked leftovers -- the
   ## `.geist-legacy/` reference copy above all -- would otherwise dominate
   ## every count and make the report useless.
+  ##
+  ## Otter walks a FOLDER, and this folder holds things git does not
+  ## track: the `.geist-legacy/` reference copy alone is 213 more `.nim`
+  ## files. Measured together they turn 873 routines into 3366 and report
+  ## 121 "secrets" that are all in the old tree. So the task copies the
+  ## tracked files into build/measure, links the pinned submodules beside
+  ## them, and measures THAT.
   var
     otter: string = "submodules/Otter-RepoEvaluation/tools/agent_hooks/" &
       "otter-build.sh"
+    at: string = "build/measure"
+    bin: string = ""
+    deps: seq[string] = @["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
+      "Eir-CompressionAndECC", "Bifrost-ExchangeProtocols", "Rune-Pragmas",
+      "Otter-RepoEvaluation"]
+    here: string = getCurrentDir()
   if not fileExists(otter):
     echo "Otter is not checked out: git submodule update --init " &
       "submodules/Otter-RepoEvaluation"
     quit(1)
+  rmDir(at)
+  mkDir(at)
+  ## `git archive` is what "the tracked tree" means, exactly.
+  exec "sh -c 'git archive --format=tar HEAD | tar -x -C " & at & "'"
+  mkDir(at & "/submodules")
+  for d in deps:
+    exec "sh -c 'ln -sfn " & here & "/submodules/" & d & " " & at &
+      "/submodules/" & d & "'"
+  ## Otter refuses a folder that is not a git workspace, and the copy is
+  ## not one until it is told to be.
+  exec "sh -c 'cd " & at & " && git init -q && git add -A >/dev/null && " &
+    "git -c user.email=stats@local -c user.name=stats commit -qm measured'"
+  ## `otter-build.sh` prints the path of a ready program on stdout and its
+  ## build chatter on stderr, so the path is the last stdout line and the
+  ## chatter has to be dropped before it is read as one.
+  bin = gorge("./" & otter & " 2>/dev/null | tail -1").strip()
+  if bin.len == 0 or not fileExists(bin):
+    echo "Otter would not build; see ~/.cache/otter-agent-hooks/build.log"
+    quit(1)
   mkDir("evaluation/statistics")
-  exec "sh -c '\"$(" & otter & ")\" stats . > " &
+  exec "sh -c '\"" & bin & "\" stats \"" & at & "\" | sed -e \"s#" &
+    here & "/" & at & "#.#\" -e \"s#^Root: " & at & "#Root: .#\" > " &
     "evaluation/statistics/otter-stats.txt'"
+  ## The gate exits 1 when it has something to report, which is the normal
+  ## case and not a task failure, so its status is discarded on purpose.
+  exec "sh -c 'OTTER_CACHE=build/otter-cache " &
+    "./submodules/Otter-RepoEvaluation/tools/agent_hooks/otter-gate.sh " &
+    "--force \"" & at & "\" | sed \"s#" & here & "/" & at &
+    "/##g\" > evaluation/statistics/otter-gate.txt; true'"
   exec "cat evaluation/statistics/otter-stats.txt"
 
 # ---------------------------------------------------------------------
