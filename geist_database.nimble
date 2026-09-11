@@ -176,6 +176,9 @@ task exampleEncrypted, "Run the encrypted-database example":
 task exampleObserve, "Run the passive-observation example":
   exec "nim c -r --mm:orc --threads:on --hints:off examples/geist_observe.nim"
 
+task exampleBuffers, "Run the two-instances-no-database example":
+  exec "nim c -r --mm:orc --threads:on --hints:off examples/geist_buffers.nim"
+
 task exampleFastSearch, "Run the printing and column-copy example":
   exec "nim c -r -d:release --mm:orc --threads:on --hints:off " &
     "examples/geist_fast_search.nim"
@@ -185,6 +188,7 @@ task examples, "Run every example in order":
   exec "nimble exampleEncrypted"
   exec "nimble exampleObserve"
   exec "nimble exampleFastSearch"
+  exec "nimble exampleBuffers"
 
 # ---------------------------------------------------------------------
 # Tests

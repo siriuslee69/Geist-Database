@@ -86,5 +86,5 @@ OVERSIZED FILES — split these; routines are long and the file is dense:
   src/clients/geist_relay.nim  409 lines, 11 routines, avg 28, deepest 4
   src/geist/crypto/column.nim  304 lines, 8 routines, avg 31, deepest 3
 
-Coverage: 230 of 879 routines untested; 507 tests, 0 with a declared testKind.
-Shape: 29466 lines, 879 routines, avg 17.
+Coverage: 230 of 879 routines untested; 518 tests, 2 with a declared testKind.
+Shape: 29594 lines, 879 routines, avg 17.

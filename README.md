@@ -246,6 +246,10 @@ row survived the process, under the id `put` handed back.
 nimble exampleQuickstart
 ```
 
+The other four: `exampleEncrypted`, `exampleObserve`, `exampleFastSearch`,
+and `exampleBuffers` -- that last one is two Geist instances passing rows
+to each other with no database on either side ([2.0](#20-a-link-does-not-need-a-database)).
+
 ### From the shell
 
 The same store, the same file, no Nim:
@@ -1278,6 +1282,65 @@ See [docs/nix.md](docs/nix.md).
 
 Everything in part 1, plus other machines. Same rows, same ids, one
 writer at a time.
+
+## 2.0 A link does not need a database
+
+This is the part people expect to be harder than it is, so it is stated
+before anything else in part 2.
+
+**Def.: a Geist endpoint is a function, not a file.** `initGeistServer`
+takes a local identity and a list of peers it trusts. It does *not* take
+a `Session`. What it serves is a `ServedHandler`:
+
+```nim
+ServedHandler* = proc (q: Query, p: PeerContext): Reply {.gcsafe.}
+```
+
+Whatever that function closes over IS the storage. Three programs in this
+repository are the same program with a different handler:
+
+```text
+  program          the handler closes over        touches disk?
+  ---------------  -----------------------------  -------------
+  geistd           a Session                      yes
+  geist-relayd     a bounded ring in memory       no
+  examples/        a plain `seq[Row]`             no
+   geist_buffers
+```
+
+So two instances that only want to pass rows between their buffers need
+three things and nothing else:
+
+```text
+  where the other is   dac://host:port
+  who the other is     its pin -- the public half of its signing keys
+  who this one is      its own identity
+```
+
+Neither side needs a store, a path, or a shared schema at compile time —
+the schema travels on the wire. `nimble exampleBuffers` runs it:
+
+```text
+identities: sender=sender  receiver=receiver  (in memory, no files)
+receiver: listening on dac://127.0.0.1:47901 with nothing on disk
+sender:   handshake done, session open
+sender:   schema from the wire -> noteId:int,title:text,body:text
+sender:   pushed 3 row(s)
+sender:   receiver now holds 3 row(s):
+            1  row-1  in memory only
+```
+
+Identities there are minted with `geistIdentity("name")` and never
+written down, which is why the example touches no path at all. A real
+deployment persists them with `loadOrCreateIdentity` and `savePin`, so a
+restart is the same peer rather than a stranger.
+
+**Authentication is public-key only.** A pin is a name plus public
+signing keys, and that is the one mode Geist wires up. Bifrost underneath
+also implements a shared-secret mode (AM1M, `initAmePskAuthentication`),
+and Geist does not expose it — `connectGeist` and `initGeistServer` both
+hard-code the pinned-key path. If you want symmetric keys, that is the
+change to make, and it is contained to `transport.nim`.
 
 ## 2.1 Two desktops, from nothing
 

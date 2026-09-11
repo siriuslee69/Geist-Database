@@ -1,11 +1,11 @@
 Root: .
-Files: 106   Lines: 29466
+Files: 107   Lines: 29594
 Routines: 879   average 17.6 lines
 Templates: 1   macros: 0   template calls: 5
 Nesting: 458 double, 119 triple, 16 deeper
 Nested routines: 234 (234 outside math)
 Input handlers: 36   truth states: 21   math: 2
-Tests: 507 (0 with a declared kind)
+Tests: 518 (2 with a declared kind)
 Untested routines: 230 of 879
 Edge-case cover: 333   benchmark cover: 0
 Never called: 94
