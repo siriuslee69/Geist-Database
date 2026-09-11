@@ -10,7 +10,7 @@ SECRETS — 14 candidate(s). Remove or move behind config:
   src/server/geist_relayd.nim:270  key  iden…20…ile
   evaluation/tests/test_doc.nim:274  email  alic…17…com
   evaluation/tests/test_doc.nim:279  email  frie…24…com
-FAMILIES — 12 group(s) of routines that are one routine with a knob on it (49 routines, about 149 lines).
+FAMILIES — 12 group(s) of routines that are one routine with a knob on it (53 routines, about 262 lines).
   Rule: no complex logic; build modular, parallel, multipass logic. Siblings differing in one or two places want one routine and a parameter.
   src/geist/registry|proc  clockOf, slotKey, openCount, openKeys
       varies in 2 direction(s) (calls, what it returns), 100% alike, they share a module and a shape
@@ -79,12 +79,12 @@ ROLES — 105 routine(s) declare no role pragma.
   Rule: functions need custom pragmas (role/metaTags). Otter drops undeclared code from every chart.
 CONFIG — 65 dead and 12 never-set field(s) on configurator types.
 OVERSIZED FILES — split these; routines are long and the file is dense:
-  src/clients/geist_cli.nim  1105 lines, 37 routines, avg 25, deepest 4
+  src/clients/geist_cli.nim  1107 lines, 37 routines, avg 25, deepest 4
   src/server/geist_routed.nim  587 lines, 16 routines, avg 26, deepest 3
   src/geist/transpose.nim  565 lines, 16 routines, avg 27, deepest 3
   evaluation/benchmarks/geist_bench.nim  485 lines, 13 routines, avg 28, deepest 2
   src/clients/geist_relay.nim  409 lines, 11 routines, avg 28, deepest 4
   src/geist/crypto/column.nim  304 lines, 8 routines, avg 31, deepest 3
 
-Coverage: 230 of 873 routines untested; 507 tests, 0 with a declared testKind.
-Shape: 29213 lines, 873 routines, avg 17.
+Coverage: 230 of 879 routines untested; 507 tests, 0 with a declared testKind.
+Shape: 29466 lines, 879 routines, avg 17.

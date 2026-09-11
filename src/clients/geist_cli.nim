@@ -874,7 +874,9 @@ proc cmdKeygen(o: Options) {.role: actor,
 proc cmdPresets() {.role: actor, tag: "cli|config|read".} =
   ## The public preset catalog.
   for p in geistConfigPresets():
-    echo alignLeft(p.name, 16), p.purpose
+    ## 18, not 16: `secure-collapsed` is 16 characters and would leave
+    ## no gap at all before its purpose.
+    echo alignLeft(p.name, 18), p.purpose
 
 ## --------------------------- remote commands ------------------------
 

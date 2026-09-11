@@ -158,6 +158,28 @@ type
     transpose*: TransposeMode
     transposeEverySeconds*: uint32
     ## ---- transport ----
+    ##
+    ## NEITHER OF THESE IS READ BY ANYTHING. They are set by `baseConfig`
+    ## and no code in this repository ever looks at them, which Otter
+    ## reports as two dead configurator fields. They are left in place,
+    ## named and documented as inert, rather than deleted, because both
+    ## name a decision Geist genuinely has to make eventually and a reader
+    ## who finds them should know which:
+    ##
+    ##   transferTier   which AME strength a store's own traffic opens at.
+    ##                  Today the tier comes from `[transport] startTier`
+    ##                  in config.toml, which is per PROCESS, not per
+    ##                  store. A machine serving one public database and
+    ##                  one private one cannot currently ask for different
+    ##                  strengths for each.
+    ##   discoversPeers whether a node looks for peers rather than being
+    ##                  handed their pins by an operator. There is no
+    ##                  discovery in Geist at all; every peer is pinned by
+    ##                  hand. `docs/workloads.md` lists this under what
+    ##                  decentralized hosting still lacks.
+    ##
+    ## Setting either of them today does nothing. If you are wiring one
+    ## up, that is the right moment to delete this comment.
     transferTier*: uint8
     discoversPeers*: bool
 
@@ -432,6 +454,242 @@ proc ledgerConfig*(): GeistConfig {.role: configurator,
   result.backup.everySeconds = 300'u32
   result = normalizeGeistConfig(result)
 
+## ------------------------- workload presets -------------------------
+##
+## The nine presets above are named after a SHAPE OF DATA -- collapsed
+## rows, fixed-width telemetry, a hash-chained log. The five below are
+## named after a JOB somebody is trying to do, and each one is the
+## shape-preset that job needs plus the settings that job's traffic
+## pattern implies.
+##
+## Each states, in its own doc comment, the ceiling its workload runs into
+## in THIS build. A preset cannot lift a ceiling -- it only picks numbers
+## -- and a preset named after a job it cannot finish would be worse than
+## no preset at all. `docs/workloads.md` has the measurements behind each
+## figure and what would have to change to move it.
+
+proc syncConfig*(): GeistConfig {.role: configurator,
+    tag: "appApi|config|cryptoBoundary|db|sync".} =
+  ## Records that several machines each hold a copy of and reconcile.
+  ##
+  ## The shape a follower needs: every row nameable (`rowIdentity`), so a
+  ## change to one row travels as that row rather than as a whole file,
+  ## and history kept, so a peer that has been away can be told what it
+  ## missed instead of being handed everything again.
+  ##
+  ## Batches are small on purpose. A sync answer is a handful of rows
+  ## scattered through the log, not a scan, and a large batch would
+  ## decrypt many neighbours to return one row.
+  ##
+  ## CEILING: one answer stops at 28,000 bytes of rows and hands back a
+  ## cursor, so catching up is many round trips, each one blocking. That
+  ## is fine for records people edit and wrong for a firehose.
+  result = baseConfig("cloud-sync", ckChaCha20)
+  result.batchRows = 32'u32
+  result.rowIdentity = true
+  result.keepHistory = true
+  ## Interval rather than per-change: a sync peer applies rows in bursts,
+  ## and flushing per row would rewrite the whole file per row.
+  result.writeMode = wmInterval
+  result.writeIntervalSeconds = 2'u32
+  result.backup.copies = 2'u8
+  result.backup.everySeconds = 900'u32
+  result = normalizeGeistConfig(result)
+
+proc chainConfig*(): GeistConfig {.role: configurator,
+    tag: "appApi|config|cryptoBoundary|db|ledger".} =
+  ## A tamper-evident append-only log that pinned peers replicate and
+  ## each verify for themselves.
+  ##
+  ## What Geist actually gives this workload, stated plainly so nobody
+  ## expects the rest:
+  ##
+  ##   hash-chained checkpoints   yes -- `checkpoint()` links each to its
+  ##                              predecessor by `parentHash`
+  ##   Merkle root per batch      yes -- `Sealed.root`, so one row can be
+  ##                              proved against it
+  ##   replication to peers       yes -- `qoSync` by log position
+  ##   per-ROW chaining           no  -- the chain covers checkpoints; a
+  ##                              row is covered by its batch's root
+  ##   consensus, fork choice     no  -- there is no such thing here, and
+  ##                              nothing in Geist will pick between two
+  ##                              divergent logs for you
+  ##
+  ## So this is the right preset for a tamper-evident record among machines
+  ## that already trust each other's pins, and the wrong one for anything
+  ## that has to survive a participant lying.
+  ##
+  ## SHA3 throughout and the combined MAC, for the reason `ledgerConfig`
+  ## gives: evidence should not rest on one hash construction.
+  result = ledgerConfig()
+  result.name = "chain"
+  ## Bigger batches than `ledger`. A verifier checks a Merkle path per
+  ## batch, so fewer, larger batches mean fewer paths to ship -- and this
+  ## workload reads whole ranges rather than single rows.
+  result.batchRows = 256'u32
+  ## Peers pull by log position, so the log must never be rewritten under
+  ## them: compaction changes what a position means and forces every
+  ## follower back to zero.
+  result.keepHistory = true
+  result = normalizeGeistConfig(result)
+
+proc hostConfig*(): GeistConfig {.role: configurator,
+    tag: "appApi|config|cryptoBoundary|db|storageIo|sync".} =
+  ## Content served from several machines, addressed by what it IS rather
+  ## than by where it sits.
+  ##
+  ## The sidecar is the whole point: at or above the threshold a value
+  ## leaves the row and becomes a file named by its own hash, so two
+  ## machines that hold the same object agree on its name without
+  ## coordinating, and a reader detects a corrupted copy by hashing it.
+  ## The threshold is dropped to 256 bytes because here almost everything
+  ## is an object rather than a field.
+  ##
+  ## Reads dominate, so batches are large: an object is fetched by name
+  ## and its neighbours in the batch are usually wanted next.
+  ##
+  ## NO COLUMN COPY, deliberately. The fast-search copy is plaintext, and
+  ## Geist refuses to keep one beside a sealed store -- rightly, because a
+  ## machine hosting other people's content is exactly where an index of
+  ## it in the clear is worst. A deployment that wants the copy has to
+  ## choose an unsealed preset and mean it.
+  ##
+  ## CEILING: an object is served over the wire in one DAC package, which
+  ## tops out at 65,535 chunks of 1,200 bytes -- about 78 MB. Above that a
+  ## caller must split the object itself. `bulkConfig` says the same thing
+  ## at more length.
+  result = baseConfig("host", ckChaCha20)
+  result.sidecarThreshold = 256'u32
+  result.batchRows = 256'u32
+  result.rowIdentity = true
+  result.keepHistory = true
+  result.transpose = tmNone
+  result.backup.copies = 2'u8
+  result = normalizeGeistConfig(result)
+
+proc liveConfig*(): GeistConfig {.role: configurator,
+    tag: "appApi|config|db|stream".} =
+  ## Small updates arriving fast and mattering briefly: a position, a
+  ## pose, a cursor, a reading somebody is watching live.
+  ##
+  ## Nothing is written unless a caller asks. A position that is three
+  ## updates old is worthless, so paying a disk write for it is paying for
+  ## nothing -- `wmVolatile` keeps rows in RAM and `close` discards them.
+  ## Identity is off and history is off for the same reason: an update is
+  ## never edited, only superseded.
+  ##
+  ## CEILING, and it is the one that decides whether this preset suits
+  ## you. Every exchange is a REQUEST AND A REPLY -- `send` blocks until
+  ## the answer arrives. There is no one-way push in Geist today. So the
+  ## update rate is bounded by the round trip, not by the bandwidth:
+  ##
+  ##   round trip   updates per second, per link
+  ##   ----------   ----------------------------
+  ##   1 ms         ~1000     (same machine, loopback)
+  ##   5 ms         ~200      (same building)
+  ##   20 ms        ~50       (same country)
+  ##   80 ms        ~12       (across an ocean)
+  ##
+  ## Positions at 50 Hz on a LAN: comfortable. VIDEO: no. A 1080p stream
+  ## is several megabytes a second of payload that must not wait for an
+  ## acknowledgement per frame, and both of those are the opposite of what
+  ## this transport does. Carry video on its own transport and keep the
+  ## metadata here.
+  result = baseConfig("live", ckChaCha20)
+  result.writeMode = wmVolatile
+  result.rowIdentity = false
+  result.keepHistory = false
+  ## Tiny batches: an update is read the moment it lands, so a large batch
+  ## would decrypt a group to reach the one row anybody wants.
+  result.batchRows = 4'u32
+  result.autoCollapse = false
+  result.backup.enabled = false
+  result = normalizeGeistConfig(result)
+
+proc bulkConfig*(): GeistConfig {.role: configurator,
+    tag: "appApi|config|cryptoBoundary|db|storageIo".} =
+  ## Few objects, each very large: recordings, disk images, datasets.
+  ##
+  ## Everything here pushes bytes out of the row and into the sidecar as
+  ## early as possible, and keeps the row table small enough that the
+  ## whole-file rewrite on save stays cheap.
+  ##
+  ## CEILING -- read this before choosing it for multi-gigabyte files,
+  ## because there are three separate limits and none of them is lifted by
+  ## a setting:
+  ##
+  ##   1. `putSidecar` takes the whole object as one `openArray[uint8]`
+  ##      and `getSidecar` returns the whole object as one `ByteSeq`. A
+  ##      5 GB file therefore needs 5 GB of RAM to store and 5 GB to read,
+  ##      plus a copy. There is no chunked or streaming path.
+  ##
+  ##   2. One DAC package carries at most 65,535 chunks, and Geist sends
+  ##      1,200-byte chunks, so a single transfer tops out at about
+  ##      78 MB. Anything larger must be split by the caller into several
+  ##      transfers with their own names.
+  ##
+  ##   3. A save serialises the whole store and replaces the file
+  ##      atomically. Keeping objects in the sidecar rather than in rows
+  ##      is what keeps that affordable, which is why the threshold here
+  ##      is 64 bytes.
+  ##
+  ## So: right preset for many-megabyte objects on one machine, and for
+  ## anything up to ~78 MB over the wire. For files of several gigabytes
+  ## it gives you the correct SETTINGS and Geist still lacks the streaming
+  ## machinery -- see `docs/workloads.md`.
+  result = baseConfig("bulk", ckChaCha20)
+  ## Almost nothing stays inline. A row here is a name and a reference.
+  result.sidecarThreshold = 64'u32
+  ## Few rows, read whole, so a large batch costs nothing and saves MAC
+  ## passes.
+  result.batchRows = 512'u32
+  result.rowIdentity = true
+  result.keepHistory = false
+  ## Every mutation is expensive and rare, so flush when one happens
+  ## rather than risk losing an hour of upload to a crash.
+  result.writeMode = wmOnChange
+  result.contentHashBytes = uint8(fullDigestBytes)
+  result.backup.copies = 2'u8
+  result = normalizeGeistConfig(result)
+
+proc geistConfigPresets*(): seq[tuple[name, purpose: string]] {.
+    role: configurator, tag: "appApi|config|db|read".} =
+  ## The public preset catalog, for CLIs and diagnostics.
+  ##
+  ## Two groups. The first nine are named after the SHAPE of the data; the
+  ## last five after the JOB. A caller who knows their access pattern
+  ## wants the first list; a caller who knows what they are building wants
+  ## the second.
+  result = @[
+    (name: "app", purpose: "ordinary local application records"),
+    (name: "collapsed", purpose: "omit zero/empty fields via a null bitmap"),
+    (name: "secure-collapsed", purpose: "collapsed with cascade at rest"),
+    (name: "secure-app", purpose: "local records with cascade at rest"),
+    (name: "chat", purpose: "encrypted messaging, small batches"),
+    (name: "iot", purpose: "fixed-width telemetry, no overflow region"),
+    (name: "archive", purpose: "scan-heavy long-term encrypted storage"),
+    (name: "stream", purpose: "volatile low-latency chunks"),
+    (name: "ledger", purpose: "append-only hash-chained records"),
+    (name: "cloud-sync", purpose: "records several machines reconcile"),
+    (name: "chain", purpose: "tamper-evident log peers each verify"),
+    (name: "host", purpose: "content addressed by its own hash"),
+    (name: "live", purpose: "fast small updates, round-trip bound"),
+    (name: "bulk", purpose: "few very large objects, ~78 MB per transfer")]
+
+proc knownPresetNames*(): string {.role: helper,
+    tag: "appApi|config|db|read".} =
+  ## Every canonical preset name, comma separated, for an error message.
+  ## Built from the catalog so a preset can never be added without the
+  ## message that names it being updated too.
+  var
+    i: int = 0
+    A: seq[tuple[name, purpose: string]] = geistConfigPresets()
+  while i < A.len:
+    if i > 0:
+      result = result & ", "
+    result = result & A[i].name
+    i = i + 1
+
 proc geistConfigPreset*(name: string): GeistConfig {.role: configurator,
     tag: "appApi|config|db|read".} =
   ## name: canonical preset name or a documented alias.
@@ -445,22 +703,15 @@ proc geistConfigPreset*(name: string): GeistConfig {.role: configurator,
   of "archive", "archival", "backup": result = archiveConfig()
   of "stream", "media", "livestream": result = streamConfig()
   of "ledger", "journal", "append-only": result = ledgerConfig()
+  # The five named after a job rather than a shape.
+  of "cloud-sync", "sync", "replica": result = syncConfig()
+  of "chain", "blockchain": result = chainConfig()
+  of "host", "hosting", "content": result = hostConfig()
+  of "live", "position", "realtime": result = liveConfig()
+  of "bulk", "files", "large-files": result = bulkConfig()
   else:
-    raise newException(ValueError, "unknown Geist config preset '" & name & "'")
-
-proc geistConfigPresets*(): seq[tuple[name, purpose: string]] {.
-    role: configurator, tag: "appApi|config|db|read".} =
-  ## The public preset catalog, for CLIs and diagnostics.
-  result = @[
-    (name: "app", purpose: "ordinary local application records"),
-    (name: "collapsed", purpose: "omit zero/empty fields via a null bitmap"),
-    (name: "secure-collapsed", purpose: "collapsed with cascade at rest"),
-    (name: "secure-app", purpose: "local records with cascade at rest"),
-    (name: "chat", purpose: "encrypted messaging, small batches"),
-    (name: "iot", purpose: "fixed-width telemetry, no overflow region"),
-    (name: "archive", purpose: "scan-heavy long-term encrypted storage"),
-    (name: "stream", purpose: "volatile low-latency chunks"),
-    (name: "ledger", purpose: "append-only hash-chained records")]
+    raise newException(ValueError, "unknown Geist config preset '" & name &
+      "'; known: " & knownPresetNames())
 
 proc applyColumnPolicy*(c: GeistConfig,
     s: Schema): tuple[ok: bool, s: Schema, err: string] {.role: configurator,

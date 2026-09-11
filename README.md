@@ -1048,12 +1048,57 @@ $ geist presets                      # the same list, from the CLI
   iotConfig                 iot, telemetry, sensor            no   256    ChaCha20  fixed sensor rows
   archiveConfig             archive, archival, backup         yes 1024    cascade   long-term scan
   streamConfig              stream, media, livestream         no     8    ChaCha20  short-lived chunks
-  ledgerConfig              ledger, journal, trail            yes  128    cascade   append-only chain
+  ledgerConfig              ledger, journal, append-only      yes  128    cascade   append-only chain
 ```
 
 `iot` and `stream` are the two with `id?  no`: telemetry never edits a
 reading, so paying 16 bytes a row for `set`/`delete`/`byId` would be
 waste.
+
+Those nine are named after the SHAPE of the data. Five more are named
+after the JOB, for a caller who knows what they are building rather than
+how it is accessed:
+
+```text
+  code name                 CLI names                         id?  batch  seal      for
+  -----------------------   --------------------------------  ---  -----  --------  ----
+  syncConfig                cloud-sync, sync, replica         yes   32    ChaCha20  machines reconciling copies
+  chainConfig               chain, blockchain                 yes  256    cascade   tamper-evident shared log
+  hostConfig                host, hosting, content            yes  256    ChaCha20  content addressed by hash
+  liveConfig                live, position, realtime          no     4    ChaCha20  fast small updates, RAM only
+  bulkConfig                bulk, files, large-files          yes  512    ChaCha20  few very large objects
+```
+
+**Each of the five carries a ceiling, and a preset cannot lift one.**
+They are worth reading before you pick:
+
+```text
+  preset      works for                       runs into
+  ----------  -----------------------------   ---------------------------
+  cloud-sync  records people edit             a reply stops at 28 KB, so
+                                              a big backlog is many
+                                              blocking round trips
+  chain       a shared record among peers     no consensus and no fork
+              who hold each other's pins      choice exist anywhere in
+                                              Geist; rows are covered by
+                                              a batch root, not chained
+                                              one by one
+  host        objects up to ~78 MB            one transfer is 65,535
+                                              chunks x 1,200 B; peer
+                                              DISCOVERY does not exist,
+                                              pins are placed by hand
+  live        50 Hz positions on a LAN        every send waits for a
+                                              reply, so the rate is
+                                              1/RTT. VIDEO DOES NOT WORK
+  bulk        many-MB objects on ONE machine  sidecar reads and writes
+                                              whole objects in RAM, so
+                                              multi-GB files need a
+                                              streaming path that is not
+                                              written yet
+```
+
+`docs/workloads.md` has the measurements behind every number above, and
+what would have to change to move each one.
 
 Adjust a preset in code when a specific store needs it:
 
@@ -1912,6 +1957,7 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   ---------------------------  ------------------------------------------
   CONTRIBUTING.md              how to change code without breaking it
   docs/layout.md               where every file lives, and why there
+  docs/workloads.md            what Geist fits, with the ceilings
   docs/evaluation.md           the tests, benchmarks and statistics
   docs/DESIGN_RATIONALE.md     why each shape exists (with numbers)
   docs/STORAGE_PLAN.md         on-disk plan and generation rules

@@ -12,8 +12,25 @@
 
 [storage]
 # Which preset openGeist uses when a caller names none.
+#
+# Nine named after the SHAPE of the data -- pick one of these if you know
+# your access pattern:
 #   app  collapsed  secure-app  secure-collapsed
 #   chat  iot  archive  stream  ledger
+#
+# Five named after the JOB -- pick one of these if you know what you are
+# building. Each carries a ceiling; docs/workloads.md has the numbers.
+#   cloud-sync   records several machines reconcile
+#   chain        tamper-evident log peers each verify
+#   host         content addressed by its own hash (<= ~78 MB an object)
+#   live         fast small updates; bounded by the round trip, not by
+#                bandwidth, so LAN positions yes and video no
+#   bulk         few very large objects; correct on ONE machine, and the
+#                streaming path for multi-gigabyte transfer does not
+#                exist yet
+#
+# A name that is not in those lists is an ERROR at load, not at the first
+# open, and the message lists the real ones.
 preset = "app"
 
 # Bytes. A capped column value at or above this moves out of the row and

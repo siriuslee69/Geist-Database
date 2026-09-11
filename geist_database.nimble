@@ -272,8 +272,12 @@ task stats, "Measure the repository with Otter and record the numbers":
     quit(1)
   rmDir(at)
   mkDir(at)
-  ## `git archive` is what "the tracked tree" means, exactly.
-  exec "sh -c 'git archive --format=tar HEAD | tar -x -C " & at & "'"
+  ## Tracked files AS THEY ARE ON DISK, not as they are at HEAD. `git
+  ## archive HEAD` would be simpler and would measure the last commit,
+  ## which is the wrong answer for the person who just changed something
+  ## and wants to see what it did.
+  exec "sh -c 'git ls-files -z | tar --null -T - -cf - | tar -x -C " &
+    at & "'"
   mkDir(at & "/submodules")
   for d in deps:
     exec "sh -c 'ln -sfn " & here & "/submodules/" & d & " " & at &
