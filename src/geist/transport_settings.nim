@@ -36,10 +36,15 @@ type
     ##   before it rekeys upward into a wider algorithm set -- a
     ##   conversation long enough to be worth attacking earns a stronger
     ##   suite.
+    ## requireCookie: whether a server answers a first hello with a cookie
+    ##   challenge before it spends a key exchange on it. See the
+    ##   handshake section of the README; leave it on unless the socket is
+    ##   unreachable by strangers.
     ## loadedFrom: the file these came from, empty when built in.
     startTier*: GeistTier
     secretAtMiB*: uint64
     archiveAtMiB*: uint64
+    requireCookie*: bool
     loadedFrom*: string
 
 proc builtinTransportDefaults*(): TransportDefaults {.role: configurator,
@@ -49,6 +54,8 @@ proc builtinTransportDefaults*(): TransportDefaults {.role: configurator,
   result.startTier = defaultTriggerPolicy().startTier
   result.secretAtMiB = defaultTriggerPolicy().rows[gtSecret].threshold
   result.archiveAtMiB = defaultTriggerPolicy().rows[gtArchive].threshold
+  ## On, because the safe answer is the one a forgotten config gets.
+  result.requireCookie = true
 
 proc parseTierName*(name: string): tuple[ok: bool, tier: GeistTier] {.
     role: parser, tag: "ame|config|parsing".} =
@@ -67,8 +74,8 @@ proc loadTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     tag: "ame|config|parsing|read".} =
   ## path: `config.toml`; only its `[transport]` section is read.
   var
-    doc: tuple[ok: bool, node: JsonNode, err: string]
-    transport: JsonNode
+    doc: tuple[ok: bool, node: JsonNode, err: string] = (false, newJNull(), "")
+    transport: JsonNode = newJNull()
     complaint: string = ""
     tier: string = ""
   result.defaults = builtinTransportDefaults()
@@ -77,7 +84,8 @@ proc loadTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     return (false, result.defaults, doc.err)
   transport = doc.node.section("transport")
   complaint = checkKeys(transport,
-    ["startTier", "secretAtMiB", "archiveAtMiB"], "[transport]")
+    ["startTier", "secretAtMiB", "archiveAtMiB", "requireCookie"],
+    "[transport]")
   if complaint.len > 0:
     return (false, result.defaults, complaint)
   tier = transport.setting("startTier", "")
@@ -92,6 +100,8 @@ proc loadTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     result.defaults.secretAtMiB)
   result.defaults.archiveAtMiB = transport.setting("archiveAtMiB",
     result.defaults.archiveAtMiB)
+  result.defaults.requireCookie = transport.setting("requireCookie",
+    result.defaults.requireCookie)
   result.defaults.loadedFrom = if fileExists(path): path else: ""
   result.ok = true
 
@@ -119,7 +129,8 @@ proc initTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   ## path: config.toml, read and adopted in one step. A missing file is
   ## success -- the built-in policy IS the answer in that case.
   var
-    got: tuple[ok: bool, defaults: TransportDefaults, err: string]
+    got: tuple[ok: bool, defaults: TransportDefaults, err: string] = (false,
+      builtinTransportDefaults(), "")
   got = loadTransportDefaults(path)
   if not got.ok:
     return (false, got.err)

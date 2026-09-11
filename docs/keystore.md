@@ -110,7 +110,7 @@ Stated plainly, because the difference matters:
 
 | part | state |
 |---|---|
-| `kpFile` | complete, tested (`tests/test_keystore.nim`) |
+| `kpFile` | complete, tested (`evaluation/tests/test_keystore.nim`) |
 | `kpMemory` | complete, tested |
 | the fallback and downgrade reporting | complete, tested |
 | the status vocabulary and its messages | complete, tested |

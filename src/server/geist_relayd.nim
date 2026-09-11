@@ -407,7 +407,8 @@ proc runRelayd*(argv: seq[string]): int {.role: metaOrchestrator,
       raise newException(IOError, trusted.err)
     D = deskFor(c)
     server = initGeistServer(address.a, mine.key, trusted.peers,
-      defaultTierPolicy(), int64(c.idleSeconds))
+      defaultTierPolicy(), int64(c.idleSeconds),
+      transportDefaults().requireCookie)
     if not server.ok:
       raise newException(IOError, server.err)
     c.note("geist-relayd listening on " & c.listen)

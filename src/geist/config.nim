@@ -444,7 +444,7 @@ proc geistConfigPreset*(name: string): GeistConfig {.role: configurator,
   of "iot", "telemetry", "sensor": result = iotConfig()
   of "archive", "archival", "backup": result = archiveConfig()
   of "stream", "media", "livestream": result = streamConfig()
-  of "ledger", "journal", "audit-trail": result = ledgerConfig()
+  of "ledger", "journal", "append-only": result = ledgerConfig()
   else:
     raise newException(ValueError, "unknown Geist config preset '" & name & "'")
 

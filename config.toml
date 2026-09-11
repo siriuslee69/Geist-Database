@@ -67,6 +67,17 @@ everySeconds = 0
 # weaken a tier's mask would make the guarantee a deployment detail.
 startTier = "standard"
 
+# Anti-flood. A first hello is answered with a cookie challenge -- a short
+# tag over the caller's address and the time -- and the key exchange only
+# happens once that cookie comes back. Nothing proves a source address on
+# a datagram socket, so with this off a flood of forged helloes has the
+# server doing post-quantum key exchanges for packets that came from
+# nowhere. Costs one extra round trip per SESSION, not per request.
+#
+# Leave it true. Turn it off only on a socket strangers cannot reach --
+# loopback, or a link that is already inside something else.
+requireCookie = true
+
 # Mebibytes transferred before climbing. archive and recovery need DAC
 # package transfer for the handshake itself: their code-based KEM public
 # keys run to ~1.3 MB, well past one frame.

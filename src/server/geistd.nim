@@ -427,7 +427,8 @@ proc runGeistd*(argv: seq[string]): int {.role: metaOrchestrator,
     if seen.ok:
       S.seen = seen.f
     server = initGeistServer(address.a, mine.key, trusted.peers,
-      defaultTierPolicy(), int64(c.idleSeconds))
+      defaultTierPolicy(), int64(c.idleSeconds),
+      transportDefaults().requireCookie)
     if not server.ok:
       raise newException(IOError, server.err)
     if not c.quiet:

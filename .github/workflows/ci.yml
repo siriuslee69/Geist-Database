@@ -1,5 +1,11 @@
 name: Geist CI
 
+# Every step below names a task that EXISTS in geist_database.nimble.
+# An earlier version of this file called `doctor`, `testProtocols`,
+# `testSoak`, `testInterfaces` and `benchCore`, none of which were ever
+# written -- so the workflow failed on its first step and the rest of it
+# was never reached. If you add a step here, run the task locally first.
+
 on:
   push:
   pull_request:
@@ -15,20 +21,16 @@ jobs:
       - uses: jiro4989/setup-nim-action@v2
         with:
           nim-version: "2.2.6"
-      - name: Doctor
-        run: nimble doctor
-      - name: Core tests
-        run: nimble testCore
-      - name: Protocol tests
-        run: nimble testProtocols
-      - name: Soak drills
-        run: nimble testSoak
-      - name: Interface tests
-        run: nimble testInterfaces
-      - name: Benchmark threshold
-        run: nimble benchCore
-      - name: Build all
+      - name: Build every public module
         run: nimble buildAll
+      - name: Prove the storage half needs no network stack
+        run: nimble checkModular
+      - name: Prove the wire half needs no database
+        run: nimble checkRelay
+      - name: Prove the router needs no store
+        run: nimble checkRouter
+      - name: Full test suite
+        run: nimble test
 
   nix:
     name: Nix package and gates
@@ -42,9 +44,9 @@ jobs:
         run: nix-build nix/default.nix
       - name: Repo gates in Nix shell
         run: |
-          nix-shell -p nim libsodium nodejs powershell --run "nimble doctor"
-          nix-shell -p nim libsodium nodejs powershell --run "nimble testCore"
-          nix-shell -p nim libsodium nodejs powershell --run "nimble testProtocols"
-          nix-shell -p nim libsodium nodejs powershell --run "nimble testSoak"
-          nix-shell -p nim libsodium nodejs powershell --run "nimble testInterfaces"
-          nix-shell -p nim libsodium nodejs powershell --run "nimble benchCore"
+          nix-shell -p nim libsodium --run "nimble buildAll"
+          nix-shell -p nim libsodium --run "nimble checkModular"
+          nix-shell -p nim libsodium --run "nimble checkRelay"
+          nix-shell -p nim libsodium --run "nimble checkRouter"
+          nix-shell -p nim libsodium --run "nimble test"
+          nix-shell -p nim libsodium --run "nimble examples"

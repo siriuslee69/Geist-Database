@@ -1,5 +1,6 @@
-.iron/.local*
-!.iron/.local*.template
+# The removed Iron folder. Its job is now agents/PROGRESS.md; if a tool
+# recreates it, it stays out of the repository.
+.iron/
 nimcache/
 .nimble_cache/
 node_modules/
@@ -32,10 +33,10 @@ src/client/android/app/app/src/main/jniLibs/
 # negation is written against the same prefix as the exclusion, because a
 # general "!**/*.nim" is easy to defeat and once cost this repository its
 # whole test suite in commit 891f9a8.
-tests/**/test_*
-!tests/**/test_*.nim
-!tests/**/*.nim
-tests/data/
+evaluation/tests/**/test_*
+!evaluation/tests/**/test_*.nim
+!evaluation/tests/**/*.nim
+evaluation/tests/data/
 .geist-koerper/
 koerper/
 *.bfx1
@@ -48,8 +49,7 @@ koerper/
 nimble.develop
 nimble.paths
 nimbledeps
-.iron/conventions/
-tests/.otter/results/
+evaluation/tests/.otter/results/
 
 # legacy implementation kept for reference during rearchitecture
 .geist-legacy/

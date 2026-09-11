@@ -1,6 +1,106 @@
 # Progress
 
-Commit Message: readme: define the terms, then rebuild every format byte by byte
+Commit Message: Move onto Bifrost's private handshake, and put the tree where the conventions say
+
+Features (Planned):
+- Declare a `testKind` on the 507 evaluation routines. Otter reports 0 of
+  507 declared, so every kind is currently guessed from the wording.
+- Flatten the 119 triple-nested and 16 deeper sites Otter lists.
+- Put a `role` pragma on the 105 routines that declare none.
+- Split the six oversized files, `src/clients/geist_cli.nim` (1105 lines)
+  first.
+- Remove the 37 unused public symbols and the 65 dead configurator fields.
+
+Features (Done):
+- Bifrost's rewritten API, consumed end to end. See below.
+- `evaluation/tests`, `evaluation/benchmarks`, `evaluation/statistics`
+  layout; `agents/PROGRESS.md`; `.iron/` gone.
+- `Rune-Pragmas` pinned as a submodule, so `runePragmas` resolves in a
+  fresh clone rather than from a sibling folder on one machine.
+- A CI workflow whose every step names a task that exists.
+
+Features (In Progress):
+- None.
+
+## 2026-09-11 Bifrost's Private Handshake
+
+Bifrost was rewritten; Geist was still calling the API it had before. The
+parts that moved, and what each became here:
+
+```text
+  what Bifrost used to offer          what it offers now
+  ---------------------------------   ---------------------------------
+  beginAmePinnedHandshake             beginAmeHandshake(.., mode)
+  answerAmePinnedHandshake            answerAmeHandshake(.., auth)
+  finishAmePinnedHandshake            finishAmeHandshake(.., auth)
+  twelve <scenario>DacDefaults()      dacDefaultsFor(scenario)
+  a hello naming its sender           a hello naming NOBODY
+  no anti-flood                       cookie challenge + hello retry
+  raw records on the wire             records inside AME frames
+```
+
+The one that changed the code rather than the spelling is the third row.
+AME's handshake is now PRIVATE: a client hello carries key material and
+nothing else, and each side's identity travels sealed. So the server can
+no longer look up a peer's pin when the hello arrives -- it does not yet
+know who is calling.
+
+What `src/geist/transport.nim` does instead:
+
+```text
+  hello arrives  -> no cookie yet? send one back, remember NOTHING
+                 -> cookie good?   answer with our own identity sealed,
+                                   remember the half-finished handshake
+  finish arrives -> open the seal, then try each trusted pin in turn;
+                    the first that matches names the peer and its rights
+```
+
+Trying every pin is cheap: Bifrost compares the name and the public keys
+before it verifies any signature, so a pin that is not the caller costs a
+string compare. Opening the sealed block is symmetric work, repeated per
+attempt, which is why the loop stops at the first pin that works.
+
+`serveOnce` now reads what a frame IS off the frame -- the four handshake
+packet kinds are distinguishable from session data -- instead of guessing
+from what the server remembers about that address. That removed the old
+"an open session that will not open a frame might be a peer saying hello
+again" fallback, which was a guess that could mask a real failure.
+
+Also in this change:
+- `requireCookie` in `[transport]` of config.toml, default true, read by
+  `geistd`. Off is only right on a socket strangers cannot reach.
+- `geistDescriptor` gives the local identity a one-year validity window.
+  Bifrost now checks one, and a pinned key that never expires is a key
+  nobody can retire without visiting every peer that pinned it.
+- Dependency pins aligned with Bifrost's own (Eir, Tyr, Fylgia, SIMD,
+  Otter). Geist's Eir predated `RsCodec` and Bifrost would not compile
+  against it.
+
+Verification:
+- `nimble buildAll`, `nimble test`: the whole suite, including the
+  live-socket daemon tests that run a real handshake over a real socket.
+
+## 2026-09-11 The Tree Where The Conventions Say
+
+- `tests/` -> `evaluation/tests/`, `bench/` -> `evaluation/benchmarks/`,
+  new `evaluation/statistics/` holding a recorded Otter measurement.
+- `.iron/PROGRESS.md` -> `agents/PROGRESS.md`; the rest of `.iron/`
+  deleted and gitignored. The copied conventions went with it: they are
+  read from the workspace `Agent-Conventions` repo, and a copy drifts.
+- Five test files imported `../src/geist` while the rest imported `geist`
+  off the configured path. All of them use the configured path now, so
+  moving the directory did not have to move the imports with it.
+
+Last big change or problem encountered:
+- The CI workflow called `doctor`, `testProtocols`, `testSoak`,
+  `testInterfaces` and `benchCore`. None of those tasks has ever existed
+  in `geist_database.nimble`, so the workflow failed on its first step
+  and nothing after it had ever run.
+- Fix: rewrote `.github/workflows/ci.yml` against the tasks that do
+  exist. The nix job had the same problem and got the same treatment; it
+  also never linked `Rune-Pragmas`, so `nix-build` could not have
+  compiled a single module.
+
 
 ## 2026-08-09 README At The Byte Level
 

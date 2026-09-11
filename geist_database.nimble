@@ -41,7 +41,7 @@ task buildBins, "Build every binary into build/bin":
 
 task buildBench, "Build the Otter-based benchmark binary":
   exec "nim c -d:release --mm:orc --threads:on --hints:off " &
-    "-o:build/bin/geist-bench bench/geist_bench.nim"
+    "-o:build/bin/geist-bench evaluation/benchmarks/geist_bench.nim"
 
 task bench, "Run every benchmark group":
   exec "nimble buildBench"
@@ -73,8 +73,8 @@ task checkModular, "Prove the storage half builds with no network stack":
   ## The project config is skipped precisely because it adds every
   ## submodule path, including the one under test.
   var paths = ""
-  for p in ["submodules/Fylgia-Utils/src", "submodules/Fylgia-Utils/.iron/meta",
-            "submodules/Tyr-Crypto/src", "submodules/Tyr-Crypto/tools/meta",
+  for p in ["submodules/Fylgia-Utils/src", "submodules/Tyr-Crypto/src",
+            "submodules/Rune-Pragmas/meta", "../Rune-Pragmas/meta",
             "submodules/SIMD-Nexus/src", "submodules/Eir-CompressionAndECC/src",
             "submodules/nimsimd/src"]:
     if dirExists(p):
@@ -82,7 +82,7 @@ task checkModular, "Prove the storage half builds with no network stack":
   exec "nim c -r --skipProjCfg --skipParentCfg --mm:orc --threads:on " &
     "--hints:off --warnings:off -d:hasLibsodium --path:src" & paths &
     " --nimcache:build/nimcache-modular -o:build/storage-only " &
-    "tests/modular/storage_only.nim"
+    "evaluation/tests/modular/storage_only.nim"
 
 task checkRelay, "Prove the wire half builds with no database in it":
   ## The mirror of checkModular. That one removes Bifrost from the path
@@ -101,7 +101,7 @@ task checkRelay, "Prove the wire half builds with no database in it":
   var leaked: seq[string] = @[]
   exec "nim c -r --mm:orc --threads:on --hints:off --warnings:off " &
     "--nimcache:build/nimcache-relay -o:build/relay-only " &
-    "tests/modular/relay_only.nim"
+    "evaluation/tests/modular/relay_only.nim"
   for f in listFiles("build/nimcache-relay"):
     let name = f.extractFilename()
     if not name.endsWith(".nim.c"):
@@ -191,36 +191,36 @@ task examples, "Run every example in order":
 # ---------------------------------------------------------------------
 
 task test, "Run the full test suite":
-  for f in listFiles("tests"):
+  for f in listFiles("evaluation/tests"):
     if f.endsWith(".nim") and f.extractFilename().startsWith("test_"):
       echo "--- " & f
       exec "nim c -r --mm:orc --threads:on --hints:off --warnings:off " & f
 
 task testCore, "Run the mapper and format tests only":
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_mapper_roundtrip.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_format_partial.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_mapper_roundtrip.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_format_partial.nim"
 
 task testCrypto, "Run the crypto, key lifecycle and backup tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_crypto_batch.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_keys_backup.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_crypto_batch.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_keys_backup.nim"
 
 task testApi, "Run the session, transport and settings tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_session_api.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_masks_transport.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_settings.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_session_api.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_masks_transport.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_settings.nim"
 
 task testDurability, "Run the generation-swap, lease and restore tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_durability_lease.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_sidecar_sweep.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_durability_lease.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_sidecar_sweep.nim"
 
 task testExchange, "Run the live-socket daemon and identity tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_daemon_live.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_row_identity.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_daemon_live.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_row_identity.nim"
 
 task testApiSurface, "Run the collection, seek and column storage tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_collection_seek.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_hash_agility.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off tests/test_column_storage.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_collection_seek.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_hash_agility.nim"
+  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_column_storage.nim"
 
 task demoCli, "Create a scratch database and exercise the CLI":
   exec "nimble buildCli"
@@ -239,14 +239,38 @@ task demoCli, "Create a scratch database and exercise the CLI":
   exec "build/bin/geist --path " & root & " inspect"
 
 # ---------------------------------------------------------------------
+# Statistics
+# ---------------------------------------------------------------------
+
+task stats, "Measure the repository with Otter and record the numbers":
+  ## Writes evaluation/statistics/otter-stats.txt so the shape of the tree
+  ## is a tracked file and a change to it shows up in a diff, rather than
+  ## a number somebody remembers from last month.
+  ##
+  ## The measurement is of the TRACKED tree. Untracked leftovers -- the
+  ## `.geist-legacy/` reference copy above all -- would otherwise dominate
+  ## every count and make the report useless.
+  var
+    otter: string = "submodules/Otter-RepoEvaluation/tools/agent_hooks/" &
+      "otter-build.sh"
+  if not fileExists(otter):
+    echo "Otter is not checked out: git submodule update --init " &
+      "submodules/Otter-RepoEvaluation"
+    quit(1)
+  mkDir("evaluation/statistics")
+  exec "sh -c '\"$(" & otter & ")\" stats . > " &
+    "evaluation/statistics/otter-stats.txt'"
+  exec "cat evaluation/statistics/otter-stats.txt"
+
+# ---------------------------------------------------------------------
 # Git workflow (copied verbatim from Proto-RepoTemplate per conventions)
 # ---------------------------------------------------------------------
 
 proc resolveProgressPath(): string =
   var
     ts: seq[string] = @[
-      ".iron/PROGRESS.md",
-      ".iron/progress.md"
+      "agents/PROGRESS.md",
+      "agents/progress.md"
     ]
   for t in ts:
     if fileExists(t):
@@ -303,7 +327,7 @@ proc isGeneratedOrLocalArtifact(path: string): bool =
     p.endsWith(".a") or p.endsWith(".lib") or p.endsWith(".pdb") or
     p == "local.properties" or p == "userconfig.toml" or
     p == "nimble.paths" or p == "nimble.develop" or
-    p.startsWith(".iron/.local")
+    p.startsWith(".iron/")
 
 ## ---------------------------------------------------------------------------
 ## Canonical git workflow tasks <- copy autopush/switch/applynightly verbatim
@@ -311,7 +335,7 @@ proc isGeneratedOrLocalArtifact(path: string): bool =
 ## `applynightly` promotes the tested state onto `main` by fast-forward.
 ##
 ##   autopush     -> stage all, refuse generated/local artifacts, commit
-##                   with the message from .iron/PROGRESS.md, then push
+##                   with the message from agents/PROGRESS.md, then push
 ##   switch       -> toggle the checkout between nightly and main
 ##   applynightly -> fast-forward main to nightly locally and on origin
 ## ---------------------------------------------------------------------------

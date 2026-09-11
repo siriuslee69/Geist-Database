@@ -25,20 +25,21 @@ addPathIfExists(joinPath(repoRoot, "submodules", "Otter-RepoEvaluation", "src"))
 when not defined(geistAndroidBuild):
   switch("define", "hasLibsodium")
 
+var
+  depRoot: string = ""
 for dep in ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto", "Eir-CompressionAndECC",
             "Bifrost-ExchangeProtocols"]:
-  let depRoot = resolveRepoRoot(dep)
+  depRoot = resolveRepoRoot(dep)
   addPathIfExists(depRoot)
   addPathIfExists(joinPath(depRoot, "src"))
   addPathIfExists(joinPath(depRoot, "meta"))
   addPathIfExists(joinPath(depRoot, "tools", "meta"))
 
-## This repository's own pragma module, named for the repository so no
-## other repo on the Nim path can capture it.
-
 ## Shared pragma module: one file for the whole workspace, so there is no
-## per-repository copy to drift or to collide on the Nim path.
+## per-repository copy to drift or to collide on the Nim path. The pinned
+## submodule is added LAST, because Nim takes the last matching `--path`
+## and a fresh clone must build from what this repository pins rather than
+## from whatever happens to sit beside it on this machine.
 if dirExists(thisDir() & "/../Rune-Pragmas/meta"):
   switch("path", thisDir() & "/../Rune-Pragmas/meta")
-if dirExists(thisDir() & "/submodules/Rune-Pragmas/meta"):
-  switch("path", thisDir() & "/submodules/Rune-Pragmas/meta")
+addPathIfExists(joinPath(repoRoot, "submodules", "Rune-Pragmas", "meta"))

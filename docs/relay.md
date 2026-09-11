@@ -281,6 +281,6 @@ took effect.
 
 | check | what it covers |
 |---|---|
-| `nimble test` (`tests/test_relay.nim`) | envelope round-trip, spool eviction and its count, per-reader cursors, rights, both log formats, exec on stdin, exec timeout, fire-and-forget |
+| `nimble test` (`evaluation/tests/test_relay.nim`) | envelope round-trip, spool eviction and its count, per-reader cursors, rights, both log formats, exec on stdin, exec timeout, fire-and-forget |
 | `nimble checkRelay` | compiles a relay and asserts **no database module was emitted** — the modularity claim, checked rather than asserted |
 | `nix build .#checks.x86_64-linux.relay-pipe -L` | three real NixOS guests: a phone sends, a desktop transcribes and answers, a laptop collects from the spool, a JSON log holds binary as base64, and a database client is told this is not a database |

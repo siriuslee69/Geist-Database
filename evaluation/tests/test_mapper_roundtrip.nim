@@ -3,7 +3,7 @@
 
 import std/[os, strutils, unittest]
 
-import ../src/geist
+import geist
 
 type
   Flat = object

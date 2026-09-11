@@ -20,7 +20,7 @@ import std/[os, strformat, strutils]
 
 import otter_repo_evaluation
 
-import ../src/geist
+import geist
 
 type
   Reading = object

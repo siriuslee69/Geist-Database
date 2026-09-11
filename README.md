@@ -1161,6 +1161,7 @@ surface:
   [transport]   startTier           "standard"   strength a link opens at
   [transport]   secretAtMiB         64           climb to secret after this many MiB
   [transport]   archiveAtMiB        1024         climb to archive after this many MiB
+  [transport]   requireCookie       true         challenge a first hello before doing key work
 ```
 
 You may change *when* a link climbs. You may not change *what algorithms*
@@ -1442,14 +1443,49 @@ The server avoids it by answering with fewer rows: a reply stops at about
   client                                   server
   ------                                   ------
   open ONE socket
-  client hello        ------------------>  look up the pin for this subject
-                      <------------------  server hello
-  client finish       ------------------>  session open, rights from the pin
-                                           (the same socket from here on)
+  client hello        ------------------>  who is this? NOBODY KNOWS YET
+                      <------------------  hello retry: prove you can
+                                           receive here (a cookie)
+  client hello again  ------------------>  cookie checks out; now spend
+   (+ the cookie)                          the key exchange
+                      <------------------  server hello: the key answer in
+                                           the clear, WHO WE ARE sealed
+                                           under it
+  client finish       ------------------>  open the seal, read who they
+   (WHO WE ARE sealed)                     are, find the pin that matches;
+                                           session open, rights from that
+                                           pin (same socket from here on)
   Query (envelope 0)  ------------------>  handler
                       <------------------  Reply (envelope 0)
   Query               ------------------>  ...
 ```
+
+Three things in that picture are worth naming, because they are not how
+most handshakes work.
+
+**Nobody says who they are in the clear.** Def.: a *private handshake* is
+one where each side's name and public keys travel inside a block only the
+other side can open, after the key exchange. An observer on the wire sees
+two machines agreeing on a key. It does not see which two.
+
+**Which pin is used is decided last, not first.** The server holds a list
+of trusted pins. It cannot look one up when the hello arrives, because the
+hello names nobody — so it answers every hello the same way and, when the
+sealed `client finish` opens, compares what it found against each pin in
+turn. The first that matches decides both the name and the rights. A pin
+that is not the caller costs a name-and-key comparison; only the pin that
+matches pays for signature checking.
+
+**A stranger cannot make the server do key work.** Def.: a *cookie* is a
+short tag over the caller's address and the current time, computed with a
+secret that never leaves the server. The server remembers nothing when it
+sends one; when the cookie comes back it recomputes the tag and compares.
+On a datagram socket nothing proves a source address, so without this a
+flood of forged helloes would have the server doing post-quantum key
+exchanges for packets that came from nowhere. The cost is one extra round
+trip, paid once per session rather than once per question. It is on by
+default and turned off with `initGeistServer(..., requireCookie = false)`
+— which is only ever right on a socket strangers cannot reach.
 
 One handshake per peer, then as many questions as you like. **The socket
 must not change**: the server keys sessions by source address, so a
@@ -1830,7 +1866,7 @@ quiet import.
   |  src/server/geist_relayd.nim   part 3 + relay handler          |
   +----------------------------------------------------------------+
 
-  tests/   examples/   bench/   nix/
+  evaluation/tests/   evaluation/benchmarks/   examples/   nix/
 ```
 
 ## Tasks
@@ -1849,7 +1885,10 @@ nimble demoCli            scratch store through the CLI
 nimble buildAll           compile every public module
 nimble checkModular       part 1 with the network stack absent
 nimble checkRelay         part 3 with no database in the C output
-nimble autopush           commit + push from .iron/PROGRESS.md
+nimble bench              every benchmark group
+nimble checkRouter        the router with no store in the C output
+nimble stats              measure the tree, record evaluation/statistics/
+nimble autopush           commit + push from agents/PROGRESS.md
 ```
 
 Real-guest checks (need KVM):
@@ -1872,14 +1911,15 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   file                         what it answers
   ---------------------------  ------------------------------------------
   CONTRIBUTING.md              how to change code without breaking it
+  docs/layout.md               where every file lives, and why there
+  docs/evaluation.md           the tests, benchmarks and statistics
   docs/DESIGN_RATIONALE.md     why each shape exists (with numbers)
   docs/STORAGE_PLAN.md         on-disk plan and generation rules
   docs/relay.md                part 3 in full
   docs/nix.md                  NixOS modules and VM checks
   docs/measurements/           the harnesses behind the numbers
   docs/submodules.md           which dependency owns which job
-  .iron/PROGRESS.md            commit message + recent change log
-  .iron/conventions/           full house style
+  agents/PROGRESS.md           commit message + recent change log
 ```
 
 ## Issue playbook
@@ -1945,11 +1985,24 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   --exec hangs until timeout on large stdout           answer with a path; keep stdout small
   --to stdout mixed with daemon chatter                status goes to stderr; check for a 2>&1
   need the old implementation                          .geist-legacy/ (gitignored), commit 047a776
+  Otter reports ~1300 routines and 121 secrets          it walked .geist-legacy/ too. `nimble stats`
+                                                       measures the TRACKED tree; the real numbers
+                                                       are in evaluation/statistics/
+  Otter says a proc is "never called"                   its call graph misses implicit calls; an
+                                                       overloaded `$` reads as dead while four
+                                                       places use it. Check before deleting
+  handshake refused: no pinned peer matched             the caller's identity opened but matched no
+                                                       .pin on this server. The hello names nobody,
+                                                       so this is the FIRST point a name exists
+  a flood of helloes does no key work                   working as intended: requireCookie = true
+                                                       makes a first hello cost one small reply.
+                                                       Only turn it off on an unreachable socket
 ```
 
 ## Maintainer conventions
 
-Full set: `.iron/conventions/`. The parts you hit first:
+The house style lives in the workspace `Agent-Conventions` repo, not in
+a copy here -- a copy drifts. The parts you hit first:
 
 ```text
   area              rule
@@ -1959,7 +2012,7 @@ Full set: `.iron/conventions/`. The parts you hit first:
   modules           order by dependency; types first; keep them small
   declarations      var / const in indented blocks; avoid let
   nesting           no nested loops or nested ifs — extract a helper
-  pragmas           {.role: ..., metaTags: {...}.} on procs
+  pragmas           {.role: ..., tag: "a|b".} on procs, from runePragmas
   parameter names   A arrays, S mutated state, i/j/k index, l/m/n length,
                     t temporary; first letter of the thing otherwise
   docs on params    ## lines under the declaration

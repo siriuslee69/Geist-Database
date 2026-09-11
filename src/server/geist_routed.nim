@@ -543,7 +543,8 @@ proc runRouted*(argv: seq[string]): int {.role: metaOrchestrator,
     S.node = c.routing.node
     S.quiet = c.quiet
     server = initGeistServer(address.a, mine.key, trusted.peers,
-      defaultTriggerPolicy(), int64(c.idleSeconds))
+      defaultTriggerPolicy(), int64(c.idleSeconds),
+      transportDefaults().requireCookie)
     if not server.ok:
       raise newException(IOError, server.err)
     note(c.quiet, "geist-routed listening on " & c.listen)

@@ -261,7 +261,7 @@ MiB of ledger per million rows at N=10.
 `databaseId || groupId || batchIndex || epoch || schemaVersion`.
 Without it, a batch can be moved to a different ledger row — or a
 different column group under the same key — and it decrypts cleanly and
-authenticates. `tests/test_crypto_batch.nim` covers all three relocations.
+authenticates. `evaluation/tests/test_crypto_batch.nim` covers all three relocations.
 
 ---
 
@@ -446,7 +446,7 @@ rewrite. Global rekey is reserved for key compromise and policy rotation.
 allocating. A ledger loaded from disk can reference a `keyRef` the
 in-memory allocator has not caught up to; handing back the same reference
 would reset the epoch on an *unchanged* key — precisely the reuse this
-design exists to prevent. Found by `tests/test_keys_backup.nim`.
+design exists to prevent. Found by `evaluation/tests/test_keys_backup.nim`.
 
 **The ledger is public.** Algorithm, keyRef, epoch and root are not
 secret; the ledger needs integrity, not confidentiality. Only the key

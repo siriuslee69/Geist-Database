@@ -16,10 +16,16 @@ src/clients/geist_cli.nim  the geist client
 src/server/geistd.nim      the geistd daemon
 src/clients/geist_relay.nim   the geist-relay client
 src/server/geist_relayd.nim   the geist-relayd message relay
-tests/test_*.nim           one file per area, discovered by `nimble test`
-bench/                     Otter benchmark harness
+evaluation/tests/test_*.nim   one file per area, found by `nimble test`
+evaluation/benchmarks/       Otter benchmark harness
+agents/PROGRESS.md           project state and handoff notes
 examples/                  runnable, and run by `nimble examples`
 ```
+
+`docs/layout.md` says where every file lives and why it lives there
+rather than next door. `docs/evaluation.md` covers the tests, the
+benchmarks and the recorded statistics, including how to declare what a
+test is for.
 
 `docs/DESIGN_RATIONALE.md` answers "why is it like this?" with the number
 that drove each decision. Read it before proposing a change to the
@@ -64,14 +70,17 @@ someone will undo next year.
 
 ## House style
 
-The full set is `.iron/conventions/*.md`, mirrored from
-`Proto-RepoTemplate`. The parts you will hit immediately:
+The full set lives in the workspace `Agent-Conventions` repo and is read
+from there rather than copied here, because a copy drifts. The parts you
+will hit immediately:
 
 - **No `let`.** `var` or `const`, declared in an indented block at the
   top of the proc, one name per line with an explicit type.
 - **No nested loops or nested `if`s.** Extract a helper instead.
-- **Every proc carries `{.role: ..., metaTags: {...}.}`** from
-  `.iron/meta/metaPragmas.nim`.
+- **Every proc carries `{.role: ..., tag: "...".}`** from `runePragmas`,
+  the one shared module in the `Rune-Pragmas` repo (pinned here at
+  `submodules/Rune-Pragmas`). Tags are plain strings separated by `|`.
+  It is `tag`, not `tags`: Nim owns the plural for effect tracking.
 - **Every parameter is doc-commented** on `##` lines under the
   declaration, by role: `A` for arrays, `S` for mutated state, `i,j,k`
   indices, `l,m,n` lengths, `t` temporary.

@@ -2,7 +2,7 @@
 
 import std/[os, strutils, tables, unittest]
 
-import ../src/geist
+import geist
 
 type
   Note = object

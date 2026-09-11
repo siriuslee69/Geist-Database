@@ -4,6 +4,10 @@
 , tyrCryptoSrc ? ../submodules/Tyr-Crypto
 , eirCompressionAndEccSrc ? ../submodules/Eir-CompressionAndECC
 , bifrostExchangeProtocolsSrc ? ../submodules/Bifrost-ExchangeProtocols
+# The one shared pragma module for the whole workspace. Every `.nim` file
+# in this tree and in its dependencies says `import runePragmas`, so a
+# build without it does not compile a single module.
+, runePragmasSrc ? ../submodules/Rune-Pragmas
 }:
 
 let
@@ -55,8 +59,7 @@ let
         in
         lib.cleanSourceFilter path type &&
         (rel == "" || rel == "src" || lib.hasPrefix "src/" rel ||
-          rel == ".iron" || rel == ".iron/meta" ||
-          lib.hasPrefix ".iron/meta/" rel);
+          rel == "meta" || lib.hasPrefix "meta/" rel);
     };
 
   filteredSrc = filterRepoSource ../.;
@@ -66,6 +69,7 @@ let
   filteredEirCompressionAndEccSrc = filterDependencySource eirCompressionAndEccSrc;
   filteredBifrostExchangeProtocolsSrc =
     filterDependencySource bifrostExchangeProtocolsSrc;
+  filteredRunePragmasSrc = filterDependencySource runePragmasSrc;
   nimsimdSrc = pkgs.fetchFromGitHub {
     owner = "guzba";
     repo = "nimsimd";
@@ -86,6 +90,7 @@ let
     ln -s ${filteredTyrCryptoSrc} "$out/submodules/Tyr-Crypto"
     ln -s ${filteredEirCompressionAndEccSrc} "$out/submodules/Eir-CompressionAndECC"
     ln -s ${filteredBifrostExchangeProtocolsSrc} "$out/submodules/Bifrost-ExchangeProtocols"
+    ln -s ${filteredRunePragmasSrc} "$out/submodules/Rune-Pragmas"
     ln -s ${nimsimdSrc} "$out/submodules/nimsimd"
   '';
 in

@@ -7,7 +7,7 @@ Four things live under `nix/`:
 | `default.nix` | the package: the daemons and their clients |
 | `module.nix` | `services.geistd` and `programs.geist-client` |
 | `relay-module.nix` | `services.geist-relay`, the daemon with no database |
-| `tests/` | three NixOS VM tests that run real machines against each other |
+| `nix/tests/` | three NixOS VM tests that run real machines against each other |
 
 ## The package
 

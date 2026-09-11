@@ -3,10 +3,10 @@
 
 import std/[os, unittest]
 
-import ../src/geist
-import ../src/geist/crypto/hashing
-import ../src/geist/crypto/mac
-import ../src/geist/crypto/batch
+import geist
+import geist/crypto/hashing
+import geist/crypto/mac
+import geist/crypto/batch
 
 type
   Note = object

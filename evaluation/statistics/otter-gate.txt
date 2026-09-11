@@ -1,0 +1,93 @@
+Otter gate report for the tracked tree. Regenerate with:
+  submodules/Otter-RepoEvaluation/tools/agent_hooks/otter-gate.sh --force .
+(run it against a clean checkout: an untracked .geist-legacy/ triples every
+ count and buries the real findings)
+
+
+SECRETS — 14 candidate(s). Remove or move behind config:
+  docs/relay.md:257  key  /run…21…-id
+  evaluation/tests/test_daemon_live.nim:565  key  geis…19…eys
+  evaluation/tests/test_option_precedence.nim:31  key  /fro…17….pw
+  evaluation/tests/test_registry.nim:252  key  fjor…18…box
+  src/geist/settings.nim:287  key  iden…20…ile
+  src/server/geist_relayd.nim:270  key  iden…20…ile
+  evaluation/tests/test_doc.nim:274  email  alic…17…com
+  evaluation/tests/test_doc.nim:279  email  frie…24…com
+FAMILIES — 12 group(s) of routines that are one routine with a knob on it (49 routines, about 149 lines).
+  Rule: no complex logic; build modular, parallel, multipass logic. Siblings differing in one or two places want one routine and a parameter.
+  src/geist/registry|proc  clockOf, slotKey, openCount, openKeys
+      varies in 2 direction(s) (calls, what it returns), 100% alike, they share a module and a shape
+      -> write one generic routine. Only the types taken in differ, so the body is already shared; give it a type parameter and let the 4 call sites keep their names as aliases if they read better.
+  src/geist/relay|proc  holds, streamCount, droppedFrom, welcome
+      varies in 2 direction(s) (calls, what it returns), 100% alike, they share a module and a shape
+      -> write one routine taking a parameter that names which of the 4 cases is meant. An enum with 4 values, and a table or case that turns it into the numbers each version hard-codes today.
+  src/geist/layout|proc  configDir, keysDir, keystoreDir, peersDir, dbDir, spoolDir, logDir, identityPath, pinPath
+      varies in 3 direction(s) (calls, inputs, literals), 100% alike, they share a module and a shape
+      -> write one generic routine. Only the types taken in differ, so the body is already shared; give it a type parameter and let the 9 call sites keep their names as aliases if they read better.
+  src/geist/address|proc  isLabelByte, isTargetByte, bareAddress, isRouted, refuse, forLeaf
+      varies in 3 direction(s) (calls, assignments, what it returns), 100% alike, they share a module and a shape
+      -> write one generic routine. Only the types taken in differ, so the body is already shared; give it a type parameter and let the 6 call sites keep their names as aliases if they read better.
+EMBEDDED CODE — 6 string(s) hold another language (61 line(s)).
+  Rule: another language belongs in its own file. While it is inline, a comment on those lines is written the way THAT language writes one.
+  evaluation/tests/test_settings.nim:127  15 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_option_precedence.nim:27  14 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_router.nim:72  13 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_reconcile.nim:141  8 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_settings.nim:29  7 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_settings.nim:183  4 line(s) of other, comments are not known - check before adding one
+ENDINGS — 6 routine(s) can stop the program because of something well below them.
+  Rule: a raise three levels down can be caught here; a quit or a doAssert three levels down cannot be caught anywhere.
+  src/clients/geist_cli.nim:767  cmdCheckpoint  quit via cmdCheckpoint -> writing -> fail
+  src/clients/geist_cli.nim:716  cmdInfo  quit via cmdInfo -> openDirect -> fail
+  src/clients/geist_cli.nim:620  cmdList  quit via cmdList -> openDirect -> fail
+  src/clients/geist_cli.nim:254  livePath  quit via livePath -> storePaths -> fail
+  src/server/geistd.nim:364  runGeistd  quit via runGeistd -> resolveConfig -> parseArgs
+  src/server/geist_relayd.nim:360  runRelayd  quit via runRelayd -> resolveConfig -> parseArgs
+STATE — 1 entry(s) where one write lands on another and is lost.
+  Rule: perceive data, build truth state, act on parsed data. A value written twice with no read between never reached anybody.
+  src/geist/dynamic.nim:218  buildRow calls writeU64 then writeColumn (:228) and nothing reads RowWriter.err in between
+      -> fold the two into one writer, read it in between, or mark the entry `## otter:latest`
+STATE — 2 entry(s) written and never read.
+  Rule: every write is a claim about the world. A claim nobody reads is dead weight.
+  BackupState.lastError
+  Session.loaded
+PLACEHOLDERS — 14 routine(s) that do not do the job yet.
+  Rule: a placeholder MUST be named with a ph_ prefix, or be finished.
+  src/geist/secrets.nim:123  defaultPasswordParams
+  src/geist.nim:138  geistVersion
+  src/geist/settings.nim:81  builtinDefaults
+  src/geist/backup.nim:51  defaultBackupPolicy
+  src/geist/show.nim:63  defaultShowStyle
+  evaluation/tests/test_secrets.nim:21  cheap
+  evaluation/tests/test_registry.nim:32  plainOpener
+  src/geist/settings.nim:213  geistDefaults
+  src/geist/transport_settings.nim:120  transportDefaults
+  src/geist/answer.nim:52  initSyncCursors
+NESTING — 119 triple and 16 deeper site(s).
+  Rule: no loop nesting, no if nesting. Pull the inner block into an inline proc or a template.
+  src/geist/row.nim:313  validateRow  depth 4 (if)
+  src/clients/geist_cli.nim:696  cmdFind  depth 4 (if)
+  src/clients/geist_relay.nim:307  cmdSend  depth 4 (if)
+  src/clients/geist_relay.nim:310  cmdSend  depth 4 (if)
+  src/clients/geist_relay.nim:313  cmdSend  depth 4 (if)
+  src/geist/address.nim:280  parseParams  depth 4 (if)
+  src/geist/address.nim:282  parseParams  depth 4 (if)
+  src/geist/backup.nim:106  rotateOne  depth 4 (if)
+  src/geist/doc.nim:304  fromNode  depth 4 (if)
+  src/geist/doc.nim:313  fromNode  depth 4 (if)
+DEAD CODE — 1 leftover (27 lines), 37 unused public.
+  Rule: no backwards-compatibility shims or dead API. Delete it.
+  src/geist/address.nim:204  $  27 lines
+ROLES — 105 routine(s) declare no role pragma.
+  Rule: functions need custom pragmas (role/metaTags). Otter drops undeclared code from every chart.
+CONFIG — 65 dead and 12 never-set field(s) on configurator types.
+OVERSIZED FILES — split these; routines are long and the file is dense:
+  src/clients/geist_cli.nim  1105 lines, 37 routines, avg 25, deepest 4
+  src/server/geist_routed.nim  587 lines, 16 routines, avg 26, deepest 3
+  src/geist/transpose.nim  565 lines, 16 routines, avg 27, deepest 3
+  evaluation/benchmarks/geist_bench.nim  485 lines, 13 routines, avg 28, deepest 2
+  src/clients/geist_relay.nim  409 lines, 11 routines, avg 28, deepest 4
+  src/geist/crypto/column.nim  304 lines, 8 routines, avg 31, deepest 3
+
+Coverage: 230 of 873 routines untested; 507 tests, 0 with a declared testKind.
+Shape: 29213 lines, 873 routines, avg 17.
