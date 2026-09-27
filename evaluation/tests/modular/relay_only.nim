@@ -11,13 +11,14 @@
 ## fails. A comment asking people to keep them apart would not have
 ## caught it.
 
+import runePragmas
 import std/[os, strutils]
 
 import geist/wire
 
 const logPath = "build/relay-check/relayed.log"
 
-proc main() =
+proc main() {.role: metaOrchestrator.} =
   var
     D: RelayDesk = initRelayDesk(rsFile, rfJson)
     phone: PeerContext = PeerContext(subject: "phone", address: "dac://a:1",

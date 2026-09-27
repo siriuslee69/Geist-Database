@@ -3,11 +3,13 @@
 ## declaration order, so the hot path never looks up a field name.
 ## -------------------------------------------------------------------
 
+import runePragmas
 import ./row
 
 proc schemaOfB[T: object](x: T, s: var Schema, prefix: string)
 
-proc schemaOf*[T: object](x: T, s: var Schema, prefix: string = "") =
+proc schemaOf*[T: object](x: T, s: var Schema, prefix: string = "") {.
+    role: truthBuilder.} =
   for fa, va in fieldPairs(x):
     var na = if prefix.len > 0: prefix & "." & fa else: fa
     when va is seq[uint8]:  s.addSlot(na, skBytes)
@@ -17,7 +19,8 @@ proc schemaOf*[T: object](x: T, s: var Schema, prefix: string = "") =
     elif va is object:      schemaOfB(va, s, na)
     else:                   s.addSlot(na, skInt)
 
-proc schemaOfB[T: object](x: T, s: var Schema, prefix: string) =
+proc schemaOfB[T: object](x: T, s: var Schema, prefix: string) {.
+    role: truthBuilder.} =
   for fb, vb in fieldPairs(x):
     var nb = if prefix.len > 0: prefix & "." & fb else: fb
     when vb is seq[uint8]:  s.addSlot(nb, skBytes)
@@ -29,7 +32,8 @@ proc schemaOfB[T: object](x: T, s: var Schema, prefix: string) =
 
 proc packB[T: object](x: T, s: Schema, r: var Row, i: var int)
 
-proc pack*[T: object](x: T, s: Schema, r: var Row, i: var int) =
+proc pack*[T: object](x: T, s: Schema, r: var Row, i: var int) {.
+    role: truthBuilder.} =
   for fa, va in fieldPairs(x):
     when va is seq[uint8]: r.appendVar(s.slots[i].offset, va); i.inc
     elif va is string:
@@ -43,7 +47,8 @@ proc pack*[T: object](x: T, s: Schema, r: var Row, i: var int) =
     elif va is bool: r.data.putU64(s.slots[i].offset, uint64(ord(va))); i.inc
     else: r.data.putU64(s.slots[i].offset, uint64(va)); i.inc
 
-proc packB[T: object](x: T, s: Schema, r: var Row, i: var int) =
+proc packB[T: object](x: T, s: Schema, r: var Row, i: var int) {.
+    role: truthBuilder.} =
   for fb, vb in fieldPairs(x):
     when vb is seq[uint8]: r.appendVar(s.slots[i].offset, vb); i.inc
     elif vb is string:
@@ -59,7 +64,8 @@ proc packB[T: object](x: T, s: Schema, r: var Row, i: var int) =
 
 proc unpackB[T: object](x: var T, s: Schema, r: Row, i: var int)
 
-proc unpack*[T: object](x: var T, s: Schema, r: Row, i: var int) =
+proc unpack*[T: object](x: var T, s: Schema, r: Row, i: var int) {.
+    role: parser.} =
   for fa, va in fieldPairs(x):
     when va is seq[uint8]: va = r.readVar(s.slots[i].offset); i.inc
     elif va is string:
@@ -74,7 +80,8 @@ proc unpack*[T: object](x: var T, s: Schema, r: Row, i: var int) =
     elif va is bool: va = r.data.getU64(s.slots[i].offset) != 0; i.inc
     else: va = type(va)(r.data.getU64(s.slots[i].offset)); i.inc
 
-proc unpackB[T: object](x: var T, s: Schema, r: Row, i: var int) =
+proc unpackB[T: object](x: var T, s: Schema, r: Row, i: var int) {.
+    role: parser.} =
   for fb, vb in fieldPairs(x):
     when vb is seq[uint8]: vb = r.readVar(s.slots[i].offset); i.inc
     elif vb is string:
@@ -89,11 +96,12 @@ proc unpackB[T: object](x: var T, s: Schema, r: Row, i: var int) =
     elif vb is bool: vb = r.data.getU64(s.slots[i].offset) != 0; i.inc
     else: vb = type(vb)(r.data.getU64(s.slots[i].offset)); i.inc
 
-proc toRow*[T: object](x: T, s: Schema, schemaId: uint16 = 0'u16): Row =
+proc toRow*[T: object](x: T, s: Schema, schemaId: uint16 = 0'u16): Row {.
+    role: truthBuilder.} =
   var i = 0
   result = initRow(s, schemaId)
   pack(x, s, result, i)
 
-proc fromRow*[T: object](r: Row, s: Schema): T =
+proc fromRow*[T: object](r: Row, s: Schema): T {.role: parser.} =
   var i = 0
   unpack(result, s, r, i)

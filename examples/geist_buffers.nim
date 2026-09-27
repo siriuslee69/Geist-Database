@@ -38,6 +38,7 @@
 
 ## os is here for `sleep` and strutils for `join`. Nothing in this file
 ## opens a path.
+import runePragmas
 import std/[os, strutils, tables]
 
 import geist/network
@@ -67,7 +68,7 @@ type
 var
   box: Mailbox = default(Mailbox)
 
-proc answer(q: Query, p: PeerContext): Reply {.gcsafe.} =
+proc answer(q: Query, p: PeerContext): Reply {.role: actor, gcsafe.} =
   ## q: what the peer asked for.
   ## p: WHO asked, proved by the handshake, and what they may do.
   ##
@@ -97,7 +98,7 @@ proc answer(q: Query, p: PeerContext): Reply {.gcsafe.} =
     else:
       result = Reply(ok: false, err: "this endpoint only holds a buffer")
 
-proc runReceiver(a: ptr ServeArgs) =
+proc runReceiver(a: ptr ServeArgs) {.role: orchestrator.} =
   ## a: where to listen, and the two key files.
   var
     address: tuple[ok: bool, a: GeistDacAddress] = (false,
@@ -128,7 +129,7 @@ proc runReceiver(a: ptr ServeArgs) =
     a.failed = true
     a.ready = true
 
-proc receiverThread(a: ptr ServeArgs) {.thread.} =
+proc receiverThread(a: ptr ServeArgs) {.role: orchestrator, thread.} =
   {.cast(gcsafe).}:
     runReceiver(a)
 

@@ -24,6 +24,7 @@ import std/[json, os, strutils]
 import fylgia_utils
 
 import runePragmas
+import var_invariants
 
 const
   libraryConfigName* = "configs/default.toml"
@@ -82,7 +83,8 @@ proc layOver(a: var JsonNode, b: JsonNode) {.role: truthBuilder,
       a[name] = table
 
 proc overlayNames*(path: string): seq[string] {.role: parser,
-    tag: "config|parsing".} =
+    tag: "config|parsing",
+    gives: result.len == 0 or path == libraryConfigName.} =
   ## path: the base file -> the preset files laid over it, as paths beside
   ## it. Empty unless the base is the library default AND the build named a
   ## preset.

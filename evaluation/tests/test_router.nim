@@ -8,25 +8,26 @@
 ## The forwarding path itself needs two live daemons and is covered by the
 ## NixOS test in nix/tests/.
 
+import runePragmas
 import std/[os, strutils, unittest]
 
 import geist/wire
 
 import server/geist_routed
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / "geist_router_test"
   createDir(result)
   result = result / name
 
-proc stateFor(t: RouteTable): RouterState =
+proc stateFor(t: RouteTable): RouterState {.role: configurator.} =
   var made = initGeistClient(geistIdentity("gateway"), t)
   doAssert made.ok, made.err
   result.client = made.client
   result.node = t.node
   result.quiet = true
 
-proc gatewayTable(): RouteTable =
+proc gatewayTable(): RouteTable {.role: configurator.} =
   result = defaultRouteTable("gateway")
   result.route = @[
     Route(app: "eris", instance: "*", hops: @[
@@ -36,7 +37,7 @@ proc gatewayTable(): RouteTable =
       Hop(name: "d3", endpoint: "dac://127.0.0.1:47903",
         pin: "d3.pin", priority: 0'u8)])]
 
-proc asker(): PeerContext =
+proc asker(): PeerContext {.role: configurator.} =
   result = PeerContext(subject: "phone", address: "127.0.0.1:1",
     rights: {prRead, prWrite})
 

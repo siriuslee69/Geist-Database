@@ -6,24 +6,25 @@
 ## wants to warn "your keys are not in hardware" can only do that if the
 ## downgrade is a value it can read.
 
+import runePragmas
 import std/[os, strutils, unittest]
 
 import geist/keystore
 import geist/secret
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / "geist_keystore_test" / name
   removeDir(result)
   createDir(result)
 
-proc bytes(s: string): seq[uint8] =
+proc bytes(s: string): seq[uint8] {.role: parser.} =
   result = newSeq[uint8](s.len)
   var i = 0
   while i < s.len:
     result[i] = uint8(s[i])
     i = i + 1
 
-proc text(s: Secret): string =
+proc text(s: Secret): string {.role: parser.} =
   result = ""
   var i = 0
   while i < s.len:

@@ -35,8 +35,7 @@ when isMainModule:
       (false, default(TransposedFile), "")
     hit: tuple[ok: bool, rows: seq[uint32], read: uint64, err: string] =
       (false, @[], 0'u64, "")
-    state: tuple[state: TransposeState, live: uint64, built: uint64,
-      path: string]
+    state: TransposeStatus = default(TransposeStatus)
     c: GeistConfig = default(GeistConfig)
     started: float = 0.0
     rowMs: float = 0.0

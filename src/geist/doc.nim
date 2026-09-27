@@ -289,31 +289,30 @@ proc fromNode*[T](n: JsonNode, S: var T, prefix: string,
   elif T is seq:
     if n.kind != JArray:
       R.mistyped.add prefix
-    else:
-      S = @[]
-      for ia in n.items:
-        var ta: typeof(S[0]) = default(typeof(S[0]))
-        fromNodeB(ia, ta, prefix & "[]", R)
-        S.add ta
+      return
+    S = @[]
+    for ia in n.items:
+      var ta: typeof(S[0]) = default(typeof(S[0]))
+      fromNodeB(ia, ta, prefix & "[]", R)
+      S.add ta
   elif T is OrderedTable or T is Table:
     if n.kind != JObject:
       R.mistyped.add prefix
-    else:
-      for ka, va in n.pairs:
-        var ta: typeof(S[ka]) = default(typeof(S[ka]))
-        if S.hasKey(ka):
-          ta = S[ka]
-        fromNodeB(va, ta, dottedPath(prefix, ka), R)
-        S[ka] = ta
+      return
+    for ka, va in n.pairs:
+      # what the table already holds for this key is the default
+      var ta: typeof(S[ka]) = S.getOrDefault(ka)
+      fromNodeB(va, ta, dottedPath(prefix, ka), R)
+      S[ka] = ta
   elif T is object:
     if n.kind != JObject:
       R.mistyped.add prefix
-    else:
-      for fa, va in fieldPairs(S):
-        if n.hasKey(fa):
-          fromNodeB(n[fa], va, dottedPath(prefix, fa), R)
-        else:
-          R.missing.add dottedPath(prefix, fa)
+      return
+    for fa, va in fieldPairs(S):
+      if n.hasKey(fa):
+        fromNodeB(n[fa], va, dottedPath(prefix, fa), R)
+      else:
+        R.missing.add dottedPath(prefix, fa)
 
 proc fromNodeB[T](n: JsonNode, S: var T, prefix: string,
     R: var DocReport) {.role: parser,
@@ -326,31 +325,30 @@ proc fromNodeB[T](n: JsonNode, S: var T, prefix: string,
   elif T is seq:
     if n.kind != JArray:
       R.mistyped.add prefix
-    else:
-      S = @[]
-      for ib in n.items:
-        var tb: typeof(S[0]) = default(typeof(S[0]))
-        fromNode(ib, tb, prefix & "[]", R)
-        S.add tb
+      return
+    S = @[]
+    for ib in n.items:
+      var tb: typeof(S[0]) = default(typeof(S[0]))
+      fromNode(ib, tb, prefix & "[]", R)
+      S.add tb
   elif T is OrderedTable or T is Table:
     if n.kind != JObject:
       R.mistyped.add prefix
-    else:
-      for kb, vb in n.pairs:
-        var tb: typeof(S[kb]) = default(typeof(S[kb]))
-        if S.hasKey(kb):
-          tb = S[kb]
-        fromNode(vb, tb, dottedPath(prefix, kb), R)
-        S[kb] = tb
+      return
+    for kb, vb in n.pairs:
+      # what the table already holds for this key is the default
+      var tb: typeof(S[kb]) = S.getOrDefault(kb)
+      fromNode(vb, tb, dottedPath(prefix, kb), R)
+      S[kb] = tb
   elif T is object:
     if n.kind != JObject:
       R.mistyped.add prefix
-    else:
-      for fb, vb in fieldPairs(S):
-        if n.hasKey(fb):
-          fromNode(n[fb], vb, dottedPath(prefix, fb), R)
-        else:
-          R.missing.add dottedPath(prefix, fb)
+      return
+    for fb, vb in fieldPairs(S):
+      if n.hasKey(fb):
+        fromNode(n[fb], vb, dottedPath(prefix, fb), R)
+      else:
+        R.missing.add dottedPath(prefix, fb)
 
 ## ---------------------------- unknown keys --------------------------
 
@@ -502,7 +500,49 @@ proc tomlHeader(path: seq[string]): string {.role: helper,
 
 proc renderTable(path: seq[string], n: JsonNode, style: DocStyle,
     indent: string, L: var seq[string]) {.role: dataWriter,
+    tag: "config|formatting|write".}
+  ## Forward-declared: the two block writers below call back into it.
+
+proc renderLeaf(name: string, value: JsonNode, note, indent: string,
+    L: var seq[string]) {.role: dataWriter, tag: "config|formatting|write".} =
+  ## name/value: one scalar or plain array, written as `key = value`.
+  ## note/indent/L: its comment, the leading spaces, the output lines.
+  if note.len > 0:
+    L.add indent & "# " & note
+  if value.kind == JArray:
+    L.add indent & tomlKey(name) & " = " & arrayText(value)
+  else:
+    L.add indent & tomlKey(name) & " = " & scalarText(value)
+
+proc renderSubTable(sub: seq[string], value: JsonNode, style: DocStyle,
+    note, indent: string, L: var seq[string]) {.role: dataWriter,
     tag: "config|formatting|write".} =
+  ## sub/value: one nested table, written as `[a.b]` and its body.
+  ## style/note/indent/L: as in `renderTable`.
+  L.add ""
+  if note.len > 0:
+    L.add indent & "# " & note
+  L.add indent & "[" & tomlHeader(sub) & "]"
+  renderTable(sub, value, style, indent, L)
+
+proc renderTableArray(sub: seq[string], value: JsonNode, style: DocStyle,
+    note, indent: string, L: var seq[string]) {.role: dataWriter,
+    tag: "config|formatting|write".} =
+  ## sub/value: an array of tables, written as one `[[a.b]]` block each.
+  ## The note goes above the FIRST block only.
+  ## style/note/indent/L: as in `renderTable`.
+  var
+    i: int = 0
+  while i < value.len:
+    L.add ""
+    if note.len > 0 and i == 0:
+      L.add indent & "# " & note
+    L.add indent & "[[" & tomlHeader(sub) & "]]"
+    renderTable(sub, value[i], style, indent & docIndentUnit, L)
+    i = i + 1
+
+proc renderTable(path: seq[string], n: JsonNode, style: DocStyle,
+    indent: string, L: var seq[string]) =
   ## path: the dotted header this table lives under.
   ## n: the table.
   ## style: where the comments come from.
@@ -514,46 +554,18 @@ proc renderTable(path: seq[string], n: JsonNode, style: DocStyle,
   ## join the wrong table -- this ordering is not cosmetic.
   var
     dotted: string = ""
-    note: string = ""
-    key: string = ""
-    header: string = ""
-    i: int = 0
     sub: seq[string] = @[]
   for name, value in n.pairs:
-    dotted = path.join(".")
-    dotted = dottedPath(dotted, name)
-    if value.kind == JObject or isTableArray(value):
-      continue
-    note = style.noteFor(dotted)
-    if note.len > 0:
-      L.add indent & "# " & note
-    key = tomlKey(name)
-    if value.kind == JArray:
-      L.add indent & key & " = " & arrayText(value)
-    else:
-      L.add indent & key & " = " & scalarText(value)
+    if value.kind != JObject and not isTableArray(value):
+      dotted = dottedPath(path.join("."), name)
+      renderLeaf(name, value, style.noteFor(dotted), indent, L)
   for name, value in n.pairs:
-    dotted = path.join(".")
-    dotted = dottedPath(dotted, name)
+    dotted = dottedPath(path.join("."), name)
     sub = path & @[name]
-    header = tomlHeader(sub)
     if value.kind == JObject:
-      note = style.noteFor(dotted)
-      L.add ""
-      if note.len > 0:
-        L.add indent & "# " & note
-      L.add indent & "[" & header & "]"
-      renderTable(sub, value, style, indent, L)
+      renderSubTable(sub, value, style, style.noteFor(dotted), indent, L)
     elif isTableArray(value):
-      note = style.noteFor(dotted)
-      i = 0
-      while i < value.len:
-        L.add ""
-        if note.len > 0 and i == 0:
-          L.add indent & "# " & note
-        L.add indent & "[[" & header & "]]"
-        renderTable(sub, value[i], style, indent & docIndentUnit, L)
-        i = i + 1
+      renderTableArray(sub, value, style, style.noteFor(dotted), indent, L)
 
 proc renderDocToml*(n: JsonNode, style: DocStyle): string {.role: dataWriter,
     tag: "config|formatting|write".} =

@@ -8,6 +8,7 @@
 ##  Widen iff cost(w') < cost(w) for w' = ceil8(p95), and rate > minRate.
 ## -------------------------------------------------------------------
 
+import runePragmas
 import std/[algorithm, math, strutils]
 
 type
@@ -17,14 +18,14 @@ type
     rows*: int
     lens*: seq[int]      ## value lengths seen
 
-proc overflowing*(s: FieldStats): int =
+proc overflowing*(s: FieldStats): int {.role: MetaRole.math.} =
   for L in s.lens:
     if L > s.width: result.inc
 
-proc rate*(s: FieldStats): float =
+proc rate*(s: FieldStats): float {.role: MetaRole.math.} =
   if s.rows == 0: 0.0 else: overflowing(s) / s.rows
 
-proc avgOverage*(s: FieldStats): float =
+proc avgOverage*(s: FieldStats): float {.role: MetaRole.math.} =
   var
     t = 0
     n = 0
@@ -32,22 +33,23 @@ proc avgOverage*(s: FieldStats): float =
     if L > s.width: t = t + (L - s.width); n.inc
   if n == 0: 0.0 else: t / n
 
-proc percentile*(s: FieldStats, p: float): int =
+proc percentile*(s: FieldStats, p: float): int {.role: MetaRole.math.} =
   if s.lens.len == 0: return 0
   var v = s.lens
   v.sort()
   var i = int(floor(p * float(v.len - 1)))
   result = v[i]
 
-proc ceil8(n: int): int = ((n + 7) div 8) * 8
+proc ceil8(n: int): int {.role: MetaRole.math.} = ((n + 7) div 8) * 8
 
-proc cost*(s: FieldStats, w: int): int =
+proc cost*(s: FieldStats, w: int): int {.role: MetaRole.math.} =
   ## Bytes for this field across the whole cluster at inline width w.
   result = s.rows * w
   for L in s.lens:
     if L > w: result = result + L        # spills to the overflow region
 
-proc suggestWidth*(s: FieldStats, minRate = 0.25, maxInline = 256): int =
+proc suggestWidth*(s: FieldStats, minRate = 0.25, maxInline = 256): int {.
+    role: MetaRole.math.} =
   ## Returns the recommended inline width, or the current one to keep.
   result = s.width
   if s.rate() <= minRate: return
@@ -55,7 +57,7 @@ proc suggestWidth*(s: FieldStats, minRate = 0.25, maxInline = 256): int =
   if w2 > maxInline: return              # genuinely large -> keep in overflow
   if s.cost(w2) < s.cost(s.width): result = w2
 
-proc report*(s: FieldStats) =
+proc report*(s: FieldStats) {.role: dataWriter.} =
   var w2 = s.suggestWidth()
   echo "  ", alignLeft(s.field, 12),
     "w=", align($s.width, 4),

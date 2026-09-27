@@ -7,6 +7,7 @@
 ## restore, weeks later. So every test here checks what SURVIVES at least
 ## as carefully as what goes.
 
+import runePragmas
 import std/[os, strutils, unittest]
 import geist
 
@@ -16,11 +17,11 @@ type
     title: string
     blob: string        # capped, so a long value escapes to the sidecar
 
-proc freshRoot(name: string): string =
+proc freshRoot(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
 
-proc cappedConfig(): GeistConfig =
+proc cappedConfig(): GeistConfig {.role: configurator.} =
   ## A schema where `blob` is capped narrow enough that anything real
   ## escapes to the sidecar, which is what makes the sweep observable.
   result = appConfig()
@@ -28,7 +29,7 @@ proc cappedConfig(): GeistConfig =
   result.sidecarThreshold = 32'u32
   result.backup.enabled = false
 
-proc sidecarFiles(root: string): int =
+proc sidecarFiles(root: string): int {.role: parser.} =
   ## root: store root whose sidecar payload count is returned.
   var
     dir = root / ".geist-sidecar"

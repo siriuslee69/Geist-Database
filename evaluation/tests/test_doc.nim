@@ -7,6 +7,7 @@
 ## one that matters most in practice -- it is a person's typo, and the
 ## file has to survive it.
 
+import runePragmas
 import std/[json, os, strutils, tables, unittest]
 
 import geist/doc
@@ -32,14 +33,14 @@ type
     net*: Net
     friend*: OrderedTable[string, Friend]
 
-proc defaults(): Cfg =
+proc defaults(): Cfg {.role: configurator.} =
   result.name = "me"
   result.mode = mQuiet
   result.ratio = 1.5
   result.net = Net(host: "127.0.0.1", port: 47655, tiers: @["standard"])
   result.friend = initOrderedTable[string, Friend]()
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / "geist_doc_test" / name
   createDir(result.parentDir())
 

@@ -1,3 +1,4 @@
+import runePragmas
 import std/strutils
 import ./nodes, ./mapper, ./policy
 
@@ -17,7 +18,7 @@ type
     body: string
     attachment: Ref                 ## nested -> flattens to dotted names
 
-proc show(N: seq[Node], t: NameTable) =
+proc show(N: seq[Node], t: NameTable) {.role: dataWriter.} =
   for n in N:
     var v = case n.kind
       of nkText:   "\"" & n.text & "\""

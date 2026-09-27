@@ -2,25 +2,31 @@
 ## Mapper <- the ONLY ingestion path: T <-> seq[Node] via fieldPairs
 ## ---------------------------------------------------------------
 
+import runePragmas
 import ./nodes
 
-proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: string) =
+proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: string) {.
+    role: truthBuilder.} =
   dst.add Node(role: nrField, nameId: t.intern(nm), kind: nkText, text: v)
-proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: SomeInteger) =
+proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: SomeInteger) {.
+    role: truthBuilder.} =
   dst.add Node(role: nrField, nameId: t.intern(nm), kind: nkInt, num: int64(v))
-proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: bool) =
+proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: bool) {.
+    role: truthBuilder.} =
   dst.add Node(role: nrField, nameId: t.intern(nm), kind: nkInt,
     num: int64(ord(v)))
-proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: SomeFloat) =
+proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: SomeFloat) {.
+    role: truthBuilder.} =
   dst.add Node(role: nrField, nameId: t.intern(nm), kind: nkFloat,
     f: float64(v))
-proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: seq[uint8]) =
+proc emit(dst: var seq[Node], t: var NameTable, nm: string, v: seq[uint8]) {.
+    role: truthBuilder.} =
   dst.add Node(role: nrField, nameId: t.intern(nm), kind: nkBytes, bytes: v)
 
 proc toNodesB[T: object](x: T, t: var NameTable, prefix: string): seq[Node]
 
 proc toNodes*[T: object](x: T, t: var NameTable,
-    prefix: string = ""): seq[Node] =
+    prefix: string = ""): seq[Node] {.role: truthBuilder.} =
   for fa, va in fieldPairs(x):
     var na = if prefix.len > 0: prefix & "." & fa else: fa
     when va is seq[uint8]: result.emit(t, na, va)
@@ -30,7 +36,8 @@ proc toNodes*[T: object](x: T, t: var NameTable,
     elif va is object: result.add toNodesB(va, t, na)
     else: result.emit(t, na, va)
 
-proc toNodesB[T: object](x: T, t: var NameTable, prefix: string): seq[Node] =
+proc toNodesB[T: object](x: T, t: var NameTable, prefix: string): seq[Node] {.
+    role: truthBuilder.} =
   ## Alternating twin: fieldPairs unrolls lexically, so each nesting
   ## level needs its own loop-variable identifiers.
   for fb, vb in fieldPairs(x):
@@ -42,13 +49,13 @@ proc toNodesB[T: object](x: T, t: var NameTable, prefix: string): seq[Node] =
     elif vb is object: result.add toNodes(vb, t, nb)
     else: result.emit(t, nb, vb)
 
-proc findNode(N: seq[Node], t: NameTable, nm: string): int =
+proc findNode(N: seq[Node], t: NameTable, nm: string): int {.role: parser.} =
   result = -1
   for i in 0 ..< N.len:
     if t.name(N[i].nameId) == nm: return i
 
 proc fromNodes*[T: object](N: seq[Node], t: NameTable,
-    prefix: string = ""): T =
+    prefix: string = ""): T {.role: parser.} =
   for fa, va in fieldPairs(result):
     var
       na = if prefix.len > 0: prefix & "." & fa else: fa

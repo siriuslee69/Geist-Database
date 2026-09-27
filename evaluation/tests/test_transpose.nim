@@ -11,6 +11,7 @@
 ## rather than answer with yesterday's rows, which is the one failure that
 ## would look like the database being wrong.
 
+import runePragmas
 import std/[os, strutils, unittest]
 
 import geist
@@ -28,11 +29,11 @@ type
     capturedAt: int
     value: int
 
-proc freshRoot(name: string): string =
+proc freshRoot(name: string): string {.role: helper.} =
   result = "build/test-transpose-" & name
   removeDir(result)
 
-proc fill(db: var Session, n: int) =
+proc fill(db: var Session, n: int) {.role: dataWriter.} =
   for i in 1 .. n:
     db.put(Note(noteId: i, title: "title" & $i, body: "body-" & $i,
       tag: (if i mod 7 == 0: "seven" else: "other")))

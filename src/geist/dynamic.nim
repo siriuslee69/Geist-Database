@@ -169,6 +169,36 @@ proc parsePairs*(args: openArray[string]): tuple[ok: bool,
     i = i + 1
   result.ok = true
 
+proc numberBits(k: SlotKind, name, text: string): tuple[bits: uint64,
+    err: string] {.role: parser, tag: "cli|db|parsing".} =
+  ## k: skInt or skFloat.
+  ## name/text: the field and what was typed for it; empty means zero.
+  ## Returns the 8 bytes the column stores, or why the text is not a number.
+  ##
+  ##   skInt    "42"    -> 42 as a two's-complement u64
+  ##   skFloat  "1.5"   -> the IEEE-754 bits of 1.5
+  if text.len == 0:
+    return (0'u64, "")
+  try:
+    if k == skFloat:
+      result.bits = cast[uint64](parseFloat(text))
+    else:
+      result.bits = cast[uint64](parseBiggestInt(text))
+  except ValueError:
+    result.err = "field '" & name & "' expects " &
+      (if k == skFloat: "a number" else: "an integer") & ", got '" & text &
+      "'"
+
+proc textBytes(text: string): ByteSeq {.role: parser, inline,
+    tag: "cli|db|parsing".} =
+  ## text: typed text -> its raw bytes, unchanged.
+  var
+    j: int = 0
+  result = newSeq[uint8](text.len)
+  while j < text.len:
+    result[j] = uint8(text[j])
+    j = j + 1
+
 proc buildRow*(s: Schema, values: Table[string, string],
     store: SidecarStore = SidecarStore(), id: RowId = 0'u64,
     flags: uint64 = 0'u64): tuple[ok: bool, data: ByteSeq,
@@ -187,8 +217,7 @@ proc buildRow*(s: Schema, values: Table[string, string],
     i: int = 0
     name: string = ""
     text: string = ""
-    bytes: ByteSeq = @[]
-    j: int = 0
+    number: tuple[bits: uint64, err: string] = (0'u64, "")
   for key in values.keys:
     if s.slotIndex(key) < 0:
       return (false, @[], "no field '" & key & "' in schema (" &
@@ -202,31 +231,13 @@ proc buildRow*(s: Schema, values: Table[string, string],
     name = s.nameOf(s.slots[i].nameId)
     text = values.getOrDefault(name, "")
     case s.slots[i].kind
-    of skInt:
-      if text.len == 0:
-        W.writeU64(0'u64)
-      else:
-        try:
-          W.writeU64(cast[uint64](parseBiggestInt(text)))
-        except ValueError:
-          return (false, @[], "field '" & name & "' expects an integer, " &
-            "got '" & text & "'")
-    of skFloat:
-      if text.len == 0:
-        W.writeU64(0'u64)
-      else:
-        try:
-          W.writeU64(cast[uint64](parseFloat(text)))
-        except ValueError:
-          return (false, @[], "field '" & name & "' expects a number, " &
-            "got '" & text & "'")
+    of skInt, skFloat:
+      number = numberBits(s.slots[i].kind, name, text)
+      if number.err.len > 0:
+        return (false, @[], number.err)
+      W.writeU64(number.bits)
     of skText, skBytes, skSealed, skRef:
-      bytes = newSeq[uint8](text.len)
-      j = 0
-      while j < text.len:
-        bytes[j] = uint8(text[j])
-        j = j + 1
-      W.writeColumn(bytes)
+      W.writeColumn(textBytes(text))
     of skNull:
       W.writeColumn(@[])
     if W.err.len > 0:

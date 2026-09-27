@@ -1,5 +1,6 @@
 ## The ergonomic object API and the partial-read paths.
 
+import runePragmas
 import std/[os, unittest]
 
 import geist
@@ -15,7 +16,7 @@ type
     sensor*: int
     value*: int
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
 

@@ -2061,6 +2061,7 @@ quiet import.
   |  src/geist/wire.nim            public wire facade              |
   |  src/geist/masks.nim           strength levels Geist owns      |
   |  src/geist/transport.nim       Query / Reply over Bifrost      |
+  |  src/geist/bytecheck.nim       walks peer bytes before decoding |
   |  src/geist/identity.nim        key files and pins              |
   |  src/geist/relay.nim           Query meaning against a pipe    |
   |  src/geist/transport_settings.nim   [transport] only           |
@@ -2268,6 +2269,10 @@ nix build .#checks.x86_64-linux.relay-pipe -L
                                                        them as geist, geistd, ...
   cannot import nimsimd on a fresh machine             submodules/nimsimd is not checked out; it
                                                        is pinned at 1.3.2 and never auto-bumped
+  "malformed request: ..." / "malformed answer: ..."   the other side sent bytes that do not walk
+                                                       as a Query / Reply (src/geist/bytecheck.nim).
+                                                       Usually two builds with different wire
+                                                       formats; the session itself is still fine
 ```
 
 ## Maintainer conventions

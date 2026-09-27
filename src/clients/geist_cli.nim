@@ -296,7 +296,7 @@ proc openDirect(o: Options, schema: Schema = Schema(),
     stderr.writeLine("geist: generation " & $result.recoveredFrom &
       " would not read back; using generation " & $result.generation)
 
-template writing(o: Options, db, body: untyped) =
+template writing(o: Options, db, body: untyped) {.role: orchestrator.} =
   ## o: options for the command.
   ## db: the name the body reads the open session under.
   ## body: the change itself.
@@ -570,8 +570,7 @@ proc cmdTranspose(o: Options) {.role: actor,
   ## be told whether it already was.
   var
     db: Session = default(Session)
-    state: tuple[state: TransposeState, live: uint64, built: uint64,
-      path: string]
+    state: TransposeStatus = default(TransposeStatus)
     built: tuple[ok: bool, err: string] = (false, "")
   db = openDirect(o, forWriting = false)
   state = db.transposeState()
@@ -992,7 +991,8 @@ proc connectRemote(o: Options): GeistLink {.role: orchestrator,
     fail("connect failed: " & got.err)
   result = got.link
 
-proc cmdSync(o: Options) {.role: orchestrator, tag: "ame|cli|db|networkSurface|orchestrator|sync|write".} =
+proc cmdSync(o: Options) {.
+    role: orchestrator, tag: "ame|cli|db|networkSurface|orchestrator|sync|write".} =
   ## o: options naming BOTH a local database (--path) and a peer
   ## (--remote). This is the one command that is neither direct nor remote
   ## but both: it reads there and writes here.
@@ -1004,8 +1004,7 @@ proc cmdSync(o: Options) {.role: orchestrator, tag: "ame|cli|db|networkSurface|o
   var
     link: GeistLink = default(GeistLink)
     db: Session = default(Session)
-    caught: tuple[ok: bool, applied: int, rounds: int, cursor: uint64,
-      rewound: bool, err: string]
+    caught: NeedOutcome = default(NeedOutcome)
   if o.path.len == 0:
     fail("sync needs --path (the database rows are applied TO) as well as " &
       "--remote (the peer they come FROM)")

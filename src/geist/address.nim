@@ -236,6 +236,56 @@ proc refuse(err: string): tuple[ok: bool, a: GeistAddress, err: string] {.
   ## err: why this address is not one.
   result = (false, GeistAddress(), err)
 
+proc parseTtl(value: string, S: var GeistAddress): string {.role: parser,
+    tag: "parsing|protocol".} =
+  ## value/S: `ttl=<0..255>`, the hops a request may still take.
+  var
+    n: int = 0
+  try:
+    n = parseInt(value)
+  except ValueError:
+    return "ttl is not a number: '" & value & "'"
+  if n < 0 or n > 255:
+    return "ttl out of range: " & $n
+  S.ttl = uint8(n)
+  result = ""
+
+proc parseVia(value: string, S: var GeistAddress): string {.role: parser,
+    tag: "parsing|protocol".} =
+  ## value/S: `via=a,b,c`, the nodes a request has already passed.
+  var
+    trail: seq[string] = value.split(',')
+    entry: string = ""
+    complaint: string = ""
+    n: int = 0
+  if trail.len > maxViaEntries:
+    return "via names " & $trail.len & " nodes; the limit is " &
+      $maxViaEntries
+  S.via = @[]
+  while n < trail.len:
+    entry = trail[n].toLowerAscii()
+    complaint = checkLabel(entry, "via entry")
+    if complaint.len > 0:
+      return complaint
+    if entry.len == 0:
+      return "via has an empty entry"
+    S.via.add entry
+    n = n + 1
+  result = ""
+
+proc parseAs(value: string, S: var GeistAddress): string {.role: parser,
+    tag: "parsing|protocol".} =
+  ## value/S: `as=<name>`, whom a router is asking on behalf of.
+  var
+    complaint: string = ""
+  S.onBehalfOf = value.toLowerAscii()
+  complaint = checkLabel(S.onBehalfOf, "as")
+  if complaint.len > 0:
+    return complaint
+  if S.onBehalfOf.len == 0:
+    return "as is empty"
+  result = ""
+
 proc parseParams(s: string, S: var GeistAddress): string {.role: parser,
     tag: "parsing|protocol".} =
   ## s: everything after the `?`.
@@ -245,53 +295,32 @@ proc parseParams(s: string, S: var GeistAddress): string {.role: parser,
   ## an ERROR: the two that exist decide whether a request is forwarded at
   ## all, and a third one silently ignored would be a routing rule that
   ## did not apply.
+  ##
+  ##   ttl=3        -> parseTtl
+  ##   via=a,b      -> parseVia
+  ##   as=alice     -> parseAs
   var
     i: int = 0
     n: int = 0
     key: string = ""
     value: string = ""
-    parts: seq[string] = @[]
-    trail: seq[string] = @[]
-  parts = s.split('&')
+    complaint: string = ""
+    parts: seq[string] = s.split('&')
   while i < parts.len:
     n = parts[i].find('=')
     if n < 0:
       return "parameter '" & parts[i] & "' has no value"
     key = parts[i][0 ..< n]
     value = parts[i][n + 1 .. ^1]
-    if key == "ttl":
-      try:
-        n = parseInt(value)
-      except ValueError:
-        return "ttl is not a number: '" & value & "'"
-      if n < 0 or n > 255:
-        return "ttl out of range: " & $n
-      S.ttl = uint8(n)
-    elif key == "via":
-      trail = value.split(',')
-      if trail.len > maxViaEntries:
-        return "via names " & $trail.len & " nodes; the limit is " &
-          $maxViaEntries
-      S.via = @[]
-      n = 0
-      while n < trail.len:
-        value = trail[n].toLowerAscii()
-        key = checkLabel(value, "via entry")
-        if key.len > 0:
-          return key
-        if value.len == 0:
-          return "via has an empty entry"
-        S.via.add value
-        n = n + 1
-    elif key == "as":
-      S.onBehalfOf = value.toLowerAscii()
-      key = checkLabel(S.onBehalfOf, "as")
-      if key.len > 0:
-        return key
-      if S.onBehalfOf.len == 0:
-        return "as is empty"
+    case key
+    of "ttl": complaint = parseTtl(value, S)
+    of "via": complaint = parseVia(value, S)
+    of "as": complaint = parseAs(value, S)
     else:
-      return "unknown address parameter '" & key & "'; known: ttl, via, as"
+      complaint = "unknown address parameter '" & key &
+        "'; known: ttl, via, as"
+    if complaint.len > 0:
+      return complaint
     i = i + 1
   result = ""
 

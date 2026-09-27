@@ -106,7 +106,7 @@ when compileOption("threads"):
       n: int
       dst: ptr UncheckedArray[uint8]
 
-  proc chachaWorker(j: KsJob) {.thread, nimcall.} =
+  proc chachaWorker(j: KsJob) {.role: encryptor, thread, nimcall.} =
     ## j: keystream job filling a caller-owned destination buffer.
     var
       ks: ByteSeq = @[]

@@ -10,16 +10,17 @@
 ## eris and fjord at priority 0, D2 and D3 each serve one of them at
 ## priority 1, D4 serves avalon alone.
 
+import runePragmas
 import std/[strutils, tables, unittest]
 
 import geist/address
 import geist/route
 
-proc hop(name, endpoint: string, priority: uint8): Hop =
+proc hop(name, endpoint: string, priority: uint8): Hop {.role: configurator.} =
   result = Hop(name: name, endpoint: endpoint, pin: name & ".pin",
     priority: priority)
 
-proc vpsTable(): RouteTable =
+proc vpsTable(): RouteTable {.role: configurator.} =
   result = defaultRouteTable("gateway")
   result.route = @[
     Route(app: "eris", instance: "*", hops: @[
@@ -31,7 +32,7 @@ proc vpsTable(): RouteTable =
     Route(app: "avalon", instance: "*", hops: @[
       hop("d4", "dac://10.0.0.4:47655", 0'u8)])]
 
-proc at(s: string): GeistAddress =
+proc at(s: string): GeistAddress {.role: parser.} =
   var r = parseAddress(s)
   doAssert r.ok, r.err
   result = r.a

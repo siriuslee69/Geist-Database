@@ -2,6 +2,7 @@
 ## Writer/reader <- builds the file, and reads pieces of it in isolation
 ## ------------------------------------------------------------------
 
+import runePragmas
 import std/[streams]
 import ./format
 
@@ -16,28 +17,30 @@ type
     rows*: ByteSeq          ## rowCount * rowBytes, contiguous
     rowCount*: uint32
 
-proc push*(o: var Overflow, A: openArray[uint8]): (uint32, uint32) =
+proc push*(o: var Overflow, A: openArray[uint8]): (uint32, uint32) {.
+    role: truthBuilder.} =
   ## Returns (start, len). Dedups identical runs cheaply for short values.
   result = (uint32(o.data.len), uint32(A.len))
   for b in A: o.data.add b
 
-proc pull*(o: Overflow, start, n: uint32): ByteSeq =
+proc pull*(o: Overflow, start, n: uint32): ByteSeq {.role: parser.} =
   result = newSeq[uint8](int(n))
   for i in 0'u32 ..< n: result[int(i)] = o.data[int(start + i)]
 
-proc beginRow*(c: var ClusterBuild) =
+proc beginRow*(c: var ClusterBuild) {.role: truthBuilder.} =
   var n = int(c.schema.rowBytes())
   for i in 0 ..< n: c.rows.add 0'u8
   c.rowCount.inc
 
-proc rowBase*(c: ClusterBuild, i: uint32): int =
+proc rowBase*(c: ClusterBuild, i: uint32): int {.role: math.} =
   int(i * c.schema.rowBytes())
 
-proc setInt*(c: var ClusterBuild, row: uint32, slot: int, v: uint64) =
+proc setInt*(c: var ClusterBuild, row: uint32, slot: int, v: uint64) {.
+    role: truthBuilder.} =
   c.rows.putU64(c.rowBase(row) + int(slotAt(slot)), v)
 
 proc setVar*(c: var ClusterBuild, o: var Overflow, row: uint32, slot: int,
-    A: openArray[uint8]) =
+    A: openArray[uint8]) {.role: truthBuilder.} =
   var (s, n) = o.push(A)
   var b = c.rowBase(row) + int(slotAt(slot))
   c.rows.putU32(b, s)
@@ -45,7 +48,7 @@ proc setVar*(c: var ClusterBuild, o: var Overflow, row: uint32, slot: int,
 
 # ------------------------- file writing -------------------------
 
-proc encodeSchema(s: Schema): ByteSeq =
+proc encodeSchema(s: Schema): ByteSeq {.role: truthBuilder.} =
   result.addU32(uint32(s.typeName.len))
   for ch in s.typeName: result.add uint8(ch)
   result.addU32(uint32(s.names.len))
@@ -57,7 +60,8 @@ proc encodeSchema(s: Schema): ByteSeq =
     result.addU32(uint32(sl.nameId))
     result.add uint8(ord(sl.kind))
 
-proc writeFile*(path: string, C: seq[ClusterBuild], o: Overflow) =
+proc writeFile*(path: string, C: seq[ClusterBuild], o: Overflow) {.
+    role: dataWriter.} =
   var
     body: ByteSeq = @[]
     idx: seq[ClusterIndexEntry] = @[]
@@ -90,14 +94,15 @@ proc writeFile*(path: string, C: seq[ClusterBuild], o: Overflow) =
 
 # ------------------------- partial reading -------------------------
 
-proc readAt(path: string, at: uint64, n: int): ByteSeq =
+proc readAt(path: string, at: uint64, n: int): ByteSeq {.role: dataFetcher.} =
   var fs = newFileStream(path, fmRead)
   fs.setPosition(int(at))
   result = newSeq[uint8](n)
   if n > 0: discard fs.readData(result[0].addr, n)
   fs.close()
 
-proc readIndex*(path: string): (seq[ClusterIndexEntry], uint64, uint64, int) =
+proc readIndex*(path: string): (seq[ClusterIndexEntry], uint64, uint64, int) {.
+    role: dataFetcher.} =
   ## Reads ONLY the header + cluster index. This is all geistd needs
   ## to answer "what changed" without touching a single row.
   var
@@ -119,10 +124,10 @@ proc readIndex*(path: string): (seq[ClusterIndexEntry], uint64, uint64, int) =
   result = (idx, overflowAt, overflowLen, headerLen + count * rowLen)
 
 proc readOneRow*(path: string, e: ClusterIndexEntry, schemaBytes: uint64,
-    rowW: uint32, i: uint32): ByteSeq =
+    rowW: uint32, i: uint32): ByteSeq {.role: dataFetcher.} =
   ## Seeks straight to row i. No cluster load, no scan.
   readAt(path, e.at + schemaBytes + uint64(i * rowW), int(rowW))
 
 proc readOverflowSlice*(path: string, overflowAt: uint64, start,
-    n: uint32): ByteSeq =
+    n: uint32): ByteSeq {.role: dataFetcher.} =
   readAt(path, overflowAt + uint64(start), int(n))

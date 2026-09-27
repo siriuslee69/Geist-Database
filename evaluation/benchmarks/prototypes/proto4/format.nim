@@ -17,6 +17,8 @@
 ##  Fixed rows + one overflow region  =>  row i is at clusterAt + i*rowBytes.
 ## ---------------------------------------------------------------------
 
+import runePragmas
+
 type
   ByteSeq* = seq[uint8]
   NameId* = uint16
@@ -51,21 +53,22 @@ const
   slotBytes* = 8'u32
   magic* = "GE1ST\x01"
 
-proc rowBytes*(s: Schema): uint32 = uint32(s.slots.len) * slotBytes
-proc slotAt*(i: int): uint32 = uint32(i) * slotBytes
+proc rowBytes*(s: Schema): uint32 {.
+    role: math.} = uint32(s.slots.len) * slotBytes
+proc slotAt*(i: int): uint32 {.role: math.} = uint32(i) * slotBytes
 
 # ---- explicit little-endian: files must survive x86 <-> ARM ----
 
-proc putU32*(A: var ByteSeq, o: int, v: uint32) =
+proc putU32*(A: var ByteSeq, o: int, v: uint32) {.role: helper.} =
   for i in 0 ..< 4: A[o + i] = uint8((v shr (i * 8)) and 0xFF)
-proc getU32*(A: ByteSeq, o: int): uint32 =
+proc getU32*(A: ByteSeq, o: int): uint32 {.role: parser.} =
   for i in 0 ..< 4: result = result or (uint32(A[o + i]) shl (i * 8))
-proc putU64*(A: var ByteSeq, o: int, v: uint64) =
+proc putU64*(A: var ByteSeq, o: int, v: uint64) {.role: helper.} =
   for i in 0 ..< 8: A[o + i] = uint8((v shr (i * 8)) and 0xFF)
-proc getU64*(A: ByteSeq, o: int): uint64 =
+proc getU64*(A: ByteSeq, o: int): uint64 {.role: parser.} =
   for i in 0 ..< 8: result = result or (uint64(A[o + i]) shl (i * 8))
 
-proc addU32*(A: var ByteSeq, v: uint32) =
+proc addU32*(A: var ByteSeq, v: uint32) {.role: helper.} =
   for i in 0 ..< 4: A.add uint8((v shr (i * 8)) and 0xFF)
-proc addU64*(A: var ByteSeq, v: uint64) =
+proc addU64*(A: var ByteSeq, v: uint64) {.role: helper.} =
   for i in 0 ..< 8: A.add uint8((v shr (i * 8)) and 0xFF)

@@ -13,11 +13,12 @@
 ##     plaintext exists
 ##   * the key that unlocks a user's store is NOT what the server stores
 
+import runePragmas
 import std/[os, strutils, times, unittest]
 
 import geist
 
-proc scratch(name: string): GeistHome =
+proc scratch(name: string): GeistHome {.role: helper.} =
   var p = getTempDir() / "geist_users_test" / name
   removeDir(p)
   var opened = openHome(p, nrServer)

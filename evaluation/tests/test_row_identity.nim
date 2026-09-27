@@ -5,6 +5,7 @@
 ## has moved, because a position that happens to still be right proves
 ## nothing.
 
+import runePragmas
 import std/[os, strutils, tables, unittest]
 import geist
 
@@ -18,7 +19,7 @@ type
     sensor: int
     value: int
 
-proc freshRoot(name: string): string =
+proc freshRoot(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
 
@@ -327,7 +328,7 @@ suite "appending stays cheap as the log grows":
   test "storing four times the rows costs about four times as much":
     # A ratio, not a wall clock, so it means the same on a slow machine.
     # Linear is ~4x; the quadratic version this guards against was ~16x.
-    proc appendCost(n: int, name: string): float =
+    proc appendCost(n: int, name: string): float {.role: math.} =
       var
         db = openGeist[Note](freshRoot(name), appConfig())
         t0 = getMonoTime()

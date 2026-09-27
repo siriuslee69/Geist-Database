@@ -167,7 +167,7 @@ proc dropLockFile(path: string, pid: int) {.role: dataWriter,
   except CatchableError:
     discard
 
-proc releaseHeldLeases() {.noconv.} =
+proc releaseHeldLeases() {.role: actor, noconv.} =
   ## Every lease this process still holds, released as it exits.
   ##
   ## A CLI that stops on an error calls `quit`, which unwinds nothing.

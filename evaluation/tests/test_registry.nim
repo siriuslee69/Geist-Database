@@ -12,7 +12,7 @@ import std/[os, strutils, tables, unittest]
 import geist/network
 import runePragmas
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / "geist_registry_test" / name
   removeDir(result)
   createDir(result)
@@ -22,7 +22,7 @@ type
     id: uint64
     body: string
 
-proc homeAt(name: string): GeistHome =
+proc homeAt(name: string): GeistHome {.role: configurator.} =
   var
     h = openHome(scratch(name), nrServer)
   doAssert h.ok, h.err
@@ -38,7 +38,7 @@ proc plainOpener(): OpenStore {.role: configurator, stage: stDone.} =
 
 ## An opener that refuses one particular target, the way an application
 ## refuses a mailbox nobody has.
-proc pickyOpener(refuse: string): OpenStore =
+proc pickyOpener(refuse: string): OpenStore {.role: configurator.} =
   result = proc (h: GeistHome, a: GeistAddress, path: string,
       S: var Session): tuple[ok: bool, writable: bool, err: string] =
     if a.target == refuse:
@@ -46,7 +46,7 @@ proc pickyOpener(refuse: string): OpenStore =
     S = openSession[Note](path, "main")
     result = (true, true, "")
 
-proc addressOf(s: string): GeistAddress =
+proc addressOf(s: string): GeistAddress {.role: parser.} =
   var
     p = parseAddress(s)
   doAssert p.ok, p.err

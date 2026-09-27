@@ -44,10 +44,12 @@ import std/[tables, times]
 import bifrost_exchange_protocols as bfx except ByteSeq
 
 import runePragmas
+import var_invariants
 import ./types
 import ./format
 import ./masks
 import ./address
+import ./bytecheck
 
 const
   geistDacFrameMaxBytes* = 65_507
@@ -159,7 +161,9 @@ proc encodeRows*(R: openArray[Row]): ByteSeq {.role: encryptor,
     i = i + 1
 
 proc decodeRows*(A: openArray[uint8], o: var int): seq[Row] {.role: parser,
-    tag: "codecBoundary|networkSurface|read".} =
+    tag: "codecBoundary|networkSurface|read",
+    needs: o >= 0 and o <= A.len,
+    gives: o <= A.len.} =
   ## A/o: buffer and cursor advanced past an encoded row list.
   ##
   ## Every length is checked against what is actually there: these bytes
@@ -488,6 +492,17 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
       bfx.closeDac(sock)
     result = (false, GeistLink(), exc.msg)
 
+proc replyFrom(payload: ByteSeq): tuple[ok: bool, reply: Reply,
+    err: string] {.role: parser, tag: "codecBoundary|networkSurface|read".} =
+  ## payload: one whole answer from a peer -> the Reply, or why it is not
+  ## one. Checked by `checkReplyBytes` before the decoder, which trusts
+  ## every length it reads, ever sees it.
+  var
+    complaint: string = checkReplyBytes(payload)
+  if complaint.len > 0:
+    return (false, Reply(), "malformed answer: " & complaint)
+  result = (true, decodeReply(payload), "")
+
 proc send*(S: var GeistLink, q: Query,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
     role: orchestrator, tag: "ame|appApi|networkSurface|orchestrator".} =
@@ -520,9 +535,7 @@ proc send*(S: var GeistLink, q: Query,
       if not fed.ok:
         return (false, Reply(), fed.err)
       if fed.done:
-        result.reply = decodeReply(fed.payload)
-        result.ok = true
-        return
+        return replyFrom(fed.payload)
       frames = frames + 1
       # A package whose chunks never finish arriving must not spin here.
       # The count is generous: a megabyte at MTU-sized chunks is ~900.
@@ -988,6 +1001,38 @@ proc finishPeer(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
   S.handshakes = S.handshakes + 1
   result = (true, "")
 
+proc answerPayload(S: GeistServer, payload: ByteSeq, p: PeerContext,
+    handler: ServedHandler): Reply {.role: orchestrator,
+    tag: "ame|networkSurface|server".} =
+  ## S/payload/p: one whole request from an authenticated peer, and who
+  ##   that peer is.
+  ## handler: what this server does with a request.
+  ##
+  ##   payload --checkQueryBytes--> malformed? -> Reply(ok: false), no decode
+  ##                            \-> decodeQuery -> delegation -> handler
+  ##
+  ## A malformed request is ANSWERED, not dropped: the sender learns why,
+  ## and the session survives. What it must never do is reach the decoder,
+  ## which trusts every length it reads.
+  ##
+  ## Delegation is applied HERE, not in the handler, so no daemon can
+  ## forget to do it: a handler always receives rights that have already
+  ## been intersected with whatever the address claimed. A malformed
+  ## address carries no claim, so the connecting peer's own rights stand.
+  var
+    complaint: string = checkQueryBytes(payload)
+    q: Query = Query()
+    ctx: PeerContext = p
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] = (false,
+      GeistAddress(), "")
+  if complaint.len > 0:
+    return Reply(ok: false, err: "malformed request: " & complaint)
+  q = decodeQuery(payload)
+  parsed = parseAddress(q.collection)
+  if parsed.ok:
+    ctx = S.delegatedContext(ctx, parsed.a)
+  result = handler(q, ctx)
+
 proc answerPeer(S: var GeistServer, payload: openArray[uint8],
     remote: bfx.DacAddress, key: string,
     handler: ServedHandler): tuple[ok: bool, served: bool, err: string] {.
@@ -1001,9 +1046,6 @@ proc answerPeer(S: var GeistServer, payload: openArray[uint8],
     opened: bfx.AmeOpenResult = default(bfx.AmeOpenResult)
     ctx: PeerContext = PeerContext()
     reply: Reply = Reply()
-    q: Query = Query()
-    parsed: tuple[ok: bool, a: GeistAddress, err: string] = (false,
-      GeistAddress(), "")
     fed: FeedOutcome = (false, false, @[], "")
     sent: SendOutcome = (false, 0, "")
   link = S.peers[key]
@@ -1026,15 +1068,7 @@ proc answerPeer(S: var GeistServer, payload: openArray[uint8],
   ctx.subject = link.subject
   ctx.address = key
   ctx.rights = link.rights
-  q = decodeQuery(fed.payload)
-  # Delegation is applied HERE, not in the handler, so no daemon can
-  # forget to do it: a handler always receives rights that have already
-  # been intersected with whatever the address claimed. A malformed
-  # address carries no claim, so the connecting peer's own rights stand.
-  parsed = parseAddress(q.collection)
-  if parsed.ok:
-    ctx = S.delegatedContext(ctx, parsed.a)
-  reply = handler(q, ctx)
+  reply = S.answerPayload(fed.payload, ctx, handler)
   link.nextPackage = link.nextPackage + 1'u64
   sent = sendPayload(S.sock, remote, link.session, encodeReply(reply),
     link.nextPackage)

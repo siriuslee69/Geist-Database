@@ -8,12 +8,13 @@
 ## And that `..` cannot get through, because this is the function that
 ## turns an address into a filesystem path.
 
+import runePragmas
 import std/[os, strutils, unittest]
 
 import geist/address
 import geist/layout
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / "geist_layout_test" / name
   removeDir(result)
 

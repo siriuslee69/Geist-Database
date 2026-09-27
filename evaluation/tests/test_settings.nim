@@ -6,11 +6,12 @@
 ## does not recognise is indistinguishable from one that took effect, and
 ## the person who wrote it will believe it did.
 
+import runePragmas
 import std/[json, os, strutils, unittest]
 import geist/network
 import geist/toml_read
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
   createDir(result)

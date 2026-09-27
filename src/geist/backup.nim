@@ -80,6 +80,18 @@ proc shouldBackup*(p: BackupPolicy, S: BackupState,
     return (true, "first backup")
   result = (false, "no trigger met")
 
+proc shiftSlot(stem: string, i: int) {.role: dataWriter, inline,
+    tag: "backup|storageIo|write".} =
+  ## stem/i: slot i moves to slot i+1, replacing whatever was there.
+  var
+    src: string = slotPath(stem, i)
+    dst: string = slotPath(stem, i + 1)
+  if not fileExists(src):
+    return
+  if fileExists(dst):
+    removeFile(dst)
+  moveFile(src, dst)
+
 proc rotateOne(source, stem: string,
     copies: int): tuple[ok: bool, err: string] {.
     role: dataWriter, tag: "backup|storageIo|write".} =
@@ -93,18 +105,10 @@ proc rotateOne(source, stem: string,
   ## Shifting starts at the OLDEST slot, so an interruption can only lose
   ## the oldest copy; newer slots are never left half-written.
   var
-    i: int = 0
-    src: string = ""
-    dst: string = ""
+    i: int = copies - 1
   try:
-    i = copies - 1
     while i >= 1:
-      src = slotPath(stem, i)
-      dst = slotPath(stem, i + 1)
-      if fileExists(src):
-        if fileExists(dst):
-          removeFile(dst)
-        moveFile(src, dst)
+      shiftSlot(stem, i)
       i = i - 1
     if fileExists(source):
       copyFile(source, slotPath(stem, 1))

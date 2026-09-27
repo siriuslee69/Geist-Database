@@ -62,7 +62,8 @@ const
   routerConfigName* = "router.toml"
 
 type
-  RouterConfig* {.role: configurator, tag: "config|entrypoint|networkSurface|server|types".} = object
+  RouterConfig* {.
+      role: configurator, tag: "config|entrypoint|networkSurface|server|types".} = object
     ## The whole deployment. Written and read by `doc.nim`, so this object
     ## IS the file's schema: a field here is an option there, and there is
     ## no second list to keep in step.
@@ -78,7 +79,8 @@ type
     quiet*: bool
     routing*: RouteTable
 
-  RouterState* {.role: truthState, tag: "networkSurface|server|status|types".} = object
+  RouterState* {.
+      role: truthState, tag: "networkSurface|server|status|types".} = object
     ## client: the outgoing half, with the health view failover reads.
     ## forwarded/refused: what the operator sees per request.
     client*: GeistClient
@@ -99,7 +101,7 @@ proc requestShutdown*() {.role: actor,
 when defined(posix):
   import std/posix
 
-  proc onSignal(sig: cint) {.noconv.} =
+  proc onSignal(sig: cint) {.role: actor, noconv.} =
     ## sig: SIGTERM or SIGINT; only used to leave the loop cleanly.
     requestShutdown()
 
@@ -240,7 +242,8 @@ the failover rules and the enumerated edge cases.
 """
 
 type
-  RouterArgs* {.role: configurator, tag: "config|entrypoint|server|types".} = object
+  RouterArgs* {.
+      role: configurator, tag: "config|entrypoint|server|types".} = object
     ## What was typed. Kept apart from `RouterConfig` because the file and
     ## the command line are different surfaces: the file describes a
     ## deployment, these describe this run of it.

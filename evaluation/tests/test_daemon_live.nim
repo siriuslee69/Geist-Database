@@ -17,6 +17,7 @@
 ## daemon: two databases, each with its own rows, ending up holding the
 ## same set without either one being told what the other had.
 
+import runePragmas
 import std/[os, strutils, tables, unittest]
 import geist/network
 
@@ -42,12 +43,12 @@ type
     served: int
     err: string
 
-proc freshRoot(name: string): string =
+proc freshRoot(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
   createDir(result)
 
-proc runServer(a: ptr ServeArgs) =
+proc runServer(a: ptr ServeArgs) {.role: orchestrator.} =
   ## a: server configuration and the flags the test drives it with.
   ##
   ## A miniature geistd: same session, same GeistServer, same handler
@@ -110,14 +111,15 @@ proc runServer(a: ptr ServeArgs) =
     a.failed = true
     a.ready = true
 
-proc serverThread(a: ptr ServeArgs) {.thread.} =
+proc serverThread(a: ptr ServeArgs) {.role: orchestrator, thread.} =
   ## a: the same loop, entered as a thread. The cast is the honest kind:
   ## this thread owns its Session outright and shares nothing with the
   ## test but the flags in `a`, which the compiler cannot see.
   {.cast(gcsafe).}:
     runServer(a)
 
-proc startServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) =
+proc startServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) {.
+    role: orchestrator.} =
   ## a/t: spawn the server and wait until its socket is bound, so a client
   ## never races the listener.
   var
@@ -129,12 +131,14 @@ proc startServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) =
   check a.ready
   check not a.failed
 
-proc stopServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) =
+proc stopServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) {.
+    role: actor.} =
   ## a/t: ask the loop to leave and wait for it.
   a.stop = true
   joinThread(t)
 
-proc seedNotes(root: string, titles: openArray[string]): seq[RowId] =
+proc seedNotes(root: string, titles: openArray[string]): seq[RowId] {.
+    role: dataWriter.} =
   ## root/titles: a database with one row per title, saved and closed, so
   ## the server thread can open it afterwards.
   var
@@ -145,7 +149,8 @@ proc seedNotes(root: string, titles: openArray[string]): seq[RowId] =
   db.close()
 
 proc clientFor(port: uint16, identityFile,
-    peerPinFile: string): tuple[ok: bool, link: GeistLink, err: string] =
+    peerPinFile: string): tuple[ok: bool, link: GeistLink, err: string] {.
+        role: configurator.} =
   ## port/identityFile/peerPinFile: connect to a server on loopback with a
   ## pinned identity on both sides.
   var
@@ -549,7 +554,7 @@ suite "writing across the wire":
 ## on it, and the two desktops would silently disagree for ever.
 ## ---------------------------------------------------------------------
 
-proc chainIdentities(keys: string) =
+proc chainIdentities(keys: string) {.role: dataWriter.} =
   ## keys: directory given one identity per ROLE, plus the pin each hop
   ## checks the other against. B gets two, because B is a client to A and a
   ## server to C, and reusing one key for both would blur which of the two
@@ -662,7 +667,7 @@ suite "a chain of three desktops":
     origin.close()
 
     proc relayHop(fromPort: uint16, clientId, peerPin, intoRoot,
-        remote: string): int =
+        remote: string): int {.role: orchestrator.} =
       ## One hop, run to completion: connect, catch up, leave. Written once
       ## because the two hops differ only in who is at each end -- which is
       ## the claim this test exists to check.

@@ -9,6 +9,7 @@
 ## generation, leaving debris behind, opening the same store twice -- because
 ## a happy-path test cannot tell a durable write from a lucky one.
 
+import runePragmas
 import std/[os, strutils, unittest]
 import geist
 
@@ -18,7 +19,7 @@ type
     title: string
     body: string
 
-proc freshRoot(name: string): string =
+proc freshRoot(name: string): string {.role: helper.} =
   ## name: per-test directory, removed first so a rerun starts clean.
   result = getTempDir() / name
   removeDir(result)

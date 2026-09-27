@@ -98,6 +98,17 @@ type
     ##              which means a save was rolled back under it
     tsAbsent, tsCurrent, tsStale, tsOrphan
 
+  TransposeStatus* {.role: truthState, tag: "db|status|types".} = tuple
+    ## Where the column copy stands against the live generation.
+    ##   state  one of the four above
+    ##   live   the generation the manifest names now
+    ##   built  the generation the copy was built from (0 = none)
+    ##   path   the copy's file
+    state: TransposeState
+    live: uint64
+    built: uint64
+    path: string
+
 ## ------------------------------- paths ------------------------------
 
 proc transposedPath*(baseDir, baseName: string, n: uint64): string {.
@@ -501,8 +512,7 @@ proc transposedFind*(t: TransposedFile, field, value: string,
 ## ---------------------------- freshness -----------------------------
 
 proc transposeState*(baseDir: string,
-    baseName: string = "main"): tuple[state: TransposeState, live: uint64,
-    built: uint64, path: string] {.role: parser,
+    baseName: string = "main"): TransposeStatus {.role: parser,
     tag: "db|read|status".} =
   ## baseDir/baseName: which of the two artifacts is ahead, and by how far.
   ##

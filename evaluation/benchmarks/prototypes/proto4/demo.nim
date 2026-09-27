@@ -1,11 +1,12 @@
+import runePragmas
 import std/[os, strutils]
 import ./format, ./store
 
-proc str(A: ByteSeq): string =
+proc str(A: ByteSeq): string {.role: parser.} =
   result = newString(A.len)
   for i in 0 ..< A.len: result[i] = char(A[i])
 
-proc bytes(s: string): ByteSeq =
+proc bytes(s: string): ByteSeq {.role: parser.} =
   result = newSeq[uint8](s.len)
   for i in 0 ..< s.len: result[i] = uint8(s[i])
 

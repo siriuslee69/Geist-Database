@@ -22,8 +22,7 @@ when isMainModule:
     found: seq[Note] = @[]
     seen: tuple[ok: bool, f: GeistFile, path: string, err: string] =
       (false, default(GeistFile), "", "")
-    later: tuple[ok: bool, f: GeistFile, changed: seq[int], path: string,
-      err: string]
+    later: FollowStep = default(FollowStep)
 
   root = getTempDir() / "geist_quickstart"
   removeDir(root)

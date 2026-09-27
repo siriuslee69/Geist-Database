@@ -2,6 +2,8 @@
 ## Node <- variant-encoded unit. 24 B. Never appears in an API signature.
 ## ------------------------------------------------------------------
 
+import runePragmas
+
 type
   ByteSeq* = seq[uint8]
   KeyId* = uint64
@@ -49,12 +51,12 @@ type
     names*: NameTable
     nodes*: seq[Node]
 
-proc intern*(t: var NameTable, s: string): NameId =
+proc intern*(t: var NameTable, s: string): NameId {.role: truthBuilder.} =
   for i in 0 ..< t.names.len:
     if t.names[i] == s:
       return NameId(i)
   t.names.add s
   result = NameId(t.names.len - 1)
 
-proc name*(t: NameTable, id: NameId): string =
+proc name*(t: NameTable, id: NameId): string {.role: parser.} =
   if int(id) < t.names.len: t.names[int(id)] else: ""

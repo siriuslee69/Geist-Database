@@ -16,6 +16,7 @@
 ## warmup first, because the first touch of a fresh file pays for page
 ## cache and directory metadata that later calls do not.
 
+import runePragmas
 import std/[os, strformat, strutils]
 
 import otter_repo_evaluation
@@ -40,11 +41,11 @@ const
   ioRows = 5_000
   scanRows = 20_000
 
-proc benchRoot(name: string): string =
+proc benchRoot(name: string): string {.role: helper.} =
   result = getTempDir() / ("geist_bench_" & name)
   removeDir(result)
 
-proc header() =
+proc header() {.role: dataWriter.} =
   echo "======================================================="
   echo "Geist benchmarks"
   echo "  time      ", isoTimestamp()
@@ -54,7 +55,7 @@ proc header() =
   echo "======================================================="
   echo ""
 
-proc globalWarmup() =
+proc globalWarmup() {.role: actor.} =
   ## Otter warms each algorithm inside a group, but the FIRST group still
   ## pays one-time costs -- SIMD dispatch, lookup tables, the first heap
   ## growth -- and charges them to whichever entry happens to run first.
@@ -77,7 +78,7 @@ proc globalWarmup() =
     discard geistMacOf(mkCombined, key, small, 32)
     i = i + 1
 
-proc report(title: string, results: seq[BenchResult]) =
+proc report(title: string, results: seq[BenchResult]) {.role: dataWriter.} =
   var
     fastest: int64 = 0
   echo "--- ", title
@@ -97,7 +98,7 @@ proc report(title: string, results: seq[BenchResult]) =
 
 ## ------------------------------ crypto -------------------------------
 
-proc benchCrypto() =
+proc benchCrypto() {.role: orchestrator, testKind: tkBenchmark.} =
   var
     small = cast[ByteSeq]("a short message, one row's worth of bytes")
     big = newSeq[uint8](64 * 1024)
@@ -143,7 +144,7 @@ proc benchCrypto() =
 
 ## ------------------------------- refs --------------------------------
 
-proc benchRefs() =
+proc benchRefs() {.role: orchestrator, testKind: tkBenchmark.} =
   var
     own = Ref(target: rtSidecar, hash: newSeq[uint8](fullDigestBytes))
     packed = Ref(target: rtPacked, hash: newSeq[uint8](shortDigestBytes),
@@ -177,7 +178,7 @@ proc benchRefs() =
 ## -------------------------------- io ---------------------------------
 
 proc buildFixture(root, name: string, n: int,
-    c: GeistConfig, password: string): string =
+    c: GeistConfig, password: string): string {.role: dataWriter.} =
   ## Writes `n` rows once and returns the data path. Not timed.
   var
     col = openCollection[Reading](root, name, c, password, false)
@@ -190,7 +191,7 @@ proc buildFixture(root, name: string, n: int,
   result = col.session.dataPath()
   col.close()
 
-proc benchWrite() =
+proc benchWrite() {.role: orchestrator, testKind: tkBenchmark.} =
   var
     plainRoot = benchRoot("wplain")
     encRoot = benchRoot("wenc")
@@ -249,7 +250,7 @@ proc benchWrite() =
   removeDir(plainRoot)
   removeDir(encRoot)
 
-proc benchRead() =
+proc benchRead() {.role: orchestrator, testKind: tkBenchmark.} =
   var
     root = benchRoot("read")
     path = buildFixture(root, "r", scanRows, appConfig(), "")
@@ -297,7 +298,7 @@ proc benchRead() =
 
   removeDir(root)
 
-proc benchText() =
+proc benchText() {.role: orchestrator, testKind: tkBenchmark.} =
   var root = benchRoot("text")
   block:
     var
@@ -366,7 +367,8 @@ type
     ## profile against packed's 4-byte length prefix, eight times over.
     a*, b*, c*, d*, e*, f*, g*, h*: string
 
-proc fileSizeOf[T](root: string, c: GeistConfig, rows: seq[T]): int64 =
+proc fileSizeOf[T](root: string, c: GeistConfig, rows: seq[T]): int64 {.
+    role: dataWriter.} =
   removeDir(root)
   var col = openCollection[T](root, "w", c, "", false)
   col.add rows
@@ -375,7 +377,7 @@ proc fileSizeOf[T](root: string, c: GeistConfig, rows: seq[T]): int64 =
   col.close()
   removeDir(root)
 
-proc benchLayoutCrossover() =
+proc benchLayoutCrossover() {.role: orchestrator, testKind: tkBenchmark.} =
   ## Isolates WHY a packed row can be smaller than a fixed one even with
   ## nothing omitted. It is not the bitmap -- that only ever adds bytes.
   ## It is that a variable field costs an 8-byte pointer in the fixed
@@ -409,7 +411,7 @@ proc benchLayoutCrossover() =
   echo "  => packed is smaller iff 4*V > ceil(C/8) + 4;  for C<=8, V >= 2"
   echo ""
 
-proc benchPacked() =
+proc benchPacked() {.role: orchestrator, testKind: tkBenchmark.} =
   var
     dense: seq[Wide] = @[]
     sparse: seq[Wide] = @[]
@@ -420,7 +422,8 @@ proc benchPacked() =
     sparse.add Wide(a: i, e: i * 2)
     i = i + 1
 
-  proc writeWith(root: string, c: GeistConfig, rows: seq[Wide]): int64 =
+  proc writeWith(root: string, c: GeistConfig, rows: seq[Wide]): int64 {.
+      role: dataWriter.} =
     var col = openCollection[Wide](root, "w", c, "", false)
     col.add rows
     doAssert col.save().ok

@@ -12,11 +12,12 @@
 ## preset is covered the moment it is listed, and one that is NOT listed
 ## fails the last test in this file.
 
+import runePragmas
 import std/[os, strutils, unittest]
 import geist
 import geist/network
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
   createDir(result)

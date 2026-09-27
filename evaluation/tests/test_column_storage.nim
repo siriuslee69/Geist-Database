@@ -1,5 +1,6 @@
 ## P1 end to end: packed clusters through a session, sealed and plain.
 
+import runePragmas
 import std/[os, strutils, tables, unittest]
 
 import geist
@@ -21,7 +22,7 @@ type
     g*: int
     h*: string
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
 

@@ -47,7 +47,8 @@ import runePragmas
 import ../geist/network
 
 type
-  DaemonConfig* {.role: configurator, tag: "config|entrypoint|server|types".} = object
+  DaemonConfig* {.
+      role: configurator, tag: "config|entrypoint|server|types".} = object
     path*: string
     listen*: string
     preset*: string
@@ -128,7 +129,7 @@ proc requestShutdown*() {.role: actor,
 when defined(posix):
   import std/posix
 
-  proc onSignal(sig: cint) {.noconv.} =
+  proc onSignal(sig: cint) {.role: actor, noconv.} =
     ## sig: SIGTERM or SIGINT; only used to leave the loop cleanly.
     requestShutdown()
 

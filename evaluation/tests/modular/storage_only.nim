@@ -8,6 +8,7 @@
 ## half again, this stops compiling, which is the entire point. A comment
 ## saying "please keep these separate" would not have caught it.
 
+import runePragmas
 import std/os
 
 import geist
@@ -20,7 +21,7 @@ type
 
 const storeRoot = "build/modular-check"
 
-proc main() =
+proc main() {.role: metaOrchestrator.} =
   # From scratch every run: the row count below is an assertion, and a
   # store left behind by the previous run would make it fail for a reason
   # that has nothing to do with what this file is checking.

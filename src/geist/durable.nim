@@ -38,8 +38,8 @@ when defined(posix):
 elif defined(windows):
   import std/winlean
 
-  proc flushFileBuffers(h: Handle): WINBOOL {.importc: "FlushFileBuffers",
-    stdcall, dynlib: "kernel32".}
+  proc flushFileBuffers(h: Handle): WINBOOL {.role: dataWriter,
+    importc: "FlushFileBuffers", stdcall, dynlib: "kernel32".}
 
 proc syncHandle(f: File): bool {.role: dataWriter,
     tag: "storageIo|write".} =

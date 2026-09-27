@@ -42,6 +42,7 @@
 ## in reasoning than the bit costs in bytes.
 
 import runePragmas
+import var_invariants
 import ./types
 import ./format
 import ./sidecar
@@ -98,6 +99,21 @@ proc isExternal*(s: Schema, A: openArray[uint8], slot: int): bool {.
 ## ------------------------------ writing -----------------------------
 
 type
+  BuiltRow* {.role: truthState, tag: "codecBoundary|db|types".} = tuple
+    ## One object packed into row bytes (`toRowBytes`), and what it cost.
+    ##   data          the row
+    ##   truncated     columns cut to their cap
+    ##   externalised  columns moved to the sidecar
+    ##   omitted       columns written as absent
+    ##   truncatedIn   the names of the cut columns
+    ##   err           why the row could not be built; empty when it was
+    data: ByteSeq
+    truncated: uint32
+    externalised: uint32
+    omitted: uint32
+    truncatedIn: seq[FieldName]
+    err: string
+
   RowWriter* {.role: truthState, tag: "codecBoundary|db|types".} = object
     ## Accumulates one row. The bitmaps are only final once every column
     ## has declared itself, so the body is staged separately and joined at
@@ -289,6 +305,32 @@ proc fieldOffsets*(s: Schema, A: openArray[uint8]): seq[int] {.role: parser,
         o = o + int(s.slots[i].width)
     i = i + 1
 
+proc stepColumn(s: Schema, A: openArray[uint8], i, o: int): tuple[o: int,
+    err: string] {.role: sanitizer, tag: "codecBoundary|db|read",
+    needs: i >= 0 and i < s.slots.len and o >= 0,
+    gives: result.err.len > 0 or result.o <= A.len.} =
+  ## s/A: schema and an untrusted row.
+  ## i/o: the column, and the offset it starts at.
+  ## Returns the offset just past column i, or why it does not fit.
+  ##
+  ##   variable  | u32 length n | n bytes |   -> o + 4 + n
+  ##   fixed     | width bytes            |   -> o + width
+  var
+    at: int = o
+  case s.slots[i].column
+  of colVariable:
+    if at + varLengthBytes > A.len:
+      return (0, "column '" & s.nameOf(s.slots[i].nameId) &
+        "' has no room for its length prefix")
+    at = at + varLengthBytes + int(A.getU32(at))
+  of colFixed, colCapped:
+    at = at + int(s.slots[i].width)
+  if at > A.len:
+    return (0, "column '" & s.nameOf(s.slots[i].nameId) &
+      "' claims " & $(at - A.len) & " B past the end of a " & $A.len &
+      " B row")
+  result = (at, "")
+
 proc validateRow*(s: Schema, A: openArray[uint8]): tuple[ok: bool,
     err: string] {.role: sanitizer,
     tag: "codecBoundary|db|read".} =
@@ -303,28 +345,18 @@ proc validateRow*(s: Schema, A: openArray[uint8]): tuple[ok: bool,
   ## Trailing bytes are an error too. A row that decodes and then has
   ## leftovers is not the row the sender meant, whatever it decodes to.
   var
-    o: int = 0
+    o: int = s.headerBytesOf()
     i: int = 0
-    n: int = 0
-  o = s.headerBytesOf()
+    step: tuple[o: int, err: string] = (0, "")
   if A.len < o:
     return (false, "row is " & $A.len & " B, shorter than the " & $o &
       " B of bitmaps this schema declares")
   while i < s.slots.len:
     if not s.isOmitted(A, i):
-      case s.slots[i].column
-      of colVariable:
-        if o + varLengthBytes > A.len:
-          return (false, "column '" & s.nameOf(s.slots[i].nameId) &
-            "' has no room for its length prefix")
-        n = int(A.getU32(o))
-        o = o + varLengthBytes + n
-      of colFixed, colCapped:
-        o = o + int(s.slots[i].width)
-      if o > A.len:
-        return (false, "column '" & s.nameOf(s.slots[i].nameId) &
-          "' claims " & $(o - A.len) & " B past the end of a " & $A.len &
-          " B row")
+      step = s.stepColumn(A, i, o)
+      if step.err.len > 0:
+        return (false, step.err)
+      o = step.o
     i = i + 1
   if o != A.len:
     return (false, "row has " & $(A.len - o) &
@@ -543,9 +575,7 @@ proc reservedColumns*(s: Schema): int {.role: parser, inline,
 
 proc toRowBytes*[T: object](x: T, s: Schema,
     store: SidecarStore = SidecarStore(), id: uint64 = 0'u64,
-    flags: uint64 = 0'u64): tuple[data: ByteSeq,
-    truncated: uint32, externalised: uint32, omitted: uint32,
-    truncatedIn: seq[FieldName], err: string] {.role: orchestrator,
+    flags: uint64 = 0'u64): BuiltRow {.role: orchestrator,
     tag: "appApi|codecBoundary|db|write".} =
   ## x: object to store.
   ## s: schema carrying the per-column storage policy.

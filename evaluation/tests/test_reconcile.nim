@@ -6,6 +6,7 @@
 ## friend they meant gets an entry of their own, and the report says which
 ## is which.
 
+import runePragmas
 import std/[os, strutils, tables, unittest]
 
 import geist/doc
@@ -21,10 +22,11 @@ type
     account*: string
     friend*: OrderedTable[string, FriendRule]
 
-proc defaultRule(): FriendRule =
+proc defaultRule(): FriendRule {.role: configurator, stage: stDone.} =
   result.notify = true
 
-proc withFriends(names: varargs[string]): OrderedTable[string, FriendRule] =
+proc withFriends(names: varargs[string]): OrderedTable[string, FriendRule] {.
+    role: configurator.} =
   result = initOrderedTable[string, FriendRule]()
   for n in names:
     result[n] = defaultRule()

@@ -11,17 +11,18 @@
 ## value cannot answer a question about whether it was set -- so it is
 ## tested the same way, from both ends.
 
+import runePragmas
 import std/[os, unittest]
 
 import clients/geist_cli
 import server/geistd
 
-proc scratch(name: string): string =
+proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / name
   removeDir(result)
   createDir(result)
 
-proc writeConfig(dir: string): string =
+proc writeConfig(dir: string): string {.role: dataWriter.} =
   ## dir: gets a userconfig.toml that disagrees with every default.
   result = dir / "userconfig.toml"
   writeFile(result, """

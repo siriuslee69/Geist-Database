@@ -40,6 +40,7 @@
 import std/[algorithm, os, strutils, times]
 
 import runePragmas
+import var_invariants
 import ./types
 import ./config
 import ./layout
@@ -122,7 +123,8 @@ proc userErr(err: string): UserResult {.role: helper, inline,
   result.err = err
 
 proc checkUserName*(name: string): string {.role: sanitizer,
-    tag: "cryptoBoundary".} =
+    tag: "cryptoBoundary",
+    gives: result.len > 0 or (name.len > 0 and name.len <= maxUserNameBytes).} =
   ## name: refused with a reason, or "" when it is usable.
   ##
   ## A user name is not a path segment here -- users live in ROWS, not in

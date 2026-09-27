@@ -1,4 +1,5 @@
 ## Batch-encryption metadata overhead: (algo,keyRef,nonce,tag) per batch/column
+import runePragmas
 import std/strutils
 
 const
@@ -8,11 +9,12 @@ const
   tagB = 16
   tupleB = algoB + keyRefB + nonceB + tagB     # 38 B
 
-proc ledgerBytes*(rows, batchN, encCols: int): int =
+proc ledgerBytes*(rows, batchN, encCols: int): int {.role: math.} =
   var batches = (rows + batchN - 1) div batchN
   result = batches * encCols * tupleB
 
-proc mib(n: int): string = formatFloat(n / (1024*1024), ffDecimal, 2) & " MiB"
+proc mib(n: int): string {.
+    role: helper.} = formatFloat(n / (1024*1024), ffDecimal, 2) & " MiB"
 
 when isMainModule:
   const rows = 1_000_000

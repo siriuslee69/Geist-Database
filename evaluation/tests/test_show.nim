@@ -6,6 +6,7 @@
 ## right picture by building every cell and dropping most of them would
 ## pass a visual check and still make `echo db` unusable.
 
+import runePragmas
 import std/[os, strutils, unittest]
 
 import geist
@@ -19,7 +20,7 @@ type
   Wide = object
     a, b, c, d, e, f, g, h, i, j, k, l: int
 
-proc freshRoot(name: string): string =
+proc freshRoot(name: string): string {.role: helper.} =
   result = "build/test-show-" & name
   removeDir(result)
 

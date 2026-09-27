@@ -2,6 +2,7 @@
 ## Policy pass <- sealing is a pass over nodes, not a type variant
 ## -------------------------------------------------------------
 
+import runePragmas
 import ./nodes
 
 type
@@ -10,11 +11,11 @@ type
     seal*: bool
     indexed*: bool
 
-proc sealsField(P: seq[FieldPolicy], nm: string): bool =
+proc sealsField(P: seq[FieldPolicy], nm: string): bool {.role: parser.} =
   for p in P:
     if p.field == nm: return p.seal
 
-proc sealed1(n: Node, key: ByteSeq, keyRef: KeyId): Node =
+proc sealed1(n: Node, key: ByteSeq, keyRef: KeyId): Node {.role: encryptor.} =
   ## A variant node cannot mutate its discriminator, so sealing
   ## RECONSTRUCTS the node. That is a feature: it is impossible to
   ## end up with a half-sealed node carrying stale plaintext slots.
@@ -32,7 +33,7 @@ proc sealed1(n: Node, key: ByteSeq, keyRef: KeyId): Node =
   result = Node(role: n.role, nameId: n.nameId, kind: nkSealed, sealed: s)
 
 proc applyPolicy*(N: var seq[Node], t: NameTable, P: seq[FieldPolicy],
-    key: ByteSeq, keyRef: KeyId) =
+    key: ByteSeq, keyRef: KeyId) {.role: orchestrator.} =
   ## One pass. No model type ever gains an "Encrypted..." variant.
   for i in 0 ..< N.len:
     if P.sealsField(t.name(N[i].nameId)):

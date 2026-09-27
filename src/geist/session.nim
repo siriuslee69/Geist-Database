@@ -32,6 +32,17 @@ import ./show
 import ./transpose
 
 type
+  FollowStep* {.role: truthState, tag: "appApi|db|status|types".} = tuple
+    ## One look at a store this process does not own (`followStore`).
+    ##   f        the index read now
+    ##   changed  the clusters that differ from the previous look
+    ##   path     the live file it was read from, which moves on every save
+    ok: bool
+    f: GeistFile
+    changed: seq[int]
+    path: string
+    err: string
+
   Subscription* {.role: truthState, tag: "appApi|db|sync|types".} = object
     ## id: caller-chosen name, stable across reconnects.
     ## cursor: last change ordinal delivered.
@@ -619,8 +630,7 @@ proc packFor[T: object](S: var Session, x: T, id: RowId,
   ## identity columns filled in. Raises on a column policy violation, which
   ## is the caller's data being wrong rather than a defect here.
   var
-    built: tuple[data: ByteSeq, truncated: uint32, externalised: uint32,
-      omitted: uint32, truncatedIn: seq[FieldName], err: string]
+    built: BuiltRow = default(BuiltRow)
     i: int = 0
   built = toRowBytes(x, S.entries.schema, S.sidecarStore, id, flags)
   if built.err.len > 0:
@@ -1562,6 +1572,28 @@ proc subscribe*(S: var Session, id: string, replay: bool = false,
     i = i + 1
   S.subscriptions.add result
 
+proc subscriptionAt(S: Session, id: string): int {.role: parser,
+    tag: "db|read|sync".} =
+  ## S/id: the position of that subscription, or -1.
+  var
+    i: int = 0
+  while i < S.subscriptions.len:
+    if S.subscriptions[i].id == id:
+      return i
+    i = i + 1
+  result = -1
+
+proc changesAfter(S: Session, cursor: uint64,
+    limit: int): seq[ChangeEvent] {.role: parser, tag: "db|read|sync".} =
+  ## S/cursor/limit: at most `limit` changes newer than `cursor`, oldest
+  ## first.
+  var
+    j: int = 0
+  while j < S.changes.len and result.len < limit:
+    if S.changes[j].ordinal > cursor:
+      result.add S.changes[j]
+    j = j + 1
+
 proc poll*(S: var Session, id: string,
     limit: int = 64): seq[ChangeEvent] {.role: parser,
     tag: "appApi|db|read|sync".} =
@@ -1569,32 +1601,20 @@ proc poll*(S: var Session, id: string,
   ## id: subscription whose cursor advances past the returned events.
   ## limit: maximum events per call.
   var
-    i: int = 0
-    j: int = 0
-    cursor: uint64 = 0'u64
-  while i < S.subscriptions.len:
-    if S.subscriptions[i].id == id:
-      cursor = S.subscriptions[i].cursor
-      while j < S.changes.len and result.len < limit:
-        if S.changes[j].ordinal > cursor:
-          result.add S.changes[j]
-        j = j + 1
-      if result.len > 0:
-        S.subscriptions[i].cursor = result[^1].ordinal
-      return
-    i = i + 1
-  raise newException(ValueError, "no such subscription: " & id)
+    at: int = S.subscriptionAt(id)
+  if at < 0:
+    raise newException(ValueError, "no such subscription: " & id)
+  result = S.changesAfter(S.subscriptions[at].cursor, limit)
+  if result.len > 0:
+    S.subscriptions[at].cursor = result[^1].ordinal
 
 proc unsubscribe*(S: var Session, id: string) {.role: actor,
     tag: "appApi|db|sync|write".} =
   ## S/id: session and subscription removed.
   var
-    i: int = 0
-  while i < S.subscriptions.len:
-    if S.subscriptions[i].id == id:
-      S.subscriptions.delete(i)
-      return
-    i = i + 1
+    at: int = S.subscriptionAt(id)
+  if at >= 0:
+    S.subscriptions.delete(at)
 
 ## --------------------------- observation ----------------------------
 
@@ -1626,8 +1646,7 @@ proc observeStore*(baseDir: string,
   result.err = idx.err
 
 proc followStore*(before: GeistFile, baseDir: string,
-    baseName: string = "main"): tuple[ok: bool, f: GeistFile,
-    changed: seq[int], path: string, err: string] {.role: orchestrator,
+    baseName: string = "main"): FollowStep {.role: orchestrator,
     tag: "appApi|db|read|status".} =
   ## before: the previous index read.
   ## baseDir/baseName: same store, re-resolved through the manifest.
@@ -1725,8 +1744,7 @@ proc syncTransposed*(S: var Session): tuple[ok: bool, err: string] {.
       "copy would hold rows the store does not")
   result = S.writeTransposedNow(S.generation)
 
-proc transposeState*(S: Session): tuple[state: TransposeState, live: uint64,
-    built: uint64, path: string] {.role: parser,
+proc transposeState*(S: Session): TransposeStatus {.role: parser,
     tag: "appApi|db|read|status".} =
   ## S: which of the two copies is ahead, read from the files themselves.
   result = transposeState(S.baseDir, S.baseName)
@@ -1738,8 +1756,7 @@ proc transposedView*(S: Session): tuple[ok: bool, t: TransposedFile,
   ## the answer would be yesterday's rows, which is worse than a slow
   ## answer today.
   var
-    state: tuple[state: TransposeState, live: uint64, built: uint64,
-      path: string] = S.transposeState()
+    state: TransposeStatus = S.transposeState()
   if state.state != tsCurrent:
     return (false, TransposedFile(),
       "column copy is " & describeTransposeState(state.state, state.live,

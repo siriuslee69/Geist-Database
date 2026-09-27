@@ -33,13 +33,13 @@ proc volatileClear*(A: var openArray[uint8]) {.role: helper,
     volatileStore(addr p[i], 0'u8)
     i = i + 1
 
-proc `=destroy`*(s: Secret) =
+proc `=destroy`*(s: Secret) {.role: actor.} =
   ## s: expiring secret whose bytes are cleared before the memory is freed.
   if s.data.len > 0:
     volatileClear(cast[ptr UncheckedArray[uint8]](
       unsafeAddr s.data[0]).toOpenArray(0, s.data.len - 1))
 
-proc `=copy`*(dst: var Secret, src: Secret) {.error:
+proc `=copy`*(dst: var Secret, src: Secret) {.role: helper, error:
   "Secret is move-only: call clone() so every duplication is explicit".}
 
 proc initSecret*(A: openArray[uint8]): Secret {.role: helper,

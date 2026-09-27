@@ -22,6 +22,7 @@
 ## one handler. If this passes, an application server is configuration
 ## rather than code.
 
+import runePragmas
 import std/[os, strutils, unittest]
 import geist/network
 
@@ -43,12 +44,12 @@ type
     served: int
     err: string
 
-proc freshRoot(name: string): string =
+proc freshRoot(name: string): string {.role: helper.} =
   result = getTempDir() / "geist_routed_sync" / name
   removeDir(result)
   createDir(result)
 
-proc runServer(a: ptr ServeArgs) =
+proc runServer(a: ptr ServeArgs) {.role: orchestrator.} =
   ## a: server configuration and the flags the test drives it with.
   ##
   ## A miniature application server: a `StoreRegistry` that serves one app
@@ -134,11 +135,12 @@ proc runServer(a: ptr ServeArgs) =
     a.failed = true
     a.ready = true
 
-proc serverThread(a: ptr ServeArgs) {.thread.} =
+proc serverThread(a: ptr ServeArgs) {.role: orchestrator, thread.} =
   {.cast(gcsafe).}:
     runServer(a)
 
-proc startServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) =
+proc startServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) {.
+    role: orchestrator.} =
   var
     spins: int = 0
   createThread(t, serverThread, a)
@@ -148,12 +150,13 @@ proc startServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) =
   check a.ready
   check not a.failed
 
-proc stopServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) =
+proc stopServer(a: ptr ServeArgs, t: var Thread[ptr ServeArgs]) {.
+    role: actor.} =
   a.stop = true
   joinThread(t)
 
 proc routedClient(port: uint16, identityFile,
-    peerPinFile: string): GeistClient =
+    peerPinFile: string): GeistClient {.role: configurator.} =
   ## port/identityFile/peerPinFile: a client that reaches the server by
   ## ADDRESS. The route is the `*` catch-all, so nothing in the test names
   ## an endpoint after this line.
@@ -171,7 +174,8 @@ proc routedClient(port: uint16, identityFile,
   check made.ok
   result = made.client
 
-proc localStore(root: string, titles: openArray[string]): Session =
+proc localStore(root: string, titles: openArray[string]): Session {.
+    role: dataWriter.} =
   ## root/titles: a client-side database with one row per title.
   result = openSessionWithSchema(root, "main", schemaFor[Note](), appConfig())
   for t in titles:

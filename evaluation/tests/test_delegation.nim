@@ -12,15 +12,18 @@
 ##
 ## Everything below is that one line, tested from both sides.
 
+import runePragmas
 import std/[os, unittest]
 
 import geist/network
 
-proc peerNamed(name: string, rights: set[PeerRight]): TrustedPeer =
+proc peerNamed(name: string, rights: set[PeerRight]): TrustedPeer {.
+    role: configurator.} =
   var key = geistIdentity(name)
   result = TrustedPeer(pin: geistPeerPin(key), rights: rights)
 
-proc serverWith(peers: openArray[TrustedPeer], port: int): GeistServer =
+proc serverWith(peers: openArray[TrustedPeer], port: int): GeistServer {.
+    role: configurator.} =
   var
     me = geistIdentity("upstream")
     at = parseDacAddress("dac://127.0.0.1:" & $port)

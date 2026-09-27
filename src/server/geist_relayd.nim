@@ -44,7 +44,8 @@ import runePragmas
 import ../geist/wire
 
 type
-  RelayConfig* {.role: configurator, tag: "config|entrypoint|server|stream|types".} = object
+  RelayConfig* {.
+      role: configurator, tag: "config|entrypoint|server|stream|types".} = object
     listen*: string
     subject*: string
     identity*: string
@@ -120,7 +121,7 @@ proc requestShutdown*() {.role: actor,
 when defined(posix):
   import std/posix
 
-  proc onSignal(sig: cint) {.noconv.} =
+  proc onSignal(sig: cint) {.role: actor, noconv.} =
     ## sig: SIGTERM or SIGINT; only used to leave the loop cleanly.
     requestShutdown()
 

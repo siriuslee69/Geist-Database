@@ -12,11 +12,13 @@
 ##   * a command that hangs is stopped rather than hanging the relay
 ##   * a database question gets a refusal that explains itself
 
+import runePragmas
 import std/[json, os, strutils, unittest]
 
 import geist/wire
 
-proc peer(name: string, rights: set[PeerRight]): PeerContext =
+proc peer(name: string, rights: set[PeerRight]): PeerContext {.
+    role: configurator.} =
   result = PeerContext(subject: name, address: "dac://127.0.0.1:1",
     rights: rights)
 
@@ -25,7 +27,7 @@ var
   watcher = peer("watcher", {prRead})
 
 proc put(D: var RelayDesk, stream, body: string,
-    who: PeerContext = phone): Reply =
+    who: PeerContext = phone): Reply {.role: actor.} =
   result = answerRelay(D, Query(op: qoPut, collection: stream,
     payload: asBytes(body)), who)
 

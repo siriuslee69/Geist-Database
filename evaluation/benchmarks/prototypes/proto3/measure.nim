@@ -1,3 +1,4 @@
+import runePragmas
 import std/[times, strutils]
 import ./row, ./mapper
 
@@ -36,8 +37,8 @@ type
 
 const N = 100_000
 
-proc heapOfRow(r: Row): int = sizeof(Row) + r.data.len + 16
-proc heapOfNodes(ns: seq[Node]): int =
+proc heapOfRow(r: Row): int {.role: math.} = sizeof(Row) + r.data.len + 16
+proc heapOfNodes(ns: seq[Node]): int {.role: math.} =
   result = 16 + ns.len * sizeof(Node)
   for n in ns:
     case n.kind

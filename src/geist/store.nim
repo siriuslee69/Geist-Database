@@ -103,8 +103,7 @@ proc addRow*[T: object](C: var ClusterBuild, x: T): uint32 {.
   ## Each column decides its own storage inside `toRowBytes`; the cluster
   ## only decides whether it must remember where the row ended.
   var
-    built: tuple[data: ByteSeq, truncated: uint32, externalised: uint32,
-      omitted: uint32, truncatedIn: seq[FieldName], err: string]
+    built: BuiltRow = default(BuiltRow)
     i: int = 0
   built = toRowBytes(x, C.schema, C.store)
   if built.err.len > 0:

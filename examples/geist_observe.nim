@@ -27,8 +27,7 @@ when isMainModule:
     writer: Session = default(Session)
     seen: tuple[ok: bool, f: GeistFile, path: string, err: string] =
       (false, default(GeistFile), "", "")
-    step: tuple[ok: bool, f: GeistFile, changed: seq[int], path: string,
-      err: string]
+    step: FollowStep = default(FollowStep)
     i: int = 0
 
   root = getTempDir() / "geist_observe_example"

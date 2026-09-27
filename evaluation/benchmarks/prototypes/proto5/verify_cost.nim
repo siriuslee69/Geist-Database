@@ -1,3 +1,4 @@
+import runePragmas
 import std/[math, strutils]
 
 const
@@ -5,7 +6,8 @@ const
   encCols   = 4
   rowBytes  = 100          ## ciphertext bytes per row per column
 
-proc mib(n: float): string = formatFloat(n / (1024*1024), ffDecimal, 2) & " MiB"
+proc mib(n: float): string {.
+    role: helper.} = formatFloat(n / (1024*1024), ffDecimal, 2) & " MiB"
 
 ## tuple layouts
 const
@@ -13,7 +15,7 @@ const
   epoch32      = 2 + 8 + 4  + 16      ## algo,keyRef,epoch32,tag    = 30
   epoch64      = 2 + 8 + 8  + 16      ## algo,keyRef,epoch64,tag    = 34
 
-proc ledger(tupleB, n: int): float =
+proc ledger(tupleB, n: int): float {.role: MetaRole.math.} =
   float(((rows + n - 1) div n) * encCols * tupleB)
 
 when isMainModule:

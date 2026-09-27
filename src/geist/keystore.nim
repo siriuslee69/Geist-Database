@@ -150,15 +150,17 @@ when defined(android):
   ## Kept behind `when defined(android)` so a desktop build compiles no
   ## JNI at all -- and so this file's shape is obvious to someone reading
   ## it on a desktop, which is where it will be read.
-  proc geistAndroidAvailable(): bool {.importc: "geist_android_ks_available",
-    cdecl.}
+  proc geistAndroidAvailable(): bool {.role: parser,
+    importc: "geist_android_ks_available", cdecl.}
   proc geistAndroidPut(name: cstring, data: ptr uint8,
-    len: cint): cint {.importc: "geist_android_ks_put", cdecl.}
+    len: cint): cint {.
+        role: dataWriter, importc: "geist_android_ks_put", cdecl.}
   proc geistAndroidGet(name: cstring, outBuf: ptr uint8,
-    cap: cint): cint {.importc: "geist_android_ks_get", cdecl.}
-  proc geistAndroidDrop(name: cstring): cint {.
+    cap: cint): cint {.
+        role: dataFetcher, importc: "geist_android_ks_get", cdecl.}
+  proc geistAndroidDrop(name: cstring): cint {.role: dataWriter, 
     importc: "geist_android_ks_drop", cdecl.}
-  proc geistAndroidStatus(name: cstring): cint {.
+  proc geistAndroidStatus(name: cstring): cint {.role: parser, 
     importc: "geist_android_ks_status", cdecl.}
 
 proc androidUsable*(): bool {.role: parser,
