@@ -1,11 +1,11 @@
 ## ---------------------------------------------------------------------
-## Settings <- config.toml for the library, userconfig.toml for a client
+## Settings <- configs/default.toml for the library, userconfig.toml for a client
 ## ---------------------------------------------------------------------
 ##
-##   config.toml      what the LIBRARY defaults to     -> geistDefaults()
-##   userconfig.toml  what THIS installation does      -> loadUserConfig()
+##   configs/default.toml  what the LIBRARY defaults to  -> geistDefaults()
+##   userconfig.toml       what THIS installation does  -> loadUserConfig()
 ##
-## Two files because they answer to different people. `config.toml` ships
+## Two files because they answer to different people. `configs/default.toml` ships
 ## with the project and sets the defaults every embedding application
 ## inherits: which preset, how large a value has to be before it moves to
 ## the sidecar, how many backup copies to keep. `userconfig.toml` belongs
@@ -80,7 +80,7 @@ type
 
 proc builtinDefaults*(): GeistDefaults {.role: configurator,
     tag: "config".} =
-  ## What the library does with no config.toml at all. These are the same
+  ## What the library does with no configs/default.toml at all. These are the same
   ## values the presets carry, restated here so a reader can see them
   ## without reading config.nim.
   result.preset = "app"
@@ -92,18 +92,20 @@ proc builtinDefaults*(): GeistDefaults {.role: configurator,
 proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     defaults: GeistDefaults, err: string] {.role: configurator,
     tag: "config|parsing|read".} =
-  ## path: `config.toml`, relative to the working directory unless given.
+  ## path: `configs/default.toml`, relative to the working directory
+  ## unless given. Only its `[runtime]` table is read, with the build
+  ## preset's file laid over it (see `runtimeOf`).
   ##
-  ##   [storage]
+  ##   [runtime.storage]
   ##   preset = "secure-app"
   ##   sidecarThreshold = 1024
   ##   rowIdentity = true
   ##
-  ##   [backup]
+  ##   [runtime.backup]
   ##   copies = 3
   ##   everySeconds = 3600
   ##
-  ## `[transport]` is read by `transport_settings.nim` instead, out of the
+  ## `[runtime.transport]` is read by `transport_settings.nim` instead, out of the
   ## same file. That section names algorithm tiers, and a storage-only
   ## build has no algorithms to name -- keeping it here is what used to
   ## drag the whole AME stack into a program that only writes rows.
@@ -113,17 +115,17 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     backup: JsonNode
     complaint: string = ""
   result.defaults = builtinDefaults()
-  doc = tomlOf(path)
+  doc = runtimeOf(path)
   if not doc.ok:
     return (false, result.defaults, doc.err)
   storage = doc.node.section("storage")
   backup = doc.node.section("backup")
   complaint = checkKeys(storage,
     ["preset", "sidecarThreshold", "rowIdentity", "transpose",
-     "transposeEverySeconds"], "[storage]")
+     "transposeEverySeconds"], "[runtime.storage]")
   if complaint.len > 0:
     return (false, result.defaults, complaint)
-  complaint = checkKeys(backup, ["copies", "everySeconds"], "[backup]")
+  complaint = checkKeys(backup, ["copies", "everySeconds"], "[runtime.backup]")
   if complaint.len > 0:
     return (false, result.defaults, complaint)
   result.defaults.preset = storage.setting("preset", result.defaults.preset)
@@ -159,9 +161,9 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
 proc applyDefaults*(c: GeistConfig, d: GeistDefaults): GeistConfig {.
     role: configurator, tag: "appApi|config".} =
   ## c: a configuration, usually straight from a preset.
-  ## d: the library defaults read from config.toml.
+  ## d: the library defaults read from configs/default.toml.
   ##
-  ## Only the settings config.toml actually names are applied. Everything
+  ## Only the settings configs/default.toml actually names are applied. Everything
   ## else the preset chose stays chosen -- a defaults file is a nudge, not
   ## a replacement for the preset a caller asked for by name.
   result = c
@@ -196,7 +198,7 @@ proc applyDefaults*(c: GeistConfig, d: GeistDefaults): GeistConfig {.
 ## ------------------------ the library's own copy --------------------
 ##
 ## One process-wide set of defaults, so an application that reads
-## config.toml at startup does not have to thread the result through every
+## configs/default.toml at startup does not have to thread the result through every
 ## call. Set it ONCE, before opening anything: it is read on every
 ## `defaultGeistConfig`, and moving it underneath a running program would
 ## make two databases opened the same way behave differently.
@@ -212,14 +214,14 @@ proc useGeistDefaults*(d: GeistDefaults) {.role: actor,
 
 proc geistDefaults*(): GeistDefaults {.role: parser,
     tag: "config|read".} =
-  ## The defaults in force, built-in unless a config.toml replaced them.
+  ## The defaults in force, built-in unless a configs/default.toml replaced them.
   {.gcsafe.}:
     result = activeDefaults
 
 proc initGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     err: string] {.role: configurator,
     tag: "config|lifecycle|read".} =
-  ## path: config.toml, read and adopted in one step. A missing file is
+  ## path: configs/default.toml, read and adopted in one step. A missing file is
   ## success -- the built-in defaults ARE the answer in that case.
   var
     got: tuple[ok: bool, defaults: GeistDefaults, err: string]
@@ -231,7 +233,7 @@ proc initGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
 
 proc defaultGeistConfig*(): GeistConfig {.role: configurator,
     tag: "appApi|config".} =
-  ## The preset config.toml names, with the settings it names applied. This
+  ## The preset configs/default.toml names, with the settings it names applied. This
   ## is what a caller who has no opinion should open with.
   result = applyDefaults(geistConfigPreset(geistDefaults().preset),
     geistDefaults())

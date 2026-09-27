@@ -1,17 +1,75 @@
-# ---------------------------------------------------------------------
-# Geist library defaults
-# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# default <- the ONE config file: who Geist is, how it is built, and the
+# values the library starts with. Applied to every build.
+# ---------------------------------------------------------------------------
 #
-# These are what an embedding application inherits when it does not say
-# otherwise. Everything here has a built-in default, so deleting this file
-# changes nothing -- it exists to be edited, not to be required.
+#   nim c app.nim                    this file
+#   nim c -d:preset=server app.nim   this file, then configs/server.toml over it
+#   nimble buildCli -d:preset=iot    the same (shared tasks pass it on)
+#   nim c -d:preset=iot -d:x=1 ...   the command line wins over both files
+#
+# Who reads what:
+#
+#   section              read by                                becomes
+#   -------------------  -------------------------------------  ---------------
+#   [project]            geist_database.nimble, nix/default.nix name, version
+#   [nim]                config.nims (Nimble-Tasks/preset.nims) --key:value
+#   [define]             config.nims                            -d:key=value
+#   [passC] / [passL]    config.nims                            --passC/--passL
+#   [runtime.storage]    src/geist/settings.nim                 GeistDefaults
+#   [runtime.backup]     src/geist/settings.nim                 GeistDefaults
+#   [runtime.transport]  src/geist/transport_settings.nim       TransportDefaults
+#
+# "" or false in [define] means "not set" (the built-in default).
+#
+# Two different things are called a PRESET here. Do not mix them up:
+#
+#   build preset    -d:preset=iot     a file in configs/, how the program
+#                                     is COMPILED and what it starts with
+#   storage preset  preset = "app"    a shape of database, below in
+#                                     [runtime.storage]; docs/workloads.md
+#
+# The [runtime] tables are read when the program RUNS, from
+# configs/default.toml in the working directory, with the build preset's
+# file laid over it. A missing file means "built-in defaults": every value
+# below is also compiled in, so deleting this file changes nothing. It
+# exists to be edited, not to be required.
 #
 # Anything that varies per DATABASE belongs in the GeistConfig a caller
 # passes to openGeist, not here. What is below is the shape of the
 # library, not of one store.
 
-[storage]
-# Which preset openGeist uses when a caller names none.
+[project]
+# Only in default.toml: a preset changes how a build is made, not which
+# project it is.
+name = "geist_database"
+version = "2.0.0"
+description = "Geist: a packed-row, cluster-addressed encrypted database"
+license = "UNLICENSED"
+author = "siriuslee69"
+
+[preset]
+name = "default"
+description = "Desktop and server: ORC, threads, libsodium where it exists."
+
+[nim]
+# Every Geist program and test is built this way. A binary built with a
+# different memory model is a binary the test suite never covered.
+mm = "orc"
+threads = true
+
+[define]
+hasLibsodium = true      # Tyr may call the system libsodium; configs/android.toml
+                         # turns it off, because Android has none to call
+
+[passC]
+flags = []
+
+[passL]
+flags = []
+
+[runtime.storage]
+# Which storage preset openGeist uses when a caller names none.
 #
 # Nine named after the SHAPE of the data -- pick one of these if you know
 # your access pattern:
@@ -60,7 +118,7 @@ transpose = "none"
 # the search copy roughly fresh without rewriting it on every write.
 transposeEverySeconds = 300
 
-[backup]
+[runtime.backup]
 # How many rotation slots to keep beside the live artifacts (.b1 .b2 ...).
 copies = 2
 
@@ -68,10 +126,10 @@ copies = 2
 # preset's own policy.
 everySeconds = 0
 
-[transport]
+[runtime.transport]
 # Read by the NETWORK half of the library only (geist/network). A program
 # that imports plain `geist` to write rows to disk never looks at this
-# section, and does not compile the code that would understand it.
+# table, and does not compile the code that would understand it.
 #
 # Which tier a session starts at, and how much traffic makes it climb.
 # Climbing rekeys upward into a wider algorithm set as a conversation gets

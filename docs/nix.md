@@ -11,21 +11,24 @@ Four things live under `nix/`:
 
 ## The package
 
-`default.nix` builds four binaries with the same flags the nimble tasks
-use (`-d:release --mm:orc --threads:on`), because a package built under a
-different memory model from the one the test suite runs under is a package
-nothing has actually tested:
+`default.nix` builds five binaries. It passes no memory-model or thread
+flags of its own: `config.nims` applies `configs/default.toml` to every
+`nim` call, the same way it does for the nimble tasks, because a package
+built under a different memory model from the one the test suite runs
+under is a package nothing has actually tested. Its name, version and
+description come from `[project]` in that same file:
 
 - `geistd` from `src/server/geistd.nim`
 - `geist` from `src/clients/geist_cli.nim`
 - `geist-relayd` from `src/server/geist_relayd.nim`
 - `geist-relay` from `src/clients/geist_relay.nim`
+- `geist-routed` from `src/server/geist_routed.nim`
 
 The relay pair is the same transport with a pipe where the store would be,
 and it is its own module because a machine that only moves messages has no
 database options to answer for. See [relay.md](relay.md).
 
-All four are wrapped with `LIBSODIUM_LIB_DIRS` and the library path for
+All five are wrapped with `LIBSODIUM_LIB_DIRS` and the library path for
 libsodium, and nothing else — Geist has no TPM or libsecret backend.
 
 Every direct dependency defaults to `../submodules/<name>`, the checkout

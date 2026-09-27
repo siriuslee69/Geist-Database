@@ -1,5 +1,73 @@
 # Geist
 
+## Installation
+
+### ❄ NixOS — the programs (`geist`, `geistd`, `geist-relay`, `geist-relayd`, `geist-routed`)
+
+```sh
+git clone https://github.com/siriuslee69/Geist-Database.git
+cd Geist-Database
+git submodule update --init           # one level, NOT --recursive
+nix-build nix/default.nix             # -> ./result/bin/geist, geistd, ...
+```
+
+As a service, import `nix/module.nix` (`services.geistd`) or
+`nix/relay-module.nix` (`services.geist-relay`); every option is in
+[docs/nix.md](docs/nix.md).
+
+### ❄ NixOS — as a library in your own Nim program
+
+```sh
+git submodule add https://github.com/siriuslee69/Geist-Database.git submodules/Geist-Database
+git submodule update --init submodules/Geist-Database
+git -C submodules/Geist-Database submodule update --init
+nix-shell -p nim libsodium            # or the devShell in flake.nix
+```
+
+Then put `submodules/Geist-Database/src` and its own `submodules/*/src`
+on your path (Geist's `config.nims` shows the list) and `import geist`.
+
+### 🪟 Windows 11 — both
+
+```powershell
+winget install Git.Git nim.nim       # Nim ships its own MinGW compiler
+git clone https://github.com/siriuslee69/Geist-Database.git
+cd Geist-Database
+git submodule update --init
+nimble buildAll                      # -> build\geist_database_cli.exe, ...
+```
+
+Geist loads `libsodium.dll` when it starts. Download the MinGW build from
+https://download.libsodium.org/libsodium/releases/ and put
+`libsodium.dll` beside the `.exe` files or on `PATH`.
+
+### ✅ Check it works
+
+```sh
+nimble test                          # every suite; a few minutes
+nimble demoCli                       # a scratch database through the CLI
+```
+
+Start the daemon on one machine and read it from another:
+[2.1 Two desktops, from nothing](#21-two-desktops-from-nothing).
+
+### ⚙ Where settings live
+
+```text
+  file                        who it is for        change freely?
+  --------------------------  -------------------  ------------------------------
+  configs/default.toml        the project           [runtime.*] yes; leave
+                                                    [project] [nim] [define] alone
+  configs/<preset>.toml       one kind of machine   yes; holds only the difference
+  userconfig.toml             this machine          yes; paths, pins, listen address
+  (template: userconfig.toml.template;
+   also looked for in ~/.config/geist/)
+```
+
+[1.11 Configuring](#111-configuring) has every key.
+
+---
+
 Stores your Nim objects on disk as packed rows. Can seal them. Can let
 another machine follow the same store — or write into it — without owning
 the files.
@@ -243,11 +311,11 @@ The reopen is the part worth keeping in the example: it is what shows the
 row survived the process, under the id `put` handed back.
 
 ```text
-nimble exampleQuickstart
+nim c -r examples/geist_quickstart.nim     # or: nimble runExamples, for all five
 ```
 
-The other four: `exampleEncrypted`, `exampleObserve`, `exampleFastSearch`,
-and `exampleBuffers` -- that last one is two Geist instances passing rows
+The other four sit beside it in `examples/`: `geist_encrypted`,
+`geist_observe`, `geist_fast_search` and `geist_buffers` -- that last one is two Geist instances passing rows
 to each other with no database on either side ([2.0](#20-a-link-does-not-need-a-database)).
 
 ### From the shell
@@ -727,7 +795,7 @@ Why it is shaped this way, with the measurements that decided it:
 ## 1.7 What it costs
 
 ```text
-nimble bench
+nimble runBenchmarks
 ```
 
 Message-shaped schema, five columns, ~120-byte body, not sealed, one
@@ -944,7 +1012,7 @@ $ grep -r --binary-files=text "hello" data/notes     # finds nothing
 ```
 
 ```text
-nimble exampleEncrypted
+nim c -r examples/geist_encrypted.nim
 ```
 
 The unit that gets sealed is a **batch**: a row range crossed with a
@@ -1017,7 +1085,7 @@ echo step.changed        # cluster numbers that differ
 ```
 
 ```text
-nimble exampleObserve
+nim c -r examples/geist_observe.nim
 ```
 
 ```text
@@ -1127,13 +1195,14 @@ can change what lands on disk:
   |                       write mode, backup policy                |
   |                       scope: ONE database                      |
   |                                                                |
-  |  2  library defaults  config.toml [storage] [backup]           |
+  |  2  library defaults  configs/default.toml [runtime.storage]   |
+  |                       and [runtime.backup]                     |
   |                       a few nudges over the preset             |
   |                       scope: every database in the project     |
   +----------------------------------------------------------------+
 
   +-- LINK (part 2 and 3) -----------------------------------------+
-  |  3  link policy       config.toml [transport]                  |
+  |  3  link policy       configs/default.toml [runtime.transport] |
   |                       where a link starts, when it climbs      |
   |                       scope: every peer session                |
   |                       does NOT choose algorithms — those are   |
@@ -1158,9 +1227,11 @@ can change what lands on disk:
   geist-relayd            3 + [relay]; never compiles the reader for [storage]
 ```
 
-`config.toml` is one file with two readers. `[storage]`/`[backup]` never
-reach the wire half, `[transport]` never reaches the disk half, and
-neither parses the other's keys.
+`configs/default.toml` is one file with three kinds of reader. Its build
+tables (`[project]`, `[nim]`, `[define]`, `[passC]`, `[passL]`) are read by
+the compiler through `config.nims`. Of its `[runtime]` tables,
+`storage`/`backup` never reach the wire half, `transport` never reaches
+the disk half, and neither parses the other's keys.
 
 ### How shape layers stack
 
@@ -1174,7 +1245,8 @@ override:
         v
   named preset  (app / secure / iot / ...)
         |
-        |  only keys ACTUALLY written in config.toml
+        |  only keys ACTUALLY written in configs/default.toml [runtime],
+        |  then in the build preset's file (configs/<preset>.toml)
         v
   fields you set on GeistConfig in code
         |
@@ -1192,29 +1264,61 @@ The machine layers stack more simply, and separately: a CLI flag always
 beats `userconfig.toml`. An unknown key in either file is an **error** —
 a typo must not look like success.
 
-### `config.toml` — the project file
+### `configs/default.toml` — the project file
 
-Not required; a missing file means the built-ins. This is the whole
+Not required; a missing file means the built-ins. It is read from the
+working directory when the program starts. This is the whole `[runtime]`
 surface:
 
 ```text
-  section       key                 default      meaning
-  -----------   ------------------  -----------  -------
-  [storage]     preset              "app"        starting preset name
-  [storage]     sidecarThreshold    1024         bytes before a value moves out
-  [storage]     rowIdentity         (unset)      force id on/off; unset keeps the preset
-  [storage]     transpose           "none"       column copy: none / onSave / interval / manual
-  [storage]     transposeEverySeconds  0         rebuild window for "interval", in seconds
-  [backup]      copies              2            rotation slots .b1 .b2 .b3
-  [backup]      everySeconds        0            also rotate on a timer
-  [transport]   startTier           "standard"   strength a link opens at
-  [transport]   secretAtMiB         64           climb to secret after this many MiB
-  [transport]   archiveAtMiB        1024         climb to archive after this many MiB
-  [transport]   requireCookie       true         challenge a first hello before doing key work
+  section               key                 default      meaning
+  -------------------   ------------------  -----------  -------
+  [runtime.storage]     preset              "app"        starting preset name
+  [runtime.storage]     sidecarThreshold    1024         bytes before a value moves out
+  [runtime.storage]     rowIdentity         (unset)      force id on/off; unset keeps the preset
+  [runtime.storage]     transpose           "none"       column copy: none / onSave / interval / manual
+  [runtime.storage]     transposeEverySeconds  0         rebuild window for "interval", in seconds
+  [runtime.backup]      copies              2            rotation slots .b1 .b2 .b3
+  [runtime.backup]      everySeconds        0            also rotate on a timer
+  [runtime.transport]   startTier           "standard"   strength a link opens at
+  [runtime.transport]   secretAtMiB         64           climb to secret after this many MiB
+  [runtime.transport]   archiveAtMiB        1024         climb to archive after this many MiB
+  [runtime.transport]   requireCookie       true         challenge a first hello before doing key work
 ```
 
 You may change *when* a link climbs. You may not change *what algorithms*
 a strength uses — see [2.5](#25-strength-levels).
+
+### `configs/<preset>.toml` — build presets
+
+Def. 1: a **build preset** is a file in `configs/` that holds only what
+differs from `default.toml`. It changes how a program is compiled and what
+its `[runtime]` starts with. It is not a storage preset (`app`, `iot`, ...):
+a storage preset is a shape of database; a build preset is a shape of
+*program*.
+
+```text
+  nim c -d:preset=server src/server/geistd.nim
+  nimble buildServer -d:preset=server        # the shared tasks pass it on
+
+  configs/default.toml  -->  configs/server.toml  -->  command line
+  (every switch)             (what server changes)     (wins over both)
+```
+
+```text
+  file          compiled with          starts with
+  ------------  ---------------------  ------------------------------------
+  default.toml  --mm:orc --threads:on  storage preset app, tier standard
+                -d:hasLibsodium
+  server.toml   + --opt:speed          tier secret, 3 backups, hourly
+  iot.toml      + --opt:size, gc-      storage preset iot, no row ids,
+                sections               1 backup, tier telemetry
+  android.toml  no -d:hasLibsodium     (same as default)
+```
+
+A program built with `-d:preset=server` reads `configs/default.toml` and
+then `configs/server.toml` from its working directory when it starts, so
+the file on disk can still be edited after the build.
 
 ### `userconfig.toml` — this machine
 
@@ -1318,7 +1422,7 @@ three things and nothing else:
 ```
 
 Neither side needs a store, a path, or a shared schema at compile time —
-the schema travels on the wire. `nimble exampleBuffers` runs it:
+the schema travels on the wire. `nim c -r examples/geist_buffers.nim` runs it:
 
 ```text
 identities: sender=sender  receiver=receiver  (in memory, no files)
@@ -1628,8 +1732,8 @@ not send it again.
 Set where a link starts and when it climbs; you cannot set what it uses.
 
 ```text
-$ cat config.toml
-[transport]
+$ cat configs/default.toml     # the part that matters here
+[runtime.transport]
 startTier = "standard"
 secretAtMiB = 64
 ```
@@ -1878,7 +1982,7 @@ message.
   writer  |  readers                  .geist-lock + in-process      open read-only anytime
   geistd  |  geist-relayd             durable rows                  RAM pipe only
   preset  |  userconfig               on-disk shape                 paths / pins / listen
-  config.toml [storage] | [transport] part 1 reader                 part 2/3 reader
+  [runtime.storage] | [...transport] part 1 reader                 part 2/3 reader
   id      |  @position                every machine, forever        one terminal, one list
 ```
 
@@ -1903,7 +2007,8 @@ duplication until you know it is not:
 ```text
   Query / Reply      one wire shape; answer.nim gives it a store meaning,
                      relay.nim gives it a pipe meaning
-  config.toml        one file, two readers, neither parsing the other's keys
+  configs/default.toml  one file, two runtime readers, neither parsing the
+                     other's keys (and the compiler reads its build tables)
   PeerRight / peer   defined once in types.nim — every handler is told who is
     context          asking, and not every handler owns a socket
   row apply          one rule for local put and remote put
@@ -1977,27 +2082,74 @@ quiet import.
   evaluation/tests/   evaluation/benchmarks/   examples/   nix/
 ```
 
-## Tasks
+Around `src/`, the repository root:
 
 ```text
-nimble test               all suites
-nimble testCore           mapper + format
-nimble testCrypto         seal + keys + backup
-nimble testApi            session + masks + transport
-nimble testDurability     generation swap + lease + restore
-nimble testExchange       live sockets
-nimble testApiSurface     collection + seek + hash agility
-nimble examples           all four examples
-nimble buildBins          four binaries into build/bin
-nimble demoCli            scratch store through the CLI
-nimble buildAll           compile every public module
-nimble checkModular       part 1 with the network stack absent
-nimble checkRelay         part 3 with no database in the C output
-nimble bench              every benchmark group
-nimble checkRouter        the router with no store in the C output
-nimble stats              measure the tree, record evaluation/statistics/
-nimble autopush           commit + push from agents/PROGRESS.md
+  agents/PROGRESS.md     where the work stands; the next commit message
+  configs/               default.toml (the ONE settings file) + build presets
+  docs/                  one file per subject; README links into them
+  evaluation/tests/      unit, edge-case, integration, smoke tests
+  evaluation/benchmarks/ bench_geist.nim, the Otter timing harness
+  evaluation/statistics/ the last recorded Otter measurement
+  examples/              runnable, run by `nimble runExamples`
+  android/               the Android keystore companion (Kotlin + JNI)
+  nix/                   package, NixOS modules, VM tests
+  submodules/            every dependency, pinned (one level, not recursive)
+  config.nims            the path and the flags every `nim` call gets
 ```
+
+`src/geist/` is the package folder rather than the `src/protocols/` the
+workspace template names. Bifrost's `src/` is on Geist's path and already
+has a `protocols/` folder, so two of them would make `import protocols/...`
+ambiguous. `import geist/network` also reads better in a program that
+embeds Geist than `import protocols/network` would.
+
+## Tasks
+
+Generic tasks come from the shared `Nimble-Tasks` submodule; the rest are
+Geist's own. `nimble tasks` lists everything, `nimble sharedTasks` the
+shared half.
+
+```text
+  from Nimble-Tasks (same name in every repo)
+  -------------------------------------------------------------------------
+  nimble test               every evaluation/tests/**/test*.nim
+  nimble runExamples        every example
+  nimble runBenchmarks      every benchmark group
+  nimble runCli             debug build of `geist`, then run it
+  nimble buildCli           build/geist_database_cli          (= geist)
+  nimble runServer          debug build of `geistd`, then run it
+  nimble buildServer        build/geist_database_server       (= geistd)
+  nimble updateSubmodules   every pin -> newest main (nimsimd stays frozen)
+  nimble autopush           commit + push from agents/PROGRESS.md
+  nimble evaluate           Otter's whole-repo check, now
+  nimble clean              delete build/ and nimcache/
+
+  Geist's own
+  -------------------------------------------------------------------------
+  nimble buildAll           all five programs into build/
+  nimble buildCliRelay      build/geist_database_cli_relay    (= geist-relay)
+  nimble buildServerRelayd  build/geist_database_server_relayd (= geist-relayd)
+  nimble buildServerRouted  build/geist_database_server_routed (= geist-routed)
+  nimble checkAll           compile every public module
+  nimble checkModular       part 1 with the network stack absent
+  nimble checkRelay         part 3 with no database in the C output
+  nimble checkRouter        the router with no store in the C output
+  nimble testCore           mapper + format
+  nimble testCrypto         seal + keys + backup
+  nimble testApi            session + masks + transport
+  nimble testDurability     generation swap + lease + restore
+  nimble testExchange       live sockets
+  nimble testApiSurface     collection + seek + hash agility
+  nimble benchCrypto        one benchmark group (also benchIo, benchColumns,
+                            benchRefs)
+  nimble demoCli            scratch store through the CLI
+  nimble runStatistics      measure the tree, record evaluation/statistics/
+  nimble androidLib         the Android keystore companion (androidTest runs
+                            its tests on a device)
+```
+
+Every build task takes a build preset: `nimble buildServer -d:preset=server`.
 
 Real-guest checks (need KVM):
 
@@ -2094,7 +2246,7 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   --exec hangs until timeout on large stdout           answer with a path; keep stdout small
   --to stdout mixed with daemon chatter                status goes to stderr; check for a 2>&1
   need the old implementation                          .geist-legacy/ (gitignored), commit 047a776
-  Otter reports ~1300 routines and 121 secrets          it walked .geist-legacy/ too. `nimble stats`
+  Otter reports ~1300 routines and 121 secrets          it walked .geist-legacy/ too. `nimble runStatistics`
                                                        measures the TRACKED tree; the real numbers
                                                        are in evaluation/statistics/
   Otter says a proc is "never called"                   its call graph misses implicit calls; an
@@ -2106,6 +2258,16 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   a flood of helloes does no key work                   working as intended: requireCookie = true
                                                        makes a first hello cost one small reply.
                                                        Only turn it off on an unreachable socket
+  an old config.toml is silently ignored               it moved: configs/default.toml, and every
+                                                       table gained a runtime. prefix --
+                                                       [storage] is now [runtime.storage]
+  "Nimble-Tasks not found" / every task missing        git submodule update --init (ONE level);
+                                                       the .nimble file includes its tasks
+  build/geist_database_cli instead of build/bin/geist  the shared build tasks name programs
+                                                       <package>_<frontend>; nix still installs
+                                                       them as geist, geistd, ...
+  cannot import nimsimd on a fresh machine             submodules/nimsimd is not checked out; it
+                                                       is pinned at 1.3.2 and never auto-bumped
 ```
 
 ## Maintainer conventions
@@ -2122,6 +2284,15 @@ a copy here -- a copy drifts. The parts you hit first:
   declarations      var / const in indented blocks; avoid let
   nesting           no nested loops or nested ifs — extract a helper
   pragmas           {.role: ..., tag: "a|b".} on procs, from runePragmas
+  promises          needs / gives / keeps (var_invariants) where a sentence
+                    about a routine would otherwise rot in a comment
+  unfinished code   a placeholder routine is named ph_<name>
+  settings          one file, configs/default.toml; presets hold only the
+                    difference; never repeat a value in .nimble or nix
+  tasks             generic ones come from Nimble-Tasks; write only what
+                    it cannot cover
+  evaluation        tests in evaluation/tests with a # {.testKind: ...}
+                    line; benchmarks and statistics beside them
   parameter names   A arrays, S mutated state, i/j/k index, l/m/n length,
                     t temporary; first letter of the thing otherwise
   docs on params    ## lines under the declaration

@@ -1,26 +1,88 @@
 # Progress
 
-Commit Message: Move onto Bifrost's private handshake, and put the tree where the conventions say
+Commit Message: One settings file in configs/, shared tasks from Nimble-Tasks, every dependency pinned
 
 Features (Planned):
-- Declare a `testKind` on the 507 evaluation routines. Otter reports 0 of
-  507 declared, so every kind is currently guessed from the wording.
-- Flatten the 119 triple-nested and 16 deeper sites Otter lists.
-- Put a `role` pragma on the 105 routines that declare none.
-- Split the six oversized files, `src/clients/geist_cli.nim` (1105 lines)
+- Declare a `testKind` on every evaluation routine. Otter reported 0 of
+  507 declared before this round; see the dated entry below for now.
+- Flatten the triple-nested and deeper sites Otter lists.
+- Put a `role` pragma on the routines that declare none.
+- Split the oversized files, `src/clients/geist_cli.nim` (1105 lines)
   first.
-- Remove the 37 unused public symbols and the 65 dead configurator fields.
+- Remove the unused public symbols and the dead configurator fields.
+- Carrier pairing (Bifrost 95a3ef2, local branch `carrier-pairing`) for
+  geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
-- Bifrost's rewritten API, consumed end to end. See below.
+- Bifrost 29915b7 and the newest main of every dependency (2026-09-27).
+- `configs/default.toml` is the one settings file: [project] for the
+  .nimble file and nix, [nim]/[define] for every `nim` call through
+  config.nims, [runtime.*] for the library at run time. Build presets
+  `server`, `iot`, `android` hold only what differs (2026-09-27).
+- Generic tasks from the Nimble-Tasks submodule; Geist keeps only its own
+  (2026-09-27).
+- `nimsimd` pinned as a submodule; a build with `--noNimblePath` works.
+- `Var-Invariants` on the path for needs/gives/keeps.
 - `evaluation/tests`, `evaluation/benchmarks`, `evaluation/statistics`
-  layout; `agents/PROGRESS.md`; `.iron/` gone.
-- `Rune-Pragmas` pinned as a submodule, so `runePragmas` resolves in a
-  fresh clone rather than from a sibling folder on one machine.
+  layout; `agents/PROGRESS.md`; `.iron/` gone from the tree.
+- `Rune-Pragmas` pinned as a submodule.
 - A CI workflow whose every step names a task that exists.
 
 Features (In Progress):
-- None.
+- Production-readiness pass over Otter's findings (see below).
+
+Notes:
+- Last problem encountered: see the newest dated entry.
+
+## 2026-09-27 One Settings File, Shared Tasks, Every Dependency Pinned
+
+What changed, and where it now lives:
+
+```text
+  before                                  now
+  --------------------------------------  -------------------------------------
+  config.toml [storage] [backup]          configs/default.toml [runtime.storage]
+              [transport]                   [runtime.backup] [runtime.transport]
+  version / license in the .nimble file   configs/default.toml [project]
+  --mm:orc --threads:on in every task     configs/default.toml [nim]
+  -d:hasLibsodium in config.nims          configs/default.toml [define]
+  29 own tasks, incl. autopush/switch     Nimble-Tasks + 22 Geist-only tasks
+  buildBins / buildAll (compile check)    buildAll / checkAll
+  bench, stats, examples, example*        runBenchmarks, runStatistics,
+                                          runExamples (shared)
+  nimsimd from ~/.nimble                  submodules/nimsimd, frozen at 1.3.2
+  Bifrost 95a3ef2 (never pushed)          29915b7 (GitHub main)
+```
+
+Build presets, each holding only its difference: `server` (opt speed,
+tier secret, hourly backups), `iot` (opt size, iot storage preset, no row
+ids), `android` (no libsodium). The library reads `[runtime]` of
+`configs/default.toml` at start-up and then the named preset's file, by
+FILE NAME in its working directory -- never a path from the build machine.
+
+`src/geist/` stays where it is rather than moving to `src/protocols/`:
+Bifrost's `src/` is on Geist's path and has its own `protocols/` folder,
+so two would make `import protocols/...` ambiguous.
+
+Verification:
+- `nimble test`: 522 checks across 33 files, zero failures (518 before,
+  plus 4 for the preset layering).
+- `nimble checkAll`, `checkModular`, `checkRelay`, `checkRouter`,
+  `runExamples`, `buildAll` (all five programs), `demoCli`: clean.
+- `nim c --noNimblePath src/clients/geist_cli.nim` builds: nothing comes
+  from `~/.nimble` any more.
+
+Last big change or problem encountered:
+- Bifrost's `acceptAmeHandshake` no longer takes the authentication; it
+  opens the finish with the one `answerAmeHandshake` stored. Geist answers
+  with the FIRST pin as a stand-in (the hello names nobody) and tries every
+  pin at the finish.
+- Fix: each attempt's copy of the server state is given the pin under test
+  in its `authentication` field. Worked: the live-socket suite, which runs
+  real handshakes between daemons holding several pins, passes.
+- The old test "the shipped config.toml parses" passed VACUOUSLY once the
+  file moved -- a missing file is also "ok". It now points at
+  configs/default.toml and checks the file was actually read.
 
 ## 2026-09-11 Bifrost's Private Handshake
 

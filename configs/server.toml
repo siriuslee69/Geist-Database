@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# server <- geistd / geist-relayd on a machine that answers peers all day
+# ---------------------------------------------------------------------------
+#
+#   nimble buildServer -d:preset=server
+#
+# Only what differs from default.toml goes here.
+
+[preset]
+name = "server"
+description = "Release speed, and a start tier one step above a desktop's."
+
+[nim]
+opt = "speed"
+
+[runtime.transport]
+# A server holds many sessions for a long time, so each one starts where a
+# desktop would only climb to after 64 MiB.
+startTier = "secret"
+
+[runtime.backup]
+# One rotation an hour on top of the storage preset's own policy.
+copies = 3
+everySeconds = 3600

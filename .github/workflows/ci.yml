@@ -17,12 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true   # one level: the pins below are all Geist needs
       - uses: jiro4989/setup-nim-action@v2
         with:
           nim-version: "2.2.6"
-      - name: Build every public module
-        run: nimble buildAll
+      - name: Compile-check every public module
+        run: nimble checkAll
       - name: Prove the storage half needs no network stack
         run: nimble checkModular
       - name: Prove the wire half needs no database
@@ -38,15 +38,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true   # one level: the pins below are all Geist needs
       - uses: cachix/install-nix-action@v27
       - name: Build Nix package
         run: nix-build nix/default.nix
       - name: Repo gates in Nix shell
         run: |
-          nix-shell -p nim libsodium --run "nimble buildAll"
+          nix-shell -p nim libsodium --run "nimble checkAll"
           nix-shell -p nim libsodium --run "nimble checkModular"
           nix-shell -p nim libsodium --run "nimble checkRelay"
           nix-shell -p nim libsodium --run "nimble checkRouter"
           nix-shell -p nim libsodium --run "nimble test"
-          nix-shell -p nim libsodium --run "nimble examples"
+          nix-shell -p nim libsodium --run "nimble runExamples"
+          nix-shell -p nim libsodium --run "nimble buildAll"

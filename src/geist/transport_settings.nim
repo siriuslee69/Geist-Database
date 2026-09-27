@@ -1,8 +1,8 @@
 ## ---------------------------------------------------------------------
-## Transport settings <- the [transport] section of config.toml
+## Transport settings <- [runtime.transport] of configs/default.toml
 ## ---------------------------------------------------------------------
 ##
-##   [transport]
+##   [runtime.transport]
 ##   startTier    = "standard"
 ##   secretAtMiB  = 64
 ##   archiveAtMiB = 512
@@ -13,7 +13,7 @@
 ## writes rows to disk should not compile a post-quantum KEM to find out
 ## how many backup copies to keep.
 ##
-## Same FILE, different section. An operator still writes one config.toml;
+## Same FILE, different section. An operator still writes one configs/default.toml;
 ## it is only the reader that is in two halves.
 ##
 ## WHAT IS CONFIGURABLE IS WHEN A SESSION CLIMBS, NOT WHAT IT CLIMBS INTO.
@@ -49,7 +49,7 @@ type
 
 proc builtinTransportDefaults*(): TransportDefaults {.role: configurator,
     tag: "ame|config".} =
-  ## What the library does with no config.toml at all: exactly the policy
+  ## What the library does with no configs/default.toml at all: exactly the policy
   ## `masks.nim` ships, restated so a reader can see it here.
   result.startTier = defaultTriggerPolicy().startTier
   result.secretAtMiB = defaultTriggerPolicy().rows[gtSecret].threshold
@@ -72,20 +72,20 @@ proc parseTierName*(name: string): tuple[ok: bool, tier: GeistTier] {.
 proc loadTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     defaults: TransportDefaults, err: string] {.role: configurator,
     tag: "ame|config|parsing|read".} =
-  ## path: `config.toml`; only its `[transport]` section is read.
+  ## path: `configs/default.toml`; only `[runtime.transport]` is read.
   var
     doc: tuple[ok: bool, node: JsonNode, err: string] = (false, newJNull(), "")
     transport: JsonNode = newJNull()
     complaint: string = ""
     tier: string = ""
   result.defaults = builtinTransportDefaults()
-  doc = tomlOf(path)
+  doc = runtimeOf(path)
   if not doc.ok:
     return (false, result.defaults, doc.err)
   transport = doc.node.section("transport")
   complaint = checkKeys(transport,
     ["startTier", "secretAtMiB", "archiveAtMiB", "requireCookie"],
-    "[transport]")
+    "[runtime.transport]")
   if complaint.len > 0:
     return (false, result.defaults, complaint)
   tier = transport.setting("startTier", "")
@@ -126,7 +126,7 @@ proc transportDefaults*(): TransportDefaults {.role: parser,
 proc initTransportDefaults*(path: string = libraryConfigName): tuple[ok: bool,
     err: string] {.role: configurator,
     tag: "ame|config|lifecycle|read".} =
-  ## path: config.toml, read and adopted in one step. A missing file is
+  ## path: configs/default.toml, read and adopted in one step. A missing file is
   ## success -- the built-in policy IS the answer in that case.
   var
     got: tuple[ok: bool, defaults: TransportDefaults, err: string] = (false,
@@ -149,5 +149,5 @@ proc defaultsTriggerPolicy*(d: TransportDefaults): TriggerPolicy {.
 
 proc defaultTierPolicy*(): TriggerPolicy {.role: configurator,
     tag: "ame|config|networkSurface".} =
-  ## The tier policy in force, from whatever config.toml was adopted.
+  ## The tier policy in force, from whatever configs/default.toml was adopted.
   result = defaultsTriggerPolicy(transportDefaults())

@@ -474,7 +474,7 @@ rule nobody expects. Measured sizes are in §7b.
 ## 7b. Measured
 
 Micron 1100 SATA SSD (non-rotational, ~92% full), i9-13900K, Nim 2.2.10,
-`-d:release --mm:orc`. Reproduce with `nimble bench`.
+`-d:release --mm:orc`. Reproduce with `nimble runBenchmarks`.
 
 **The SSD matters and it is not an NVMe drive.** io figures are a
 conservative floor: an NVMe drive or an emptier volume beats them.

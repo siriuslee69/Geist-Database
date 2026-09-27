@@ -8,6 +8,12 @@
 # in this tree and in its dependencies says `import runePragmas`, so a
 # build without it does not compile a single module.
 , runePragmasSrc ? ../submodules/Rune-Pragmas
+# Shared nimble tasks and the build-preset reader config.nims includes.
+, nimbleTasksSrc ? ../submodules/Nimble-Tasks
+# needs/gives/keeps, the shared contract pragmas.
+, varInvariantsSrc ? ../submodules/Var-Invariants
+# Pinned at its 1.3.2 release tag, like the submodule.
+, nimsimdSrc ? ../submodules/nimsimd
 }:
 
 let
@@ -70,12 +76,13 @@ let
   filteredBifrostExchangeProtocolsSrc =
     filterDependencySource bifrostExchangeProtocolsSrc;
   filteredRunePragmasSrc = filterDependencySource runePragmasSrc;
-  nimsimdSrc = pkgs.fetchFromGitHub {
-    owner = "guzba";
-    repo = "nimsimd";
-    rev = "3f6b2668ffb0867d0bf786a658b817763e611350";
-    hash = "sha256-FO7ty/NIE/fNfGiiEaoAHLEb26fQCqai5V0ERYbEPTs=";
-  };
+  filteredNimbleTasksSrc = filterDependencySource nimbleTasksSrc;
+  filteredVarInvariantsSrc = filterDependencySource varInvariantsSrc;
+  filteredNimsimdSrc = filterDependencySource nimsimdSrc;
+
+  # Name and version come from ONE place, the same table the .nimble file
+  # reads: [project] in configs/default.toml.
+  project = (builtins.fromTOML (builtins.readFile ../configs/default.toml)).project;
 
   geistSrc = pkgs.runCommand "geistd-source" {} ''
     mkdir -p "$out"
@@ -91,12 +98,14 @@ let
     ln -s ${filteredEirCompressionAndEccSrc} "$out/submodules/Eir-CompressionAndECC"
     ln -s ${filteredBifrostExchangeProtocolsSrc} "$out/submodules/Bifrost-ExchangeProtocols"
     ln -s ${filteredRunePragmasSrc} "$out/submodules/Rune-Pragmas"
-    ln -s ${nimsimdSrc} "$out/submodules/nimsimd"
+    ln -s ${filteredNimbleTasksSrc} "$out/submodules/Nimble-Tasks"
+    ln -s ${filteredVarInvariantsSrc} "$out/submodules/Var-Invariants"
+    ln -s ${filteredNimsimdSrc} "$out/submodules/nimsimd"
   '';
 in
 pkgs.stdenv.mkDerivation {
-  pname = "geistd";
-  version = "0.1.0";
+  pname = project.name;
+  version = project.version;
   src = geistSrc;
 
   nativeBuildInputs = [
@@ -108,22 +117,20 @@ pkgs.stdenv.mkDerivation {
     pkgs.libsodium
   ];
 
-  # The SAME flags the nimble tasks use. A package built with a different
-  # memory model from the one the suite runs under is a package nothing has
-  # actually tested.
+  # No compiler flags here: config.nims applies configs/default.toml
+  # ([nim] mm/threads, [define] hasLibsodium) to every call, exactly as it
+  # does for the nimble tasks. A package built with different flags from the
+  # ones the suite runs under is a package nothing has actually tested.
   buildPhase = ''
     export HOME=$TMPDIR
-    nim c -d:release --mm:orc --threads:on --hints:off \
-      --path:${nimsimdSrc}/src --out:geistd src/server/geistd.nim
-    nim c -d:release --mm:orc --threads:on --hints:off \
-      --path:${nimsimdSrc}/src --out:geist src/clients/geist_cli.nim
+    nim c -d:release --hints:off --out:geistd src/server/geistd.nim
+    nim c -d:release --hints:off --out:geist src/clients/geist_cli.nim
     # The relay pair: the same transport with a pipe where the database
     # would be. Separate binaries because they are a separate deployment --
     # a machine relaying voice clips has no store to serve.
-    nim c -d:release --mm:orc --threads:on --hints:off \
-      --path:${nimsimdSrc}/src --out:geist-relayd src/server/geist_relayd.nim
-    nim c -d:release --mm:orc --threads:on --hints:off \
-      --path:${nimsimdSrc}/src --out:geist-relay src/clients/geist_relay.nim
+    nim c -d:release --hints:off --out:geist-relayd src/server/geist_relayd.nim
+    nim c -d:release --hints:off --out:geist-relay src/clients/geist_relay.nim
+    nim c -d:release --hints:off --out:geist-routed src/server/geist_routed.nim
   '';
 
   installPhase = ''
@@ -132,7 +139,8 @@ pkgs.stdenv.mkDerivation {
     cp geist $out/bin/geist
     cp geist-relayd $out/bin/geist-relayd
     cp geist-relay $out/bin/geist-relay
-    for prog in geistd geist geist-relayd geist-relay; do
+    cp geist-routed $out/bin/geist-routed
+    for prog in geistd geist geist-relayd geist-relay geist-routed; do
       wrapProgram $out/bin/$prog \
         --set LIBSODIUM_LIB_DIRS ${pkgs.libsodium}/lib \
         --prefix LD_LIBRARY_PATH : ${pkgs.libsodium}/lib
@@ -140,7 +148,7 @@ pkgs.stdenv.mkDerivation {
   '';
 
   meta = {
-    description = "Packed-row, cluster-addressed encrypted database and its daemon";
+    description = project.description;
     mainProgram = "geist";
     platforms = lib.platforms.linux;
   };

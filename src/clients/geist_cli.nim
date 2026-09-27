@@ -18,7 +18,7 @@
 ##   inspect  -> works WITHOUT a password: reads only header + index
 ##   list/get -> needs the password when the database is encrypted
 ##
-## A `userconfig.toml` fills in anything not typed, and `config.toml`
+## A `userconfig.toml` fills in anything not typed, and `configs/default.toml`
 ## carries the library defaults a preset is adjusted by. An option on the
 ## command line always wins over either.
 
@@ -273,7 +273,7 @@ proc openDirect(o: Options, schema: Schema = Schema(),
     sp = storePaths(o)
     c: GeistConfig
   try:
-    # An unnamed preset means "whatever config.toml says", which is the
+    # An unnamed preset means "whatever configs/default.toml says", which is the
     # library default when there is no such file.
     c = if o.preset == "app": defaultGeistConfig()
         else: applyDefaults(geistConfigPreset(o.preset), geistDefaults())
@@ -574,7 +574,7 @@ proc cmdTranspose(o: Options) {.role: actor,
   if db.config.transpose == tmNone:
     db.close()
     fail("this database is configured with transpose = tmNone; set " &
-      "[storage] transpose in config.toml, or the field on the GeistConfig")
+      "[runtime.storage] transpose in configs/default.toml, or the field on the GeistConfig")
   built = db.syncTransposed()
   db.close()
   if not built.ok:
@@ -1061,7 +1061,7 @@ proc runGeistCli*(argv: seq[string]): int {.role: metaOrchestrator,
     return 0
   # A userconfig.toml fills in what was not typed, and nothing more.
   o = withUserConfig(o)
-  # config.toml carries the library defaults every preset is adjusted by.
+  # configs/default.toml carries the library defaults every preset is adjusted by.
   var defaults = initGeistNetworkDefaults()
   if not defaults.ok:
     fail(defaults.err)

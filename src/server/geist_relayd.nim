@@ -373,7 +373,7 @@ proc runRelayd*(argv: seq[string]): int {.role: metaOrchestrator,
   try:
     c = resolveConfig(argv)
     installSignalHandlers()
-    # config.toml carries the tier policy. A relay has no storage settings
+    # configs/default.toml carries the tier policy. A relay has no storage settings
     # to adopt, so it validates only the section it acts on.
     written = initGeistWireDefaults()
     if not written.ok:

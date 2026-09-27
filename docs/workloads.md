@@ -90,7 +90,7 @@ where Geist stands:
                               TYPES (`[T: object]`, `when T is string`),
                               never over a chosen value.
   BY VALUE       COMPLETE     GeistConfig decides everything at runtime;
-                              14 presets; nameable from config.toml.
+                              14 presets; nameable from configs/default.toml.
 ```
 
 ### What that costs, measured

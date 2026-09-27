@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# iot <- the smallest Geist for a small device that logs readings
+# ---------------------------------------------------------------------------
+#
+#   nim c -d:preset=iot app.nim
+#
+# Only what differs from default.toml goes here.
+
+[preset]
+name = "iot"
+description = "Size-optimised; the iot storage preset; no search copy."
+
+[nim]
+opt = "size"
+
+[passC]
+flags = ["-ffunction-sections", "-fdata-sections"]
+
+[passL]
+flags = ["-Wl,--gc-sections"]
+
+[runtime.storage]
+preset = "iot"
+# A device that only appends readings never replaces a row by name.
+rowIdentity = false
+transpose = "none"
+
+[runtime.backup]
+copies = 1
+
+[runtime.transport]
+startTier = "telemetry"

@@ -1,67 +1,162 @@
+## ---------------------------------------------------------------------------
+## geist_database.nimble <- only what is special to Geist
+## ---------------------------------------------------------------------------
+##
+## Every generic task -- test, runExamples, runBenchmarks, runCli/buildCli,
+## runServer/buildServer, autopush, switch, applyNightly, updateSubmodules,
+## clean, ... -- comes from Nimble-Tasks, included at the bottom.
+## `nimble sharedTasks` lists them. What stays here:
+##
+##   task               what it does
+##   -----------------  ------------------------------------------------------
+##   buildAll           every Geist program, for release (replaces the shared
+##                      one, which only knows one cli and one server)
+##   buildCliRelay      geist-relay        the relay's command line client
+##   buildServerRelayd  geist-relayd       the message relay
+##   buildServerRouted  geist-routed       the request router
+##   checkAll           compile-check every public module
+##   checkModular       the storage half builds with NO network stack
+##   checkRelay         the wire half builds with NO database in it
+##   checkRouter        the router builds with NO database in it
+##   testCore ...       one area of the test suite, for a quick loop
+##   bench<Group>       one benchmark group
+##   demoCli            a scratch database driven through the CLI
+##   runStatistics      Otter's numbers, recorded under evaluation/statistics
+##   androidLib/Test    the Android keystore companion
+##
+## Compiler flags (--mm:orc, --threads:on, -d:hasLibsodium) are NOT written
+## here. They live in configs/default.toml and config.nims applies them to
+## every `nim` call, so a task cannot drift from the others.
+
 import std/[os, strutils]
 
-version       = "2.0.0"
-author        = "siriuslee69"
-description   = "Geist: a packed-row, cluster-addressed encrypted database"
-license       = "Unlicense"
+## Name, version, description, license and author live in ONE place:
+## [project] in configs/default.toml. nix/default.nix reads the same table.
+when fileExists(thisDir() & "/../Nimble-Tasks/src/preset.nims"):
+  include "../Nimble-Tasks/src/preset.nims"
+elif fileExists(thisDir() & "/submodules/Nimble-Tasks/src/preset.nims"):
+  include "submodules/Nimble-Tasks/src/preset.nims"
+else:
+  {.error: "Nimble-Tasks not found: git submodule update --init submodules/Nimble-Tasks".}
+
+version       = projectValue("version")
+author        = projectValue("author")
+description   = projectValue("description")
+license       = projectValue("license")
 srcDir        = "src"
 
-requires "nim >= 2.0.0"
+## nimsimd is also pinned in submodules/nimsimd and put on the path by
+## config.nims, so a fresh clone builds without `nimble install`.
+requires "nim >= 2.0.0", "nimsimd >= 1.3.2"
+
+## NOTE: no UI dependencies belong here. Geist is a headless library, a CLI
+## and a set of daemons; a stray `requires "owlkettle", "illwill", "webui"`
+## once made every install of the database pull in a GTK stack it never
+## calls.
+
+const
+  ownTasks: array[2, string] = ["buildAll", "runStatistics"]
+  frozenSubmodules: array[1, string] = ["submodules/nimsimd"]
+    ## Third-party, pinned at its 1.3.2 release tag -- the same commit
+    ## nix/default.nix fetches. `updateSubmodules` must not move it to
+    ## whatever its master branch holds today.
+  cliEntry: string = "src/clients/geist_cli.nim"
+  serverEntry: string = "src/server/geistd.nim"
+  storageModules: array[16, string] = ["geist", "geist@ssession",
+    "geist@sstore", "geist@srow", "geist@srowid", "geist@skeys",
+    "geist@sconfig", "geist@sbackup", "geist@slease", "geist@ssidecar",
+    "geist@scollection", "geist@sseek", "geist@sdurable", "geist@smapper",
+    "geist@sdynamic", "geist@ssettings"]
+    ## The C files a program has compiled the DATABASE half into. The relay
+    ## and the router must produce none of them.
+  benchSource: string = "evaluation/benchmarks/bench_geist.nim"
+  benchProgram: string = "build/evaluation/bench_geist"
+
+## Shared tasks: the sibling clone wins, so an edit there reaches this repo
+## at once; the submodule is what a fresh clone elsewhere falls back on.
+## Included HERE, after the settings above and before Geist's own tasks,
+## so the helpers below can use its `presetFlag` and `exeName`.
+when fileExists(thisDir() & "/../Nimble-Tasks/src/nimbleTasks.nims"):
+  include "../Nimble-Tasks/src/nimbleTasks.nims"
+elif fileExists(thisDir() & "/submodules/Nimble-Tasks/src/nimbleTasks.nims"):
+  include "submodules/Nimble-Tasks/src/nimbleTasks.nims"
+else:
+  {.error: "Nimble-Tasks not found: git submodule update --init submodules/Nimble-Tasks".}
+
+# ---------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------
+
+proc buildProgram(entry, name: string) =
+  ## entry/name: one Geist program, built for release as build/<name>.
+  mkDir("build")
+  exec "nim c -d:release" & presetFlag() & " --hints:off -o:build/" &
+    exeName(name) & " " & entry
+  echo "Built build/" & exeName(name)
+
+proc runTestFiles(A: openArray[string]) =
+  ## A: test file names below evaluation/tests, run in order.
+  mkDir("build/evaluation")
+  for f in A:
+    exec "nim c -r --hints:off -o:build/evaluation/" & f & " evaluation/tests/" &
+      f & ".nim"
+
+proc leakedStorage(cacheDir: string): seq[string] =
+  ## cacheDir: a nimcache folder -> the database modules compiled into it.
+  var
+    name: string = ""
+  for f in listFiles(cacheDir):
+    name = f.extractFilename()
+    if name.len > 8 and name.endsWith(".nim.c") and
+        (name.startsWith("@p") or name.startsWith("@m")) and
+        (name[2 .. ^7] in storageModules):
+      result.add name
+
+proc runBench(group: string) =
+  ## group: one benchmark group name, or "" for all of them.
+  mkDir("build/evaluation")
+  exec "nim c -d:release --hints:off -o:" & benchProgram & " " & benchSource
+  exec benchProgram & (if group.len > 0: " " & group else: "")
 
 # ---------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------
+#
+#   program        task                entry
+#   -------------  ------------------  --------------------------------
+#   geist          buildCli (shared)   src/clients/geist_cli.nim
+#   geistd         buildServer (shared) src/server/geistd.nim
+#   geist-relay    buildCliRelay       src/clients/geist_relay.nim
+#   geist-relayd   buildServerRelayd   src/server/geist_relayd.nim
+#   geist-routed   buildServerRouted   src/server/geist_routed.nim
 
-task buildCli, "Build the geist command line client":
-  exec "nim c -d:release --mm:orc --threads:on --hints:off " &
-    "-o:build/bin/geist src/clients/geist_cli.nim"
+task buildCliRelay, "Build geist-relay, the relay's command line client":
+  buildProgram("src/clients/geist_relay.nim", "geist_database_cli_relay")
 
-task buildDaemon, "Build the geistd daemon":
-  exec "nim c -d:release --mm:orc --threads:on --hints:off " &
-    "-o:build/bin/geistd src/server/geistd.nim"
+task buildServerRelayd, "Build geist-relayd, the message relay":
+  buildProgram("src/server/geist_relayd.nim", "geist_database_server_relayd")
 
-task buildRelayd, "Build the geist-relayd message relay":
-  exec "nim c -d:release --mm:orc --threads:on --hints:off " &
-    "-o:build/bin/geist-relayd src/server/geist_relayd.nim"
+task buildServerRouted, "Build geist-routed, the request router":
+  buildProgram("src/server/geist_routed.nim", "geist_database_server_routed")
 
-task buildRelay, "Build the geist-relay client":
-  exec "nim c -d:release --mm:orc --threads:on --hints:off " &
-    "-o:build/bin/geist-relay src/clients/geist_relay.nim"
+task buildAll, "Build every Geist program for release":
+  buildProgram(cliEntry, "geist_database_cli")
+  buildProgram(serverEntry, "geist_database_server")
+  buildProgram("src/clients/geist_relay.nim", "geist_database_cli_relay")
+  buildProgram("src/server/geist_relayd.nim", "geist_database_server_relayd")
+  buildProgram("src/server/geist_routed.nim", "geist_database_server_routed")
 
-task buildRouted, "Build the geist-routed request router":
-  exec "nim c -d:release --mm:orc --threads:on --hints:off " &
-    "-o:build/bin/geist-routed src/server/geist_routed.nim"
+# ---------------------------------------------------------------------
+# Compile checks
+# ---------------------------------------------------------------------
 
-task buildBins, "Build every binary into build/bin":
-  exec "nimble buildCli"
-  exec "nimble buildDaemon"
-  exec "nimble buildRelayd"
-  exec "nimble buildRelay"
-  exec "nimble buildRouted"
-
-task buildBench, "Build the Otter-based benchmark binary":
-  exec "nim c -d:release --mm:orc --threads:on --hints:off " &
-    "-o:build/bin/geist-bench evaluation/benchmarks/geist_bench.nim"
-
-task bench, "Run every benchmark group":
-  exec "nimble buildBench"
-  exec "build/bin/geist-bench"
-
-task benchCrypto, "Benchmark hash families, digest widths and MAC combiners":
-  exec "nimble buildBench"
-  exec "build/bin/geist-bench crypto"
-
-task benchIo, "Benchmark write throughput, point reads and column scans":
-  exec "nimble buildBench"
-  exec "build/bin/geist-bench io"
-
-task benchColumns, "Benchmark column kinds and collapsing":
-  exec "nimble buildBench"
-  exec "build/bin/geist-bench packed"
-
-task benchRefs, "Benchmark the reference cell encoding":
-  exec "nimble buildBench"
-  exec "build/bin/geist-bench refs"
+task checkAll, "Compile-check every public module":
+  for f in listFiles("src/geist") & listFiles("src/geist/crypto") &
+      @["src/geist.nim", "src/clients/geist_cli.nim",
+        "src/clients/geist_relay.nim", "src/server/geistd.nim",
+        "src/server/geist_relayd.nim", "src/server/geist_routed.nim"]:
+    if f.endsWith(".nim"):
+      exec "nim c --compileOnly --hints:off " & f
 
 task checkModular, "Prove the storage half builds with no network stack":
   ## Compiles a disk-only program with Bifrost REMOVED from the search
@@ -71,12 +166,13 @@ task checkModular, "Prove the storage half builds with no network stack":
   ## have prevented.
   ##
   ## The project config is skipped precisely because it adds every
-  ## submodule path, including the one under test.
-  var paths = ""
+  ## submodule path, including the one under test -- which is also why the
+  ## flags config.nims would give are written out here.
+  var
+    paths: string = ""
   for p in ["submodules/Fylgia-Utils/src", "submodules/Tyr-Crypto/src",
-            "submodules/Rune-Pragmas/meta", "../Rune-Pragmas/meta",
-            "submodules/SIMD-Nexus/src", "submodules/Eir-CompressionAndECC/src",
-            "submodules/nimsimd/src"]:
+            "submodules/Rune-Pragmas/meta", "submodules/SIMD-Nexus/src",
+            "submodules/Eir-CompressionAndECC/src", "submodules/nimsimd/src"]:
     if dirExists(p):
       paths = paths & " --path:" & p
   exec "nim c -r --skipProjCfg --skipParentCfg --mm:orc --threads:on " &
@@ -90,25 +186,12 @@ task checkRelay, "Prove the wire half builds with no database in it":
   ## LOOKS AT WHAT THE COMPILER EMITTED. Passing means no module of the
   ## storage half was reachable from `import geist/wire` -- not that a
   ## header comment says so.
-  ##
-  ## The check is on the C files rather than on the import statements
-  ## because an import three modules deep is exactly the kind that gets
-  ## added without anyone noticing.
-  var storage = ["geist", "geist@ssession", "geist@sstore", "geist@srow",
-    "geist@srowid", "geist@skeys", "geist@sconfig", "geist@sbackup",
-    "geist@slease", "geist@ssidecar", "geist@scollection", "geist@sseek",
-    "geist@sdurable", "geist@smapper", "geist@sdynamic", "geist@ssettings"]
-  var leaked: seq[string] = @[]
-  exec "nim c -r --mm:orc --threads:on --hints:off --warnings:off " &
+  var
+    leaked: seq[string] = @[]
+  exec "nim c -r --hints:off --warnings:off " &
     "--nimcache:build/nimcache-relay -o:build/relay-only " &
     "evaluation/tests/modular/relay_only.nim"
-  for f in listFiles("build/nimcache-relay"):
-    let name = f.extractFilename()
-    if not name.endsWith(".nim.c"):
-      continue
-    for m in storage:
-      if name == "@p" & m & ".nim.c" or name == "@m" & m & ".nim.c":
-        leaked.add name
+  leaked = leakedStorage("build/nimcache-relay")
   if leaked.len > 0:
     echo "The relay build pulled in the database: " & leaked.join(", ")
     echo "Something under src/geist/wire.nim now imports the storage half."
@@ -119,148 +202,91 @@ task checkRouter, "Prove the router forwards without compiling a store":
   ## Same proof as checkRelay, aimed at the router. A daemon that could
   ## open a database would eventually be given one to open, so the fact
   ## that it CANNOT is worth a build failure rather than a comment.
-  var storage = ["geist", "geist@ssession", "geist@sstore", "geist@srow",
-    "geist@srowid", "geist@skeys", "geist@sconfig", "geist@sbackup",
-    "geist@slease", "geist@ssidecar", "geist@scollection", "geist@sseek",
-    "geist@sdurable", "geist@smapper", "geist@sdynamic", "geist@ssettings"]
-  var leaked: seq[string] = @[]
-  exec "nim c --mm:orc --threads:on --hints:off --warnings:off " &
+  var
+    leaked: seq[string] = @[]
+  exec "nim c --hints:off --warnings:off " &
     "--nimcache:build/nimcache-router -o:build/router-only " &
     "src/server/geist_routed.nim"
-  for f in listFiles("build/nimcache-router"):
-    let name = f.extractFilename()
-    if not name.endsWith(".nim.c"):
-      continue
-    for m in storage:
-      if name == "@p" & m & ".nim.c" or name == "@m" & m & ".nim.c":
-        leaked.add name
+  leaked = leakedStorage("build/nimcache-router")
   if leaked.len > 0:
     echo "The router build pulled in the database: " & leaked.join(", ")
     quit(1)
   echo "router build: no database module compiled"
 
-task buildAll, "Build every public module as a compile check":
-  for m in ["src/geist.nim", "src/geist/session.nim", "src/geist/transport.nim",
-            "src/geist/masks.nim", "src/geist/keys.nim", "src/geist/backup.nim",
-            "src/geist/dynamic.nim", "src/geist/identity.nim",
-            "src/clients/geist_cli.nim", "src/server/geistd.nim",
-            "src/geist/collection.nim", "src/geist/seek.nim",
-            "src/geist/answer.nim", "src/geist/need.nim",
-            "src/geist/relay.nim", "src/geist/wire.nim",
-            "src/geist/show.nim", "src/geist/transpose.nim",
-            "src/server/geist_relayd.nim", "src/clients/geist_relay.nim",
-            "src/server/geist_routed.nim", "src/geist/address.nim",
-            "src/geist/route.nim", "src/geist/link.nim",
-            "src/geist/doc.nim", "src/geist/reconcile.nim",
-            "src/geist/keystore.nim", "src/geist/layout.nim",
-            "src/geist/registry.nim", "src/geist/offer.nim",
-            "src/geist/secrets.nim", "src/geist/users.nim",
-            "src/geist/network.nim", "src/geist/toml_read.nim",
-            "src/geist/transport_settings.nim",
-            "src/geist/settings.nim",
-            "src/geist/rowid.nim", "src/geist/lease.nim",
-            "src/geist/durable.nim",
-            "src/geist/crypto/hashing.nim"]:
-    exec "nim c --mm:orc --threads:on --compileOnly --hints:off " & m
-
 # ---------------------------------------------------------------------
-# Examples
+# One area of the test suite (`nimble test` runs all of them)
 # ---------------------------------------------------------------------
-
-task exampleQuickstart, "Run the quickstart example":
-  exec "nim c -r --mm:orc --threads:on --hints:off examples/geist_quickstart.nim"
-
-task exampleEncrypted, "Run the encrypted-database example":
-  exec "nim c -r --mm:orc --threads:on --hints:off examples/geist_encrypted.nim"
-
-task exampleObserve, "Run the passive-observation example":
-  exec "nim c -r --mm:orc --threads:on --hints:off examples/geist_observe.nim"
-
-task exampleBuffers, "Run the two-instances-no-database example":
-  exec "nim c -r --mm:orc --threads:on --hints:off examples/geist_buffers.nim"
-
-task exampleFastSearch, "Run the printing and column-copy example":
-  exec "nim c -r -d:release --mm:orc --threads:on --hints:off " &
-    "examples/geist_fast_search.nim"
-
-task examples, "Run every example in order":
-  exec "nimble exampleQuickstart"
-  exec "nimble exampleEncrypted"
-  exec "nimble exampleObserve"
-  exec "nimble exampleFastSearch"
-  exec "nimble exampleBuffers"
-
-# ---------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------
-
-task test, "Run the full test suite":
-  for f in listFiles("evaluation/tests"):
-    if f.endsWith(".nim") and f.extractFilename().startsWith("test_"):
-      echo "--- " & f
-      exec "nim c -r --mm:orc --threads:on --hints:off --warnings:off " & f
 
 task testCore, "Run the mapper and format tests only":
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_mapper_roundtrip.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_format_partial.nim"
+  runTestFiles(["test_mapper_roundtrip", "test_format_partial"])
 
 task testCrypto, "Run the crypto, key lifecycle and backup tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_crypto_batch.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_keys_backup.nim"
+  runTestFiles(["test_crypto_batch", "test_keys_backup"])
 
 task testApi, "Run the session, transport and settings tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_session_api.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_masks_transport.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_settings.nim"
+  runTestFiles(["test_session_api", "test_masks_transport", "test_settings"])
 
 task testDurability, "Run the generation-swap, lease and restore tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_durability_lease.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_sidecar_sweep.nim"
+  runTestFiles(["test_durability_lease", "test_sidecar_sweep"])
 
 task testExchange, "Run the live-socket daemon and identity tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_daemon_live.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_row_identity.nim"
+  runTestFiles(["test_daemon_live", "test_row_identity"])
 
 task testApiSurface, "Run the collection, seek and column storage tests":
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_collection_seek.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_hash_agility.nim"
-  exec "nim c -r --mm:orc --threads:on --hints:off evaluation/tests/test_column_storage.nim"
+  runTestFiles(["test_collection_seek", "test_hash_agility",
+    "test_column_storage"])
+
+# ---------------------------------------------------------------------
+# One benchmark group (`nimble runBenchmarks` runs all of them)
+# ---------------------------------------------------------------------
+
+task benchCrypto, "Benchmark hash families, digest widths and MAC combiners":
+  runBench("crypto")
+
+task benchIo, "Benchmark write throughput, point reads and column scans":
+  runBench("io")
+
+task benchColumns, "Benchmark column kinds and collapsing":
+  runBench("packed")
+
+task benchRefs, "Benchmark the reference cell encoding":
+  runBench("refs")
+
+# ---------------------------------------------------------------------
+# Demo
+# ---------------------------------------------------------------------
 
 task demoCli, "Create a scratch database and exercise the CLI":
-  exec "nimble buildCli"
-  let root = "build/demo"
+  var
+    root: string = "build/demo"
+    geist: string = "build/geist_database_cli --path " & root
+  buildProgram(cliEntry, "geist_database_cli")
   rmDir(root)
-  exec "build/bin/geist --path " & root &
-    " init --schema \"id:int,title:text,body:text\" --type Note"
-  exec "build/bin/geist --path " & root & " put id=1 title=hello body=world"
-  exec "build/bin/geist --path " & root & " put id=2 title=second body=row"
-  exec "build/bin/geist --path " & root & " put id=3 title=third body=gone"
-  exec "build/bin/geist --path " & root & " set @0 title=corrected"
-  exec "build/bin/geist --path " & root & " delete @2"
-  exec "build/bin/geist --path " & root & " list"
-  exec "build/bin/geist --path " & root & " compact"
-  exec "build/bin/geist --path " & root & " list"
-  exec "build/bin/geist --path " & root & " inspect"
+  exec geist & " init --schema \"id:int,title:text,body:text\" --type Note"
+  exec geist & " put id=1 title=hello body=world"
+  exec geist & " put id=2 title=second body=row"
+  exec geist & " put id=3 title=third body=gone"
+  exec geist & " set @0 title=corrected"
+  exec geist & " delete @2"
+  exec geist & " list"
+  exec geist & " compact"
+  exec geist & " list"
+  exec geist & " inspect"
 
 # ---------------------------------------------------------------------
 # Statistics
 # ---------------------------------------------------------------------
 
-task stats, "Measure the repository with Otter and record the numbers":
-  ## Writes evaluation/statistics/otter-stats.txt so the shape of the tree
-  ## is a tracked file and a change to it shows up in a diff, rather than
-  ## a number somebody remembers from last month.
+task runStatistics, "Measure the repository with Otter and record the numbers":
+  ## Writes evaluation/statistics/otter-stats.txt and otter-gate.txt, so the
+  ## shape of the tree is a tracked file and a change to it shows up in a
+  ## diff, rather than a number somebody remembers from last month.
   ##
-  ## The measurement is of the TRACKED tree. Untracked leftovers -- the
-  ## `.geist-legacy/` reference copy above all -- would otherwise dominate
-  ## every count and make the report useless.
-  ##
-  ## Otter walks a FOLDER, and this folder holds things git does not
-  ## track: the `.geist-legacy/` reference copy alone is 213 more `.nim`
-  ## files. Measured together they turn 873 routines into 3366 and report
-  ## 121 "secrets" that are all in the old tree. So the task copies the
-  ## tracked files into build/measure, links the pinned submodules beside
-  ## them, and measures THAT.
+  ## Otter walks a FOLDER, and this folder holds things git does not track
+  ## (build output, local databases, reference copies). Measured together
+  ## they swamp every count. So the task copies the TRACKED files, as they
+  ## are on disk right now, into build/measure, links the pinned submodules
+  ## beside them, and measures THAT.
   var
     otter: string = "submodules/Otter-RepoEvaluation/tools/agent_hooks/" &
       "otter-build.sh"
@@ -268,7 +294,7 @@ task stats, "Measure the repository with Otter and record the numbers":
     bin: string = ""
     deps: seq[string] = @["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
       "Eir-CompressionAndECC", "Bifrost-ExchangeProtocols", "Rune-Pragmas",
-      "Otter-RepoEvaluation"]
+      "Otter-RepoEvaluation", "Nimble-Tasks", "Var-Invariants"]
     here: string = getCurrentDir()
   if not fileExists(otter):
     echo "Otter is not checked out: git submodule update --init " &
@@ -276,10 +302,6 @@ task stats, "Measure the repository with Otter and record the numbers":
     quit(1)
   rmDir(at)
   mkDir(at)
-  ## Tracked files AS THEY ARE ON DISK, not as they are at HEAD. `git
-  ## archive HEAD` would be simpler and would measure the last commit,
-  ## which is the wrong answer for the person who just changed something
-  ## and wants to see what it did.
   exec "sh -c 'git ls-files -z | tar --null -T - -cf - | tar -x -C " &
     at & "'"
   mkDir(at & "/submodules")
@@ -291,8 +313,7 @@ task stats, "Measure the repository with Otter and record the numbers":
   exec "sh -c 'cd " & at & " && git init -q && git add -A >/dev/null && " &
     "git -c user.email=stats@local -c user.name=stats commit -qm measured'"
   ## `otter-build.sh` prints the path of a ready program on stdout and its
-  ## build chatter on stderr, so the path is the last stdout line and the
-  ## chatter has to be dropped before it is read as one.
+  ## build chatter on stderr, so the path is the last stdout line.
   bin = gorge("./" & otter & " 2>/dev/null | tail -1").strip()
   if bin.len == 0 or not fileExists(bin):
     echo "Otter would not build; see ~/.cache/otter-agent-hooks/build.log"
@@ -310,163 +331,12 @@ task stats, "Measure the repository with Otter and record the numbers":
   exec "cat evaluation/statistics/otter-stats.txt"
 
 # ---------------------------------------------------------------------
-# Git workflow (copied verbatim from Proto-RepoTemplate per conventions)
-# ---------------------------------------------------------------------
-
-proc resolveProgressPath(): string =
-  var
-    ts: seq[string] = @[
-      "agents/PROGRESS.md",
-      "agents/progress.md"
-    ]
-  for t in ts:
-    if fileExists(t):
-      return t
-  result = ts[0]
-
-proc resolveWebUiEntryPath(): string =
-  var
-    ts: seq[string] = @[
-      "src/client/frontend/webui/app.nim",
-      "src/client/frontend/webui_ui/app.nim"
-    ]
-  for t in ts:
-    if fileExists(t):
-      return t
-  result = ts[0]
-
-proc resolveGitIndexLockPath(): string =
-  result = joinPath(".git", "index.lock")
-
-proc resolveAutopushMessagePath(): string =
-  result = joinPath(".git", "autopush-commit-message.txt")
-
-proc resolveCommitMessage(progressPath: string): string =
-  var msg: string = ""
-  if fileExists(progressPath):
-    var content = readFile(progressPath)
-    for line in content.splitLines:
-      if line.startsWith("Commit Message:"):
-        msg = line["Commit Message:".len .. ^1].strip()
-        break
-  if msg.len == 0:
-    msg = "No specific commit message given."
-  result = msg
-
-proc captureGit(args: string): string =
-  ## args: one git subcommand line; output is returned, failure quits.
-  var t = gorgeEx("git " & args)
-  if t.exitCode != 0:
-    if t.output.len > 0:
-      echo t.output
-    quit(t.exitCode)
-  result = t.output
-
-proc isGeneratedOrLocalArtifact(path: string): bool =
-  ## path: one staged repo-relative path checked against local/generated outputs.
-  var p = path.replace('\\', '/')
-  result = splitPath(p).tail.startsWith(".fuse_hidden") or
-    p.startsWith("nimcache") or
-    p.startsWith("build/") or p.startsWith("builds/") or
-    p.startsWith(".gradle/") or p.startsWith(".kotlin/") or
-    p.endsWith(".exe") or p.endsWith(".dll") or p.endsWith(".so") or
-    p.endsWith(".dylib") or p.endsWith(".o") or p.endsWith(".obj") or
-    p.endsWith(".a") or p.endsWith(".lib") or p.endsWith(".pdb") or
-    p == "local.properties" or p == "userconfig.toml" or
-    p == "nimble.paths" or p == "nimble.develop" or
-    p.startsWith(".iron/")
-
-## ---------------------------------------------------------------------------
-## Canonical git workflow tasks <- copy autopush/switch/applynightly verbatim
-## into every repo's .nimble file. Repos work on `nightly` day to day;
-## `applynightly` promotes the tested state onto `main` by fast-forward.
-##
-##   autopush     -> stage all, refuse generated/local artifacts, commit
-##                   with the message from agents/PROGRESS.md, then push
-##   switch       -> toggle the checkout between nightly and main
-##   applynightly -> fast-forward main to nightly locally and on origin
-## ---------------------------------------------------------------------------
-
-task autopush, "Add, commit, and push after rejecting generated/local artifacts":
-  var
-    progressPath: string = resolveProgressPath()
-    lockPath: string = resolveGitIndexLockPath()
-    msg: string = resolveCommitMessage(progressPath)
-    msgPath: string = resolveAutopushMessagePath()
-    staged: string = ""
-  if fileExists(lockPath):
-    quit(
-      "Refusing to run autopush because Git lock exists at " & lockPath &
-      ". If no Git process is active, remove the stale lock and retry."
-    )
-  exec "git add -A ."
-  staged = captureGit("diff --cached --name-only").strip()
-  if staged.len == 0:
-    echo "No staged changes. Skipping commit."
-  else:
-    for stagedPath in staged.splitLines:
-      if isGeneratedOrLocalArtifact(stagedPath):
-        echo "Refusing autopush: generated/local artifact staged: " & stagedPath
-        echo "Remove it from the index or extend .gitignore before committing."
-        quit(1)
-    writeFile(msgPath, msg & "\n")
-    exec "git commit --file " & msgPath
-  exec "git push"
-
-task switch, "Toggle the working branch between nightly and main":
-  var
-    branch: string = captureGit("branch --show-current").strip()
-    target: string = "nightly"
-  if branch == "nightly":
-    target = "main"
-  echo "Switching from '" &
-    (if branch.len > 0: branch else: "(detached HEAD)") &
-    "' to '" & target & "'."
-  exec "git checkout " & target
-
-task applynightly, "Promote nightly onto main by fast-forward and push":
-  var
-    branch: string = captureGit("branch --show-current").strip()
-  if branch == "main":
-    quit "On 'main'. Run `nimble switch` to move to nightly before applying."
-  exec "git fetch . nightly:main"
-  exec "git push origin nightly:main"
-  echo "main is now at the nightly state; nightly branch left intact."
-
-task find, "Use local clones for submodules in parent folder":
-  let modulesPath = ".gitmodules"
-  if not fileExists(modulesPath):
-    echo "No .gitmodules found."
-  else:
-    let root = parentDir(getCurrentDir())
-    var current = ""
-    for line in readFile(modulesPath).splitLines:
-      let s = line.strip()
-      if s.startsWith("[submodule"):
-        let start = s.find('"')
-        let stop = s.rfind('"')
-        if start >= 0 and stop > start:
-          current = s[start + 1 .. stop - 1]
-      elif current.len > 0 and s.startsWith("path"):
-        let parts = s.split("=", maxsplit = 1)
-        if parts.len == 2:
-          let subPath = parts[1].strip()
-          let tail = splitPath(subPath).tail
-          let localDir = joinPath(root, tail)
-          if dirExists(localDir):
-            let localUrl = localDir.replace('\\', '/')
-            exec "git config -f .gitmodules submodule." & current & ".url " & localUrl
-            exec "git config submodule." & current & ".url " & localUrl
-    exec "git submodule sync --recursive"
-
-# NOTE: no UI dependencies belong here. Geist is a headless library, a CLI
-# and a daemon; a stray `requires "owlkettle", "illwill", "webui"` used to
-# sit at the bottom of this file and made every install of the database pull
-# in a GTK stack it never calls.
-
-# ---------------------------------------------------------------------
 # Android
 # ---------------------------------------------------------------------
+#
+# The companion is a LIBRARY (Kotlin + JNI), not an app, so the shared
+# buildAndroid/installAndroid -- which build and install an APK -- do not
+# apply. These two drive its own gradle module instead.
 
 task androidLib, "Build the Android keystore companion (Kotlin + JNI)":
   ## Needs the Android SDK; `local.properties` under android/ points at it.
@@ -479,3 +349,4 @@ task androidTest, "Run the keystore tests on a connected device":
   ## be set over adb. See docs/keystore.md.
   exec "cd android && gradle :geistkeystore:connectedDebugAndroidTest " &
     "--console=plain"
+

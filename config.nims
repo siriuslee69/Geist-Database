@@ -1,45 +1,71 @@
+## ---------------------------------------------------------------------------
+## config.nims <- what every `nim` call in this repo is given
+## ---------------------------------------------------------------------------
+##
+##   what                          from where
+##   ----------------------------  ------------------------------------------
+##   Geist's own modules           src/
+##   Geist's dependencies          submodules/<name>/src      (pinned ONLY)
+##   runePragmas                   ../Rune-Pragmas, else the submodule
+##   var_invariants                ../Var-Invariants, else the submodule
+##   compiler flags (mm, threads)  configs/default.toml [nim] and [define],
+##                                 then configs/<preset>.toml over it
+##
+## Two kinds of dependency, two rules:
+##
+##   code Geist RUNS      Fylgia, SIMD-Nexus, Tyr, Eir, Bifrost, nimsimd,
+##                        Otter. Taken from the pinned submodule and nowhere
+##                        else, so a build here is the build a fresh clone
+##                        gets -- not one that silently picked up whatever a
+##                        sibling folder holds today.
+##   shared TOOLING       Rune-Pragmas, Var-Invariants, Nimble-Tasks. The
+##                        sibling clone wins, so an edit there reaches every
+##                        repo at once; the submodule is the fallback.
+##
+## Exactly one of sibling/submodule is put on the path for each tool: Nim
+## takes the LAST matching --path, so adding both would silently reverse
+## the preference.
+
 import std/[os, strutils]
 
 const
-  repoRoot = thisDir()
-
-proc normPath(p: string): string =
-  result = p.replace('\\', '/')
-
-proc resolveRepoRoot(name: string): string =
-  ## name: declared direct dependency resolved from the pinned submodule only.
-  result = joinPath(repoRoot, "submodules", name)
-  if not dirExists(result):
-    result = ""
+  repoRoot: string = thisDir()
+  pinnedDeps: array[7, string] = ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
+    "Eir-CompressionAndECC", "Bifrost-ExchangeProtocols", "nimsimd",
+    "Otter-RepoEvaluation"]
 
 proc addPathIfExists(p: string) =
-  if p.len > 0 and dirExists(p):
-    switch("path", normPath(p))
+  ## p: a folder; put on the Nim path when it is there.
+  if dirExists(p):
+    switch("path", p.replace('\\', '/'))
 
-switch("path", joinPath(repoRoot, "src"))
+proc addSharedTool(name, sub: string) =
+  ## name/sub: a shared tooling repo and the folder inside it to put on the
+  ## path. The sibling clone wins; the pinned submodule is the fallback.
+  if dirExists(repoRoot / ".." / name / sub):
+    addPathIfExists(repoRoot / ".." / name / sub)
+  elif dirExists(repoRoot / "submodules" / name / sub):
+    addPathIfExists(repoRoot / "submodules" / name / sub)
+  else:
+    echo "config.nims: cannot find " & name & ". Run `git submodule " &
+      "update --init` (one level, NOT --recursive), or clone " & name &
+      " next to this repository."
+
+addPathIfExists(repoRoot / "src")
 switch("experimental", "dotOperators")
-addPathIfExists(joinPath(repoRoot, "src", "protocols"))
-addPathIfExists(joinPath(repoRoot, "src", "client"))
-addPathIfExists(joinPath(repoRoot, "src", "server"))
-addPathIfExists(joinPath(repoRoot, "submodules", "Otter-RepoEvaluation", "src"))
-when not defined(geistAndroidBuild):
-  switch("define", "hasLibsodium")
+for dep in pinnedDeps:
+  addPathIfExists(repoRoot / "submodules" / dep / "src")
 
-var
-  depRoot: string = ""
-for dep in ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto", "Eir-CompressionAndECC",
-            "Bifrost-ExchangeProtocols"]:
-  depRoot = resolveRepoRoot(dep)
-  addPathIfExists(depRoot)
-  addPathIfExists(joinPath(depRoot, "src"))
-  addPathIfExists(joinPath(depRoot, "meta"))
-  addPathIfExists(joinPath(depRoot, "tools", "meta"))
+addSharedTool("Rune-Pragmas", "meta")
+addSharedTool("Var-Invariants", "src")
 
-## Shared pragma module: one file for the whole workspace, so there is no
-## per-repository copy to drift or to collide on the Nim path. The pinned
-## submodule is added LAST, because Nim takes the last matching `--path`
-## and a fresh clone must build from what this repository pins rather than
-## from whatever happens to sit beside it on this machine.
-if dirExists(thisDir() & "/../Rune-Pragmas/meta"):
-  switch("path", thisDir() & "/../Rune-Pragmas/meta")
-addPathIfExists(joinPath(repoRoot, "submodules", "Rune-Pragmas", "meta"))
+## Build presets: configs/default.toml always, plus configs/<name>.toml when
+## the build says -d:preset=<name>. The reader is shared by every repo.
+when fileExists(thisDir() & "/../Nimble-Tasks/src/preset.nims"):
+  include "../Nimble-Tasks/src/preset.nims"
+elif fileExists(thisDir() & "/submodules/Nimble-Tasks/src/preset.nims"):
+  include "submodules/Nimble-Tasks/src/preset.nims"
+else:
+  proc applyPreset() = echo "config.nims: Nimble-Tasks/src/preset.nims " &
+    "not found; configs/*.toml are ignored. Update the submodule."
+applyPreset()

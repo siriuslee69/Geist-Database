@@ -26,7 +26,9 @@ Where every file lives, and why it lives there rather than next door.
   |   +-- benchmarks/            the Otter timing harness
   |   +-- statistics/            recorded measurements of this tree
   |
-  +-- examples/                  runnable, and run by `nimble examples`
+  +-- examples/                  runnable, and run by `nimble runExamples`
+  +-- configs/                   default.toml, the ONE settings file, and
+  |                              build presets (server, iot, android)
   +-- docs/                      this file and its neighbours
   +-- agents/PROGRESS.md         project state and handoff notes
   +-- nix/                       NixOS package, modules and VM tests
@@ -34,7 +36,7 @@ Where every file lives, and why it lives there rather than next door.
   +-- submodules/                every dependency, pinned
 ```
 
-Three rules decide that picture, and there are no others.
+Four rules decide that picture, and there are no others.
 
 **Def. 1 (evaluation).** Anything that measures the code rather than
 being the code goes under `evaluation/`. Tests, benchmarks and recorded
@@ -47,9 +49,15 @@ programs: they parse arguments, print, and exit. A program may import the
 library; the library may never import a program.
 
 **Def. 3 (a dependency lives in one place).** Every dependency is a git
-submodule under `submodules/`. Nothing is vendored into `src/`, and
-nothing is fetched at build time except `nimsimd`, which the nix package
-pins by hash.
+submodule under `submodules/`, `nimsimd` included. Nothing is vendored
+into `src/`, and nothing is fetched at build time. `docs/submodules.md`
+says which copy of each the compiler sees.
+
+**Def. 4 (one settings file).** Every switch -- compiler flags, `-d:`
+defines, and the values the program starts with -- is written once, in
+`configs/default.toml`. A build preset (`configs/server.toml`, ...) holds
+only what differs. The .nimble file and nix read `[project]` from the
+same file rather than repeating it.
 
 ## 2. The three halves
 

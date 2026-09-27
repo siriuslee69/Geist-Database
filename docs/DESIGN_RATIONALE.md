@@ -40,7 +40,7 @@ Three structural causes:
 
 Two concrete defects found by running it, both fixed by the rewrite:
 
-- `nimble exampleSimpleApi` — the flagship example — crashed:
+- `nimble exampleSimpleApi` (a task since removed) — the flagship example — crashed:
   `gameConfig()` marks `matchId`/`playerId`/`tick` required, the example
   stored a `Position{player,tick,x,y}`.
 - `geistd` loaded a snapshot at startup and never re-read the file

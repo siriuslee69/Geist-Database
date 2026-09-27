@@ -311,7 +311,7 @@ proc collectTrust(c: DaemonConfig): tuple[ok: bool, peers: seq[TrustedPeer],
 proc daemonConfigFor(c: DaemonConfig): GeistConfig {.role: configurator,
     tag: "config|server".} =
   ## c: daemon options resolved to the configuration a session opens with.
-  ## The preset the operator named, adjusted by whatever config.toml sets
+  ## The preset the operator named, adjusted by whatever configs/default.toml sets
   ## for this installation.
   result = applyDefaults(geistConfigPreset(c.preset), geistDefaults())
 
@@ -378,7 +378,7 @@ proc runGeistd*(argv: seq[string]): int {.role: metaOrchestrator,
   try:
     c = resolveConfig(argv)
     installSignalHandlers()
-    # config.toml carries the library defaults every preset is adjusted by.
+    # configs/default.toml carries the library defaults every preset is adjusted by.
     written = initGeistNetworkDefaults()
     if not written.ok:
       raise newException(ValueError, written.err)

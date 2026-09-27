@@ -44,7 +44,7 @@ export answer, need, offer, registry
 proc initGeistNetworkDefaults*(path: string = libraryConfigName): tuple[
     ok: bool, err: string] {.role: configurator,
     tag: "ame|config|lifecycle|read".} =
-  ## path: config.toml, adopted for BOTH halves in one call.
+  ## path: configs/default.toml, adopted for BOTH halves in one call.
   ##
   ## A program that speaks to peers wants every section of that file
   ## validated, including `[transport]` -- a typo there should stop it just

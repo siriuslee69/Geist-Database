@@ -21,7 +21,7 @@
 ##   transport           Query/Reply over Bifrost AME/DAC, many peers
 ##   identity            signing identities and the pins peers exchange
 ##   relay               what a Query means against a PIPE
-##   transport_settings  the [transport] section of config.toml
+##   transport_settings  [runtime.transport] of configs/default.toml
 ##
 ## The trust model is the same one the database half uses, because it is
 ## the same handshake: peers are PINNED, the pin decides what a peer may
@@ -65,7 +65,7 @@ type
 proc initGeistWireDefaults*(path: string = libraryConfigName): tuple[
     ok: bool, err: string] {.role: configurator,
     tag: "ame|config|lifecycle|read".} =
-  ## path: config.toml, of which only `[transport]` concerns this half.
+  ## path: configs/default.toml, of which only `[runtime.transport]` concerns this half.
   ##
   ## A relay has no storage settings to adopt, so it validates the one
   ## section it acts on and leaves the rest alone. A typo under

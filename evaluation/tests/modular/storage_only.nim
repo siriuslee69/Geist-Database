@@ -34,7 +34,7 @@ proc main() =
   doAssert db.entryCount() == 1'u32
   doAssert byId[Note](db, id).value.title == "corrected"
   doAssert defaultGeistConfig().rowIdentity
-  doAssert loadGeistDefaults("config.toml").ok
+  doAssert loadGeistDefaults(libraryConfigName).ok
   db.close()
   echo "storage-only build: ok"
 

@@ -1,0 +1,14 @@
+# ---------------------------------------------------------------------------
+# android <- a Geist library built for a phone
+# ---------------------------------------------------------------------------
+#
+#   nim c -d:preset=android --os:android --cpu:arm64 ...
+#
+# Only what differs from default.toml goes here.
+
+[preset]
+name = "android"
+description = "No system libsodium; Tyr's own code for everything."
+
+[define]
+hasLibsodium = false

@@ -2,8 +2,9 @@
 
 ## What this repository is
 
-A Nim library (`src/geist.nim`), a command line client (`geist`) and a
-daemon (`geistd`). Nothing else. If you are looking for the browser
+A Nim library (`src/geist.nim`), two command line clients (`geist`,
+`geist-relay`) and three daemons (`geistd`, `geist-relayd`,
+`geist-routed`). Nothing else. If you are looking for the browser
 extension, the Koerper/Schatten/Spur records or the `protocols/` tree,
 they belonged to the implementation replaced in commit `047a776` and are
 not coming back.
@@ -16,10 +17,12 @@ src/clients/geist_cli.nim  the geist client
 src/server/geistd.nim      the geistd daemon
 src/clients/geist_relay.nim   the geist-relay client
 src/server/geist_relayd.nim   the geist-relayd message relay
+src/server/geist_routed.nim   the geist-routed request router
+configs/default.toml         the ONE settings file; presets beside it
 evaluation/tests/test_*.nim   one file per area, found by `nimble test`
 evaluation/benchmarks/       Otter benchmark harness
 agents/PROGRESS.md           project state and handoff notes
-examples/                  runnable, and run by `nimble examples`
+examples/                  runnable, and run by `nimble runExamples`
 ```
 
 `docs/layout.md` says where every file lives and why it lives there
@@ -35,12 +38,14 @@ are in there with the measurement that ruled them out.
 ## Before you push
 
 ```bash
-nimble test        # every suite; must be green
-nimble examples    # all three must run
-nimble demoCli     # exercises the CLI end to end
-nimble buildAll    # compile-check every public module
-nimble checkModular # the storage half must build with no network stack
-nimble checkRelay   # the wire half must build with no database in it
+nimble test          # every suite; must be green
+nimble runExamples   # all five must run
+nimble demoCli       # exercises the CLI end to end
+nimble checkAll      # compile-check every public module
+nimble buildAll      # build all five programs for release
+nimble checkModular  # the storage half must build with no network stack
+nimble checkRelay    # the wire half must build with no database in it
+nimble checkRouter   # the router must build with no database in it
 ```
 
 Those two are the ones that fail silently in review otherwise, and they
@@ -107,3 +112,20 @@ Everything lives in `submodules/` as a git submodule and is wired in
 previous implementation rebuilt Bifrost's replay cache, framing and
 packaging on top of Bifrost, and that is a large part of why it was
 replaced.
+
+```text
+  where a thing goes             file
+  -----------------------------  ------------------------------------------
+  a new dependency               git submodule add ... submodules/<Name>,
+                                 then one line in config.nims (pinnedDeps)
+  a compiler flag or -d: switch  configs/default.toml [nim] / [define]
+  a start value the program      configs/default.toml [runtime.<table>],
+    reads                        plus its reader in src/geist/*settings.nim
+  a build for one kind of        a new configs/<name>.toml holding ONLY
+    machine                      what differs from default.toml
+  a task every repo could use    Nimble-Tasks, not geist_database.nimble
+  a task only Geist needs        geist_database.nimble
+```
+
+`docs/submodules.md` says which copy of each dependency the compiler sees
+and how pins move.

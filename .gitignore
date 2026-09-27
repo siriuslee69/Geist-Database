@@ -71,3 +71,4 @@ examples/geist_*
 # The user's own settings: paths, pins and endpoints for THIS machine.
 # The template beside it is tracked; what someone fills in is not.
 userconfig.toml
+.otter/

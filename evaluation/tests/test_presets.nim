@@ -95,7 +95,7 @@ suite "a preset can be chosen from config.toml":
     var
       dir: string = scratch("geist_t_preset1")
       path: string = dir / "config.toml"
-    writeFile(path, "[storage]\npreset = \"cloud-sync\"\n")
+    writeFile(path, "[runtime.storage]\npreset = \"cloud-sync\"\n")
     var got = loadGeistDefaults(path)
     check got.ok
     check got.defaults.preset == "cloud-sync"
@@ -105,7 +105,7 @@ suite "a preset can be chosen from config.toml":
     var
       dir: string = scratch("geist_t_preset2")
       path: string = dir / "config.toml"
-    writeFile(path, "[storage]\npreset = \"clowd-sync\"\n")
+    writeFile(path, "[runtime.storage]\npreset = \"clowd-sync\"\n")
     var got = loadGeistDefaults(path)
     ## The whole point of checking here: the person who wrote the typo is
     ## still looking at the file.
@@ -119,7 +119,7 @@ suite "a preset can be chosen from config.toml":
       i: int = 0
     for p in geistConfigPresets():
       path = dir / ("c" & $i & ".toml")
-      writeFile(path, "[storage]\npreset = \"" & p.name & "\"\n")
+      writeFile(path, "[runtime.storage]\npreset = \"" & p.name & "\"\n")
       var got = loadGeistDefaults(path)
       check got.ok
       if not got.ok:

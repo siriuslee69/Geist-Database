@@ -168,7 +168,7 @@ type
     ##
     ##   transferTier   which AME strength a store's own traffic opens at.
     ##                  Today the tier comes from `[transport] startTier`
-    ##                  in config.toml, which is per PROCESS, not per
+    ##                  in configs/default.toml, which is per PROCESS, not per
     ##                  store. A machine serving one public database and
     ##                  one private one cannot currently ask for different
     ##                  strengths for each.

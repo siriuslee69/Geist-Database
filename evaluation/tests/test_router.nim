@@ -12,7 +12,7 @@ import std/[os, strutils, unittest]
 
 import geist/wire
 
-import geist_routed
+import server/geist_routed
 
 proc scratch(name: string): string =
   result = getTempDir() / "geist_router_test"

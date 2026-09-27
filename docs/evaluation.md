@@ -19,7 +19,7 @@ benchmarks, and the recorded statistics. All three live under
   |   +-- test_*.nim         one file per area, found by `nimble test`
   |   +-- modular/           proofs about what is NOT compiled
   +-- benchmarks/
-  |   +-- geist_bench.nim    the Otter timing harness, one binary
+  |   +-- bench_geist.nim    the Otter timing harness, one binary
   +-- statistics/
       +-- otter-stats.txt    the recorded shape of the tree
 ```
@@ -37,9 +37,10 @@ are never called.
 
 ## 2. Tests
 
-One file per area of behaviour. `nimble test` walks
-`evaluation/tests/` and runs every file whose name starts with `test_`,
-so adding a file is the whole of adding a suite.
+One file per area of behaviour. `nimble test` (from Nimble-Tasks) walks
+`evaluation/tests/` and all its subfolders and runs every file whose name
+starts with `test`, so adding a file is the whole of adding a suite. Each
+program is built into `build/evaluation/`, never beside its source.
 
 ```text
   task                what it runs                        roughly
@@ -107,7 +108,7 @@ currently stands on that.
 One binary, several groups, built once and run by group:
 
 ```text
-  nimble bench          every group
+  nimble runBenchmarks  every group (shared task; runs bench_*.nim)
   nimble benchCrypto    hash families, digest widths, MAC combiners
   nimble benchIo        write throughput, point reads, column scans
   nimble benchColumns   column kinds and collapsing
@@ -127,7 +128,7 @@ a routine may have both.
 ## 4. Statistics
 
 ```text
-  nimble stats
+  nimble runStatistics
 ```
 
 Runs Otter over the tracked tree and writes
@@ -156,7 +157,7 @@ to check, not a list to delete.
 
 ### Measuring the tracked tree only
 
-`nimble stats` measures what git tracks. That matters here: an untracked
+`nimble runStatistics` measures what git tracks. That matters here: an untracked
 `.geist-legacy/` folder holds the previous implementation as a reference
 copy, and measuring it along with the current tree turns 873 routines
 into 1292 and buries every real finding. If you run Otter by hand, point
@@ -164,7 +165,7 @@ it at a clean checkout rather than a working folder.
 
 ## 5. Known gaps
 
-Honest state of the measurements, from the last `nimble stats`:
+Honest state of the measurements, from the last `nimble runStatistics`:
 
 ```text
   what                              where it stands        what it means

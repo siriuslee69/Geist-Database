@@ -1,12 +1,14 @@
-## config.toml and userconfig.toml: what they set, and what they refuse.
+## configs/default.toml and userconfig.toml: what they set, and what they
+## refuse.
 ##
 ## The property that matters most here is the unfriendly one: a misspelled
 ## setting must be an ERROR. A settings file that silently ignores what it
 ## does not recognise is indistinguishable from one that took effect, and
 ## the person who wrote it will believe it did.
 
-import std/[os, strutils, unittest]
+import std/[json, os, strutils, unittest]
 import geist/network
+import geist/toml_read
 
 proc scratch(name: string): string =
   result = getTempDir() / name
@@ -27,12 +29,12 @@ suite "library defaults":
     var dir = scratch("geist_t_cfg2")
     var path = dir / "config.toml"
     writeFile(path, """
-[storage]
+[runtime.storage]
 preset = "secure-app"
 sidecarThreshold = 4096
 rowIdentity = false
 
-[backup]
+[runtime.backup]
 copies = 3
 """)
     var got = loadGeistDefaults(path)
@@ -48,7 +50,7 @@ copies = 3
   test "a misspelled setting is refused, not ignored":
     var dir = scratch("geist_t_cfg3")
     var path = dir / "config.toml"
-    writeFile(path, "[storage]\nsidecarTreshold = 4096\n")
+    writeFile(path, "[runtime.storage]\nsidecarTreshold = 4096\n")
     var got = loadGeistDefaults(path)
     check not got.ok
     check got.err.contains("sidecarTreshold")
@@ -57,7 +59,7 @@ copies = 3
   test "a preset that does not exist fails at the file, not at the open":
     var dir = scratch("geist_t_cfg4")
     var path = dir / "config.toml"
-    writeFile(path, "[storage]\npreset = \"turbo\"\n")
+    writeFile(path, "[runtime.storage]\npreset = \"turbo\"\n")
     var got = loadGeistDefaults(path)
     check not got.ok
     check got.err.contains("turbo")
@@ -107,13 +109,13 @@ copies = 3
     # telemetry store would become impossible.
     var dir = scratch("geist_t_cfg5b")
     var path = dir / "config.toml"
-    writeFile(path, "[storage]\nrowIdentity = true\n")
+    writeFile(path, "[runtime.storage]\nrowIdentity = true\n")
     var got = loadGeistDefaults(path)
     check got.ok
     check got.defaults.rowIdentityNamed
     check applyDefaults(iotConfig(), got.defaults).rowIdentity
     # And naming it false is honoured rather than read as "absent".
-    writeFile(path, "[storage]\nrowIdentity = false\n")
+    writeFile(path, "[runtime.storage]\nrowIdentity = false\n")
     got = loadGeistDefaults(path)
     check got.ok
     check got.defaults.rowIdentityNamed
@@ -181,7 +183,7 @@ suite "transport settings":
     var dir = scratch("geist_t_cfg6")
     var path = dir / "config.toml"
     writeFile(path, """
-[transport]
+[runtime.transport]
 startTier = "secret"
 secretAtMiB = 16
 archiveAtMiB = 256
@@ -200,14 +202,67 @@ archiveAtMiB = 256
   test "an unknown tier name is refused":
     var dir = scratch("geist_t_cfg7")
     var path = dir / "config.toml"
-    writeFile(path, "[transport]\nstartTier = \"paranoid\"\n")
+    writeFile(path, "[runtime.transport]\nstartTier = \"paranoid\"\n")
     var got = loadTransportDefaults(path)
     check not got.ok
     check got.err.contains("paranoid")
 
-  test "the shipped config.toml parses and validates":
-    # The file in the repo root is what a new user reads first. If it drifts
+  test "the shipped configs/default.toml parses and validates":
+    # The file in configs/ is what a new user reads first. If it drifts
     # from the parser, every one of them starts with an error.
-    var got = loadTransportDefaults("config.toml")
+    var got = loadTransportDefaults(currentSourcePath().parentDir() / ".." /
+      ".." / "configs" / "default.toml")
     check got.ok
+    # Found and read, not skipped as missing -- a missing file is also ok.
+    check got.defaults.loadedFrom.len > 0
     check validateTriggerPolicy(defaultsTriggerPolicy(got.defaults)).ok
+
+suite "build presets at run time":
+  # {.testKind: tkUnit, covers: "runtimeOf".}
+  test "a preset file replaces only the keys it names":
+    var dir = scratch("geist_t_layer1")
+    var base = dir / "default.toml"
+    var over = dir / "iot.toml"
+    writeFile(base, "[project]\nname = \"x\"\n\n[runtime.storage]\n" &
+      "preset = \"app\"\nsidecarThreshold = 1024\n\n[runtime.backup]\n" &
+      "copies = 2\n")
+    writeFile(over, "[nim]\nopt = \"size\"\n\n[runtime.storage]\n" &
+      "preset = \"iot\"\n")
+    var got = runtimeOf(base, @[over])
+    check got.ok
+    check got.node["storage"]["preset"].getStr() == "iot"
+    check got.node["storage"]["sidecarThreshold"].getInt() == 1024
+    check got.node["backup"]["copies"].getInt() == 2
+    # Build tables never leak into what the program reads.
+    check not got.node.hasKey("project")
+    check not got.node.hasKey("nim")
+
+  # {.testKind: tkEdgeCase, covers: "runtimeOf".}
+  test "a preset file that will not parse stops the load":
+    var dir = scratch("geist_t_layer2")
+    var base = dir / "default.toml"
+    var over = dir / "broken.toml"
+    writeFile(base, "[runtime.storage]\npreset = \"app\"\n")
+    writeFile(over, "[runtime.storage\npreset = \n")
+    var got = runtimeOf(base, @[over])
+    check not got.ok
+    check got.err.contains("broken.toml")
+
+  # {.testKind: tkUnit, covers: "overlayNames".}
+  test "only the library default file is ever overlaid":
+    check overlayNames("somewhere/else.toml").len == 0
+
+  # {.testKind: tkSmoke, covers: "loadGeistDefaults, loadTransportDefaults".}
+  test "every shipped configs/*.toml loads without a complaint":
+    var dir = currentSourcePath().parentDir() / ".." / ".." / "configs"
+    var n = 0
+    for f in walkFiles(dir / "*.toml"):
+      var storage = loadGeistDefaults(dir / "default.toml")
+      var layered = runtimeOf(dir / "default.toml", @[f])
+      var transport = loadTransportDefaults(f)
+      check storage.ok
+      check storage.defaults.loadedFrom.len > 0
+      check layered.ok
+      check transport.ok
+      n = n + 1
+    check n >= 1

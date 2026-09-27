@@ -322,12 +322,12 @@ suite "configuration refuses what it cannot do":
   test "config.toml names the mode, and a typo is refused":
     let dir = freshRoot("settings")
     createDir(dir)
-    writeFile(dir / "config.toml", "[storage]\ntranspose = \"onSave\"\n")
+    writeFile(dir / "config.toml", "[runtime.storage]\ntranspose = \"onSave\"\n")
     let good = loadGeistDefaults(dir / "config.toml")
     check good.ok
     check good.defaults.transpose == "onSave"
     check applyDefaults(appConfig(), good.defaults).transpose == tmOnSave
-    writeFile(dir / "config.toml", "[storage]\ntranspose = \"onsave\"\n")
+    writeFile(dir / "config.toml", "[runtime.storage]\ntranspose = \"onsave\"\n")
     let bad = loadGeistDefaults(dir / "config.toml")
     check not bad.ok
     check "must be none, onSave, interval or manual" in bad.err
@@ -335,7 +335,7 @@ suite "configuration refuses what it cannot do":
   test "a file that says nothing leaves the preset alone":
     let dir = freshRoot("silent")
     createDir(dir)
-    writeFile(dir / "config.toml", "[storage]\npreset = \"app\"\n")
+    writeFile(dir / "config.toml", "[runtime.storage]\npreset = \"app\"\n")
     let loaded = loadGeistDefaults(dir / "config.toml")
     check loaded.ok
     var c = appConfig()
