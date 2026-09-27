@@ -2,7 +2,8 @@
 
 Every number here was measured on this machine (Nim 2.2.10, `--mm:orc
 -d:release`, x86_64) during the rearchitecture, not estimated. The
-prototypes that produced them are preserved under `docs/measurements/`.
+prototypes that produced them are preserved under
+`evaluation/benchmarks/prototypes/`.
 
 The purpose of this file is to answer "why is it like this?" a year from
 now without re-deriving anything. Each section states the decision, the

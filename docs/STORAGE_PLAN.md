@@ -660,7 +660,7 @@ carries a 3x error.
    follow. The answer is probably a second op that resolves one ref, or
    `qoFetch` resolving them on the way out and paying the size.
 2. **Cap defaults for P2.** Should come from the histogram machinery in
-   `docs/measurements/proto5/`, run over real length distributions, not
+   `evaluation/benchmarks/prototypes/proto5/`, run over real length distributions, not
    guessed.
 3. **Packed-tier file size cap.** 2 B fileId + 4 B slot allows 65 K files
    × 4 G slots, but the practical limit is how large a sidecar cluster can

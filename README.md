@@ -2178,7 +2178,7 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   docs/STORAGE_PLAN.md         on-disk plan and generation rules
   docs/relay.md                part 3 in full
   docs/nix.md                  NixOS modules and VM checks
-  docs/measurements/           the harnesses behind the numbers
+  evaluation/benchmarks/prototypes/  throwaway programs behind the numbers
   docs/submodules.md           which dependency owns which job
   agents/PROGRESS.md           commit message + recent change log
 ```

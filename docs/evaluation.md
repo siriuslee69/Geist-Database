@@ -118,7 +118,8 @@ One binary, several groups, built once and run by group:
 The harness warms up before it measures -- first-touch page faults and a
 cold allocator otherwise show up as "the first configuration is slow" --
 and prints a table per group. Numbers from these runs, with the machine
-they came from, are in `docs/measurements/`.
+they came from, are in `docs/DESIGN_RATIONALE.md`; the throwaway programs
+that first produced them are in `evaluation/benchmarks/prototypes/`.
 
 A benchmark that Otter should also count in its coverage picture carries
 `testKind: tkBenchmark`. A benchmark whose own body Otter should
