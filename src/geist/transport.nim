@@ -432,8 +432,7 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
   try:
     # AM1S: we believe exactly one public key, provisioned out of band.
     auth = bfx.initAmePinnedAuthentication(peer)
-    hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, [],
-      bfx.atmPinnedPeerKey)
+    hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, [], auth)
     sock = bfx.openDacPeer(remote, timeoutMs)
     bfx.sendDacFrameBytes(sock, remote, bfx.encodeAmeClientHelloFrame(hs.hello))
     got = bfx.recvDacFrameBytes(sock, geistDacFrameMaxBytes, timeoutMs)
@@ -448,7 +447,7 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
       retry = bfx.decodeAmeHelloRetry(frame.record)
       bfx.clearAmeClientHandshake(hs)
       hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, retry.cookie,
-        bfx.atmPinnedPeerKey)
+        auth)
       bfx.sendDacFrameBytes(sock, remote,
         bfx.encodeAmeClientHelloFrame(hs.hello, retried = true))
       got = bfx.recvDacFrameBytes(sock, geistDacFrameMaxBytes, timeoutMs)
@@ -854,7 +853,8 @@ proc challengePeer(S: var GeistServer, hello: bfx.AmeClientHello,
   var
     retry: bfx.AmeHelloRetry = default(bfx.AmeHelloRetry)
   retry.sessionId = hello.sessionId
-  retry.cookie = bfx.issueAmeCookie(S.cookieSecret, peerIdOf(key), now, hello)
+  retry.cookie = bfx.issueAmeCookie(S.cookieSecret, peerIdOf(key), now,
+    hello.sessionId)
   bfx.sendDacFrameBytes(S.sock, remote, bfx.encodeAmeHelloRetryFrame(retry))
   result = (true, "")
 
@@ -883,7 +883,8 @@ proc beginPeer(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
     return (false, "not a client hello from " & key & ": " & exc.msg)
   now = getTime().toUnix()
   if S.requireCookie and
-      not bfx.ameCookieValid(S.cookieSecret, peerIdOf(key), now, hello):
+      not bfx.ameCookieValid(S.cookieSecret, peerIdOf(key), now,
+        hello.sessionId, hello.cookie):
     return S.challengePeer(hello, remote, key, now)
   # `initAmePinnedAuthentication` needs one pin, and answering needs only
   # the MODE it carries -- AM1S adds nothing to the key schedule, and the
@@ -925,8 +926,11 @@ proc judgeFinish(S: var GeistServer, link: var PeerLink,
   result = (false, -1, default(bfx.AmeHandshakeResult))
   while i < S.trusted.len:
     attempt = link.pending
-    result.accepted = bfx.acceptAmeHandshake(attempt, finish,
-      bfx.initAmePinnedAuthentication(S.trusted[i].pin), now)
+    # Bifrost opens the finish with the authentication the answer stored.
+    # The answer stored the FIRST pin as a stand-in, so each attempt's copy
+    # is given the pin it is testing instead.
+    attempt.authentication = bfx.initAmePinnedAuthentication(S.trusted[i].pin)
+    result.accepted = bfx.acceptAmeHandshake(attempt, finish, now)
     if result.accepted.ok:
       return (true, i, result.accepted)
     i = i + 1

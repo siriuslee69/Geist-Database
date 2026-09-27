@@ -26,3 +26,14 @@
 	path = submodules/Rune-Pragmas
 	url = ../Rune-Pragmas.git
 	branch = main
+[submodule "submodules/Nimble-Tasks"]
+	path = submodules/Nimble-Tasks
+	url = https://github.com/siriuslee69/Nimble-Tasks.git
+	branch = main
+[submodule "submodules/Var-Invariants"]
+	path = submodules/Var-Invariants
+	url = https://github.com/siriuslee69/Var-Invariants.git
+	branch = main
+[submodule "submodules/nimsimd"]
+	path = submodules/nimsimd
+	url = https://github.com/guzba/nimsimd.git
