@@ -109,7 +109,8 @@ and below, never sideways within its own level, and never upward.
   level 3   session.nim  collection.nim  seek.nim  backup.nim
             |  what a caller actually holds and asks
             v
-  level 4   masks.nim  bytecheck.nim -> transport.nim -> network.nim
+  level 4   masks.nim  bytecheck.nim  payload.nim -> transport.nim
+            -> serve.nim -> network.nim
             |  the wire, which is the only part that knows Bifrost
             v
   level 5   clients/  server/
@@ -165,7 +166,7 @@ machine's disk and back:
   send(Query(op: qoFind, ...))
      |
      |  src/geist/transport.nim        encodeQuery -> bytes
-     |                                 one frame, or a DAC package
+     |  src/geist/payload.nim          one frame, or a DAC package
      v
   ~~~~~~~~~~~~~~~ the network ~~~~~~~~~~~~~~~
      |
@@ -173,11 +174,11 @@ machine's disk and back:
   serveOnce(handler)
      |
      |  src/server/geistd.nim          the loop
-     |  src/geist/transport.nim        open the frame
+     |  src/geist/serve.nim            open the frame
      |  src/geist/bytecheck.nim        walk the bytes: every length and
      |                                 enum checked; malformed -> an
      |                                 error reply, never a decode
-     |  src/geist/transport.nim        decodeQuery, work out this
+     |  src/geist/serve.nim            decodeQuery, work out this
      |                                 peer's rights
      v
   answerQuery(session, cursors, q, peer)

@@ -132,11 +132,12 @@ type
     ## ordinary path allocates nothing.
     truncatedIn*: seq[FieldName]
     store*: SidecarStore
-    err*: string
-      ## otter:latest -- the FIRST problem with this row. Every write call
-      ## may set it; callers check it once per column, after whichever
-      ## write that column needed, so two writes in a row is one column
-      ## in two case branches, not a lost value.
+    err*: string ## otter:latest
+      ## The FIRST problem with this row. Every write call may set it;
+      ## callers check it once per column, after whichever write that
+      ## column needed -- or, for the two identity columns, once after
+      ## both: they are only written when the schema is known to carry
+      ## them, so neither can run past the last column.
 
 proc initRowWriter*(s: Schema,
     store: SidecarStore = SidecarStore()): RowWriter {.role: configurator,

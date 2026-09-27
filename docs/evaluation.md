@@ -166,22 +166,32 @@ it at a clean checkout rather than a working folder.
 
 ## 5. Known gaps
 
-Honest state of the measurements, from the last `nimble runStatistics`:
+Honest state of the measurements, from the last `nimble runStatistics`
+(2026-09-27), with where each stood a round earlier:
 
 ```text
-  what                              where it stands        what it means
-  --------------------------------  ---------------------  -------------
-  tests with a declared testKind    0 of 507               every kind is
-                                                           guessed from
-                                                           the wording
-  routines with a role pragma       768 of 873             105 are absent
-                                                           from every
-                                                           Otter chart
-  untested routines                 230 of 873
-  triple-or-deeper nesting          135 sites
-  benchmark cover                   0 routines             no benchmark
-                                                           declares what
-                                                           it proves
+  what                              before       now          what it means
+  --------------------------------  -----------  -----------  -------------
+  tests with a declared testKind    0 of 507     15 of 531    the rest are
+                                                              guessed from
+                                                              the wording
+  routines with no role pragma      105          11           absent from
+                                                              every Otter
+                                                              chart
+  untested routines                 230 of 873   240 of 898
+  deeper than triple nesting        16 sites     0
+  triple nesting                    119 sites    97 sites
+  routines misread as placeholders  7            0            each finished
+                                                              one now says
+                                                              stage: stDone
+  "secret" candidates               14           14           all paths or
+                                                              example.com
+                                                              addresses;
+                                                              no key material
+  benchmark cover                   0 routines   0 routines   bench_geist
+                                                              times whole
+                                                              scenarios, not
+                                                              one routine
 ```
 
 None of these is a defect in what Geist does; all of them are places

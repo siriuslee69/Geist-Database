@@ -1,38 +1,88 @@
 # Progress
 
-Commit Message: One settings file in configs/, shared tasks from Nimble-Tasks, every dependency pinned
+Commit Message: Production pass 3: transport split into asking end, answering end and payload; third-party notices
 
 Features (Planned):
-- Declare a `testKind` on every evaluation routine. Otter reported 0 of
-  507 declared before this round; see the dated entry below for now.
-- Flatten the triple-nested and deeper sites Otter lists.
-- Put a `role` pragma on the routines that declare none.
-- Split the oversized files, `src/clients/geist_cli.nim` (1105 lines)
-  first.
-- Remove the unused public symbols and the dead configurator fields.
+- Declare a `testKind` on the evaluation routines: 15 of 531 declare one.
+  Mechanical, but each needs a real decision (unit / edge case /
+  integration), which is why it was not scripted.
+- Flatten the 97 triple-nested sites Otter lists (no site is deeper).
+- Split the oversized files: `src/clients/geist_cli.nim` (~1100 lines)
+  first, then `src/geist/serve.nim`, `src/server/geist_routed.nim`,
+  `src/geist/transpose.nim`.
+- Remove the unused public symbols and the 41 dead configurator fields
+  Otter lists -- after checking each: its call graph misses implicit
+  calls (`$`, callbacks).
+- `decodeSchema` from a FILE (store.nim, transpose.nim) is not walked by
+  `bytecheck` the way a peer's bytes are. A corrupted file can still
+  raise a defect instead of an error.
 - Carrier pairing (Bifrost 95a3ef2, local branch `carrier-pairing`) for
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- Bytes from a peer are walked (`bytecheck.nim`) before they are decoded;
+  a malformed request gets an error reply instead of stopping geistd.
+- `transport.nim` split: asking end (`transport`), answering end
+  (`serve`), multi-datagram envelope (`payload`).
+- Every routine at depth 4 flattened (16 -> 0); roles on 97 more routines;
+  finished constant-returning routines say `stage: stDone`.
+- Declarations: every `var` has a starting value, one-line runs are
+  blocks, no `let` (886 per-file findings -> the checker's own false
+  positives).
+- `geist`'s `fail` and every program's `--help` no longer quit from deep
+  inside; the entry routine decides the exit code.
+- THIRD_PARTY_LICENSES.md.
 - Bifrost 29915b7 and the newest main of every dependency (2026-09-27).
-- `configs/default.toml` is the one settings file: [project] for the
-  .nimble file and nix, [nim]/[define] for every `nim` call through
-  config.nims, [runtime.*] for the library at run time. Build presets
-  `server`, `iot`, `android` hold only what differs (2026-09-27).
-- Generic tasks from the Nimble-Tasks submodule; Geist keeps only its own
-  (2026-09-27).
+- `configs/default.toml` is the one settings file; build presets
+  `server`, `iot`, `android` (2026-09-27).
+- Generic tasks from the Nimble-Tasks submodule (2026-09-27).
 - `nimsimd` pinned as a submodule; a build with `--noNimblePath` works.
-- `Var-Invariants` on the path for needs/gives/keeps.
-- `evaluation/tests`, `evaluation/benchmarks`, `evaluation/statistics`
-  layout; `agents/PROGRESS.md`; `.iron/` gone from the tree.
-- `Rune-Pragmas` pinned as a submodule.
-- A CI workflow whose every step names a task that exists.
+- `Var-Invariants` contracts on the routines doing offset arithmetic
+  over untrusted bytes.
+- `evaluation/` layout; `agents/PROGRESS.md`; `Rune-Pragmas` pinned;
+  a CI workflow whose every step names a task that exists.
 
 Features (In Progress):
-- Production-readiness pass over Otter's findings (see below).
+- None.
 
 Notes:
 - Last problem encountered: see the newest dated entry.
+
+## 2026-09-27 Production Passes
+
+Three commits after the restructure, each verified with the whole suite:
+
+```text
+  pass  what                                               found by
+  ----  -------------------------------------------------  ----------------
+  1     886 declaration findings, deep quits, dead state,  nim-check, Otter
+        the benchmark that never compiled
+  2     peer bytes walked before decoding; contracts;      reading decodeRows
+        depth-4 sites; roles; named result tuples          beside decodeQuery
+  3     transport split; third-party notices; docs         Otter SEAM finding
+```
+
+What was wrong that nobody had seen:
+- `decodeQuery` trusted every length off the wire, and `serveOnce` does not
+  catch defects, so one malformed request from a pinned peer stopped
+  geistd. Now: `checkQueryBytes` first, and an error REPLY.
+- The benchmark referenced `packedConfig`, renamed long ago, and opened
+  generation 1 by file name. `nimble bench` could not have run.
+- `runStatistics` recorded this machine's path in a tracked file.
+
+Verification (final state):
+- `nimble test`: 531 checks across 34 files, zero failures.
+- `nimble checkAll`, `checkModular`, `checkRelay`, `checkRouter`,
+  `runExamples`, `runBenchmarks`, `buildAll`, `demoCli`: clean.
+
+Last big change or problem encountered:
+- The mechanical declaration pass first produced
+  `default(tuple[ok: bool, node: JsonNode, err: string])` -- correct and
+  unreadable. Fix: tuple types get a field-by-field literal
+  (`(false, default(JsonNode), "")`) and long lines wrap. Worked.
+- The per-file checker cannot read a multi-line type; seven of those were
+  genuinely without a value. Fix: named the tuples (`BuiltRow`,
+  `TransposeStatus`, `FollowStep`) instead of repeating them. Worked.
 
 ## 2026-09-27 One Settings File, Shared Tasks, Every Dependency Pinned
 

@@ -57,13 +57,22 @@ proc takeCount(A: openArray[uint8], o: var int): tuple[ok: bool, n: int] {.
   result = (true, int(A.getU32(o)))
   o = o + 4
 
-proc takeTexts(A: openArray[uint8], o: var int, n: int): bool {.
-    role: sanitizer, tag: "codecBoundary|read".} =
-  ## A/o/n: step over n texts back to back, or return false.
+type
+  ItemStep = proc (A: openArray[uint8], o: var int): bool {.nimcall.}
+    ## Steps over ONE item of a list and says whether it was all there:
+    ## `takeText`, `takePredicate`, `takeRow`.
+
+proc takeEach(A: openArray[uint8], o: var int, n: int,
+    item: ItemStep): bool {.role: sanitizer, tag: "codecBoundary|read".} =
+  ## A/o/n: step over n items back to back, or return false.
+  ## item: how one item is laid out.
+  ##
+  ## Stops at the first item that does not fit, so a count of four billion
+  ## (Def. 2) costs one failed step, not four billion.
   var
     i: int = 0
   while i < n:
-    if not takeText(A, o):
+    if not item(A, o):
       return false
     i = i + 1
   result = true
@@ -108,7 +117,7 @@ proc checkSchemaBytes*(A: openArray[uint8], o: var int): string {.
   if not takeText(A, o):
     return "schema: the type name runs past the end"
   c = takeCount(A, o)
-  if not c.ok or not takeTexts(A, o, c.n):
+  if not c.ok or not takeEach(A, o, c.n, takeText):
     return "schema: the field names run past the end"
   if not take(A, o, 1):
     return "schema: the autoCollapse byte is missing"
@@ -119,25 +128,19 @@ proc checkSchemaBytes*(A: openArray[uint8], o: var int): string {.
   if result.len > 0:
     return
   c = takeCount(A, o)
-  if not c.ok or not takeTexts(A, o, 2 * c.n):
+  if not c.ok or not takeEach(A, o, 2 * c.n, takeText):
     return "schema: the aliases run past the end"
   result = ""
 
 ## ---------------------------- query ---------------------------------
 
-proc takePredicates(A: openArray[uint8], o: var int, n: int): bool {.
-    role: sanitizer, tag: "codecBoundary|read".} =
-  ## A/o/n: step over n predicates:
+proc takePredicate(A: openArray[uint8], o: var int): bool {.role: sanitizer,
+    tag: "codecBoundary|read".} =
+  ## A/o: step over one predicate:
   ##
   ##   | text field | u8 isText | text text | u64 num |
-  var
-    i: int = 0
-  while i < n:
-    if not (takeText(A, o) and take(A, o, 1) and takeText(A, o) and
-        take(A, o, 8)):
-      return false
-    i = i + 1
-  result = true
+  result = takeText(A, o) and take(A, o, 1) and takeText(A, o) and
+    take(A, o, 8)
 
 proc checkQueryBytes*(A: openArray[uint8]): string {.role: sanitizer,
     tag: "codecBoundary|networkSurface|read".} =
@@ -159,7 +162,7 @@ proc checkQueryBytes*(A: openArray[uint8]): string {.role: sanitizer,
   if not takeText(A, o):
     return "request: the collection runs past the end"
   c = takeCount(A, o)
-  if not c.ok or not takePredicates(A, o, c.n):
+  if not c.ok or not takeEach(A, o, c.n, takePredicate):
     return "request: the predicates run past the end"
   if not take(A, o, 4 + 8):
     return "request: limit and cursor are missing"
@@ -171,16 +174,10 @@ proc checkQueryBytes*(A: openArray[uint8]): string {.role: sanitizer,
 
 ## ---------------------------- reply ---------------------------------
 
-proc takeRows(A: openArray[uint8], o: var int, n: int): bool {.
-    role: sanitizer, tag: "codecBoundary|read".} =
-  ## A/o/n: step over n rows: | u16 schemaId | u32 length | bytes |
-  var
-    i: int = 0
-  while i < n:
-    if not take(A, o, 2) or not takeText(A, o):
-      return false
-    i = i + 1
-  result = true
+proc takeRow(A: openArray[uint8], o: var int): bool {.role: sanitizer,
+    tag: "codecBoundary|read".} =
+  ## A/o: step over one row: | u16 schemaId | u32 length | bytes |
+  result = take(A, o, 2) and takeText(A, o)
 
 proc checkReplyBytes*(A: openArray[uint8]): string {.role: sanitizer,
     tag: "codecBoundary|networkSurface|read".} =
@@ -202,7 +199,7 @@ proc checkReplyBytes*(A: openArray[uint8]): string {.role: sanitizer,
   if result.len > 0:
     return "answer: " & result
   c = takeCount(A, o)
-  if not c.ok or not takeRows(A, o, c.n):
+  if not c.ok or not takeEach(A, o, c.n, takeRow):
     return "answer: the rows run past the end"
   if o != A.len:
     return "answer: " & $(A.len - o) & " trailing bytes"

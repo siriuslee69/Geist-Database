@@ -1441,10 +1441,12 @@ restart is the same peer rather than a stranger.
 
 **Authentication is public-key only.** A pin is a name plus public
 signing keys, and that is the one mode Geist wires up. Bifrost underneath
-also implements a shared-secret mode (AM1M, `initAmePskAuthentication`),
-and Geist does not expose it — `connectGeist` and `initGeistServer` both
-hard-code the pinned-key path. If you want symmetric keys, that is the
-change to make, and it is contained to `transport.nim`.
+also implements a shared-secret mode (AM1P, `initAmePskAuthentication`)
+and a mode needing BOTH a shared secret and the pinned key (AM1P+S,
+`initAmePskPinnedAuthentication`). Geist exposes neither -- `connectGeist`
+and `initGeistServer` both hard-code the pinned-key path. If you want
+either, that is the change to make, and it is contained to
+`transport.nim` (the asking end) and `serve.nim` (the answering end).
 
 ## 2.1 Two desktops, from nothing
 
@@ -2060,7 +2062,9 @@ quiet import.
   +-- PART 3  import geist/wire -----------------------------------+
   |  src/geist/wire.nim            public wire facade              |
   |  src/geist/masks.nim           strength levels Geist owns      |
-  |  src/geist/transport.nim       Query / Reply over Bifrost      |
+  |  src/geist/transport.nim       asking end: codec, connect, send|
+  |  src/geist/serve.nim           answering end: one socket, peers|
+  |  src/geist/payload.nim         one payload over many datagrams |
   |  src/geist/bytecheck.nim       walks peer bytes before decoding |
   |  src/geist/identity.nim        key files and pins              |
   |  src/geist/relay.nim           Query meaning against a pipe    |

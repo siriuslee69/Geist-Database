@@ -120,7 +120,7 @@ type
     unknown*: seq[string]
     mistyped*: seq[string]
 
-proc defaultDocStyle*(): DocStyle {.role: configurator,
+proc defaultDocStyle*(): DocStyle {.role: configurator, stage: stDone,
     tag: "config|docs".} =
   ## No header, no notes, unknown keys preserved.
   result.keepUnknown = true
