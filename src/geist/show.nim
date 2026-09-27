@@ -60,7 +60,7 @@ type
     positions*: bool
     footer*: bool
 
-proc defaultShowStyle*(): ShowStyle {.role: configurator,
+proc defaultShowStyle*(): ShowStyle {.role: configurator, stage: stDone,
     tag: "cli|formatting".} =
   ## Corners of the table, sized for a terminal rather than a file.
   result.maxRows = 20
@@ -340,7 +340,7 @@ proc showTransposed*(s: Schema, R: openArray[Row],
   ## rows now run across the page.
   var
     swapped: ShowStyle = style
-    k: tuple[head, tail: int, elided: bool]
+    k: tuple[head, tail: int, elided: bool] = (0, 0, false)
     keptRows: seq[Row] = @[]
     keptAt: seq[int] = @[]
   swapped.maxRows = style.maxColumns

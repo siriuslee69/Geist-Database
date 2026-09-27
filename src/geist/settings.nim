@@ -78,7 +78,7 @@ type
     limit*: int
     loadedFrom*: string
 
-proc builtinDefaults*(): GeistDefaults {.role: configurator,
+proc builtinDefaults*(): GeistDefaults {.role: configurator, stage: stDone,
     tag: "config".} =
   ## What the library does with no configs/default.toml at all. These are the same
   ## values the presets carry, restated here so a reader can see them
@@ -110,9 +110,10 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   ## build has no algorithms to name -- keeping it here is what used to
   ## drag the whole AME stack into a program that only writes rows.
   var
-    doc: tuple[ok: bool, node: JsonNode, err: string]
-    storage: JsonNode
-    backup: JsonNode
+    doc: tuple[ok: bool, node: JsonNode, err: string] =
+      (false, default(JsonNode), "")
+    storage: JsonNode = default(JsonNode)
+    backup: JsonNode = default(JsonNode)
     complaint: string = ""
   result.defaults = builtinDefaults()
   doc = runtimeOf(path)
@@ -212,7 +213,7 @@ proc useGeistDefaults*(d: GeistDefaults) {.role: actor,
   {.gcsafe.}:
     activeDefaults = d
 
-proc geistDefaults*(): GeistDefaults {.role: parser,
+proc geistDefaults*(): GeistDefaults {.role: parser, stage: stDone,
     tag: "config|read".} =
   ## The defaults in force, built-in unless a configs/default.toml replaced them.
   {.gcsafe.}:
@@ -224,7 +225,8 @@ proc initGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   ## path: configs/default.toml, read and adopted in one step. A missing file is
   ## success -- the built-in defaults ARE the answer in that case.
   var
-    got: tuple[ok: bool, defaults: GeistDefaults, err: string]
+    got: tuple[ok: bool, defaults: GeistDefaults, err: string] =
+      (false, default(GeistDefaults), "")
   got = loadGeistDefaults(path)
   if not got.ok:
     return (false, got.err)
@@ -259,10 +261,11 @@ proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
   ##   peerPin = "peers/desktop.pin"
   ##   limit = 50
   var
-    doc: tuple[ok: bool, node: JsonNode, err: string]
-    db: JsonNode
-    daemon: JsonNode
-    client: JsonNode
+    doc: tuple[ok: bool, node: JsonNode, err: string] =
+      (false, default(JsonNode), "")
+    db: JsonNode = default(JsonNode)
+    daemon: JsonNode = default(JsonNode)
+    client: JsonNode = default(JsonNode)
     complaint: string = ""
   doc = tomlOf(path)
   if not doc.ok:
@@ -325,7 +328,8 @@ proc userConfigCandidates*(explicit: string = "",
   ## inside the folder -- which is the one a backup of that folder
   ## contains.
   var
-    home: tuple[ok: bool, home: GeistHome, err: string]
+    home: tuple[ok: bool, home: GeistHome, err: string] =
+      (false, default(GeistHome), "")
   if explicit.len > 0:
     return @[explicit]
   result = @[userConfigName]

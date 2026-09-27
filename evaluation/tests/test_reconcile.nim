@@ -51,8 +51,9 @@ suite "a name the roster knows":
 suite "a roster name with no entry":
 
   test "gets one, with every option at its default":
-    var t = withFriends("alice")
-    var r = t.reconcile(@["alice", "bob"], defaultRule())
+    var
+      t = withFriends("alice")
+      r = t.reconcile(@["alice", "bob"], defaultRule())
     check r.added == @["bob"]
     check t.hasKey("bob")
     check t["bob"].notify
@@ -83,8 +84,9 @@ suite "a name the roster does not know":
     check t["alcie"].blocked
 
   test "and the name that was meant is added beside it":
-    var t = withFriends("alcie")
-    var r = t.reconcile(@["alice"], defaultRule())
+    var
+      t = withFriends("alcie")
+      r = t.reconcile(@["alice"], defaultRule())
     check r.added == @["alice"]
     check t.hasKey("alcie")
     check t.hasKey("alice")
@@ -99,14 +101,16 @@ suite "a name the roster does not know":
     check not live.hasKey("alcie")
 
   test "and the report says what was probably meant":
-    var t = withFriends("alcie")
-    var r = t.reconcile(@["alice", "bob"], defaultRule())
+    var
+      t = withFriends("alcie")
+      r = t.reconcile(@["alice", "bob"], defaultRule())
     check r.orphan[0].nearest == "alice"
     check "did you mean alice?" in r.describe("friend")
 
   test "with no suggestion when nothing is close":
-    var t = withFriends("qqqqqqqq")
-    var r = t.reconcile(@["alice", "bob"], defaultRule())
+    var
+      t = withFriends("qqqqqqqq")
+      r = t.reconcile(@["alice", "bob"], defaultRule())
     check r.orphan[0].nearest == ""
     check "did you mean" notin r.describe("friend")
 
@@ -148,7 +152,7 @@ notify = false
 blocked = true
 nickname = "typo"
 """)
-    var fallback: Cfg
+    var fallback: Cfg = default(Cfg)
     fallback.account = ""
     fallback.friend = initOrderedTable[string, FriendRule]()
     var loaded = readDoc(p, fallback)
@@ -156,8 +160,9 @@ nickname = "typo"
     check loaded.value.friend.len == 2
 
     # the server says who really exists
-    var cfg = loaded.value
-    var report = cfg.friend.reconcile(@["alice", "bob"], defaultRule())
+    var
+      cfg = loaded.value
+      report = cfg.friend.reconcile(@["alice", "bob"], defaultRule())
     check report.matched == @["alice"]
     check report.added == @["bob"]
     check report.orphan[0].name == "alcie"

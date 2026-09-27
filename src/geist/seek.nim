@@ -47,9 +47,10 @@ proc openSeek*(path: string,
   ## Cost is the index (32 B + 80 B per cluster) plus the schema block,
   ## regardless of how many rows the file holds.
   var
-    idx: tuple[ok: bool, f: GeistFile, err: string]
+    idx: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
     at: int = -1
-    sch: tuple[s: Schema, schemaBytes: int]
+    sch: tuple[s: Schema, schemaBytes: int] = (default(Schema), 0)
   idx = readIndex(path)
   if not idx.ok:
     return (false, SeekHandle(), idx.err)
@@ -144,7 +145,7 @@ proc seekRange*(h: SeekHandle, first, count: uint32): seq[Row] {.
     i: uint32 = 0'u32
     w: int = 0
     base: int = 0
-    r: Row
+    r: Row = default(Row)
   if first >= h.entry.rowCount:
     return @[]
   if first + n > h.entry.rowCount:
@@ -285,7 +286,8 @@ proc indexCostBytes*(path: string): int {.role: parser,
   ## path: file whose index size is reported, for callers deciding whether
   ## to hold a handle open. Independent of row count by construction.
   var
-    idx: tuple[ok: bool, f: GeistFile, err: string]
+    idx: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
   idx = readIndex(path)
   if not idx.ok:
     return 0
@@ -296,7 +298,8 @@ proc fileGeneration*(path: string): uint64 {.role: parser,
   ## path: file whose generation is read from the header alone. A cheap way
   ## for a holder of a `SeekHandle` to notice its handle went stale.
   var
-    idx: tuple[ok: bool, f: GeistFile, err: string]
+    idx: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
   idx = readIndex(path)
   if idx.ok:
     result = idx.f.header.generation

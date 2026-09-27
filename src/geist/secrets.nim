@@ -120,7 +120,7 @@ type
     data*: ByteSeq
     err*: string
 
-proc defaultPasswordParams*(): PasswordParams {.role: configurator,
+proc defaultPasswordParams*(): PasswordParams {.role: configurator, stage: stDone,
     tag: "cryptoBoundary".} =
   ## Today's cost, for a password being hashed now.
   result.passes = defaultPasswordPasses
@@ -255,7 +255,7 @@ proc parsePasswordHash*(encoded: string): PasswordRecord {.role: parser,
   ## down for one bad row.
   var
     parts: seq[string] = encoded.split('$')
-    p: tuple[ok: bool, p: PasswordParams]
+    p: tuple[ok: bool, p: PasswordParams] = (false, default(PasswordParams))
   result.encoded = encoded
   # geist $ argon2id $ v=1 $ params $ salt $ hash
   if parts.len != 6:
@@ -371,8 +371,8 @@ proc sealWithPassword*(password: string, plain: openArray[uint8],
   var
     bad: string = checkPassword(password)
     salt: ByteSeq = @[]
-    key: Secret
-    stream: StreamKeys
+    key: Secret = default(Secret)
+    stream: StreamKeys = default(StreamKeys)
     sealed: ByteSeq = @[]
     tag: ByteSeq = @[]
   if bad.len > 0:
@@ -406,8 +406,8 @@ proc openWithPassword*(password: string, blob: openArray[uint8],
     salt: ByteSeq = @[]
     tag: ByteSeq = @[]
     sealed: ByteSeq = @[]
-    key: Secret
-    stream: StreamKeys
+    key: Secret = default(Secret)
+    stream: StreamKeys = default(StreamKeys)
   if blob.len < sealMagic.len + 2:
     return SealedBlob(err: "not a sealed blob: too short")
   while o < sealMagic.len:

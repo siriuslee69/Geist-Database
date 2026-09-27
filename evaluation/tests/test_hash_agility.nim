@@ -21,9 +21,10 @@ suite "hash agility":
       check geistHash(k, cast[ByteSeq]("abc"), fullDigestBytes).len == 32
 
   test "families disagree, so a break in one is not a break in another":
-    var a = geistHash(hkBlake3, cast[ByteSeq]("abc"), fullDigestBytes)
-    var b = geistHash(hkSha3, cast[ByteSeq]("abc"), fullDigestBytes)
-    var c = geistHash(hkGimli, cast[ByteSeq]("abc"), fullDigestBytes)
+    var
+      a = geistHash(hkBlake3, cast[ByteSeq]("abc"), fullDigestBytes)
+      b = geistHash(hkSha3, cast[ByteSeq]("abc"), fullDigestBytes)
+      c = geistHash(hkGimli, cast[ByteSeq]("abc"), fullDigestBytes)
     check a != b
     check b != c
     check a != c
@@ -40,10 +41,11 @@ suite "hash agility":
     check not validDigestBytes(64)
 
   test "a narrowed MAC still verifies at its own width":
-    var key = initSecret(newSeq[uint8](32))
-    var msg = cast[ByteSeq]("payload")
-    var aad = cast[ByteSeq]("position")
-    var t16 = authTag(mkCombined, key, msg, aad, shortDigestBytes)
+    var
+      key = initSecret(newSeq[uint8](32))
+      msg = cast[ByteSeq]("payload")
+      aad = cast[ByteSeq]("position")
+      t16 = authTag(mkCombined, key, msg, aad, shortDigestBytes)
     check t16.len == 16
     check verifyTag(mkCombined, key, msg, aad, t16)
     var t32 = authTag(mkCombined, key, msg, aad, fullDigestBytes)
@@ -63,9 +65,10 @@ suite "hash agility":
     var e = LedgerEntry(cipher: ckChaCha20, mac: mkBlake3, treeHash: hkSha3,
       keyRef: 5'u64, groupId: 1'u16, batchIndex: 2'u32, epoch: 9'u64,
       root: newSeq[uint8](32))
-    var buf = encodeLedgerEntry(e)
-    var o = 0
-    var back = decodeLedgerEntry(buf, o)
+    var
+      buf = encodeLedgerEntry(e)
+      o = 0
+      back = decodeLedgerEntry(buf, o)
     check back.treeHash == hkSha3
     check back.cipher == ckChaCha20
     check back.keyRef == 5'u64
@@ -100,8 +103,9 @@ suite "hash agility":
   test "a database written with SHA3 throughout reopens and reads":
     var root = getTempDir() / "geist_t_sha3"
     removeDir(root)
-    var c = ledgerConfig()
-    var s = openSession[Note](root, "main", c, "pw-sha3")
+    var
+      c = ledgerConfig()
+      s = openSession[Note](root, "main", c, "pw-sha3")
     s.put Note(id: 1, title: "chained")
     s.put Note(id: 2, title: "second")
     check s.save().ok
@@ -115,9 +119,10 @@ suite "hash agility":
   test "sidecar verification uses the configured family":
     var root = getTempDir() / "geist_t_sccfg"
     removeDir(root)
-    var store = initSidecarStore(root, 8'u32, hkSha3)
-    var payload = cast[ByteSeq]("a payload well past the threshold")
-    var r = store.putSidecar(payload)
+    var
+      store = initSidecarStore(root, 8'u32, hkSha3)
+      payload = cast[ByteSeq]("a payload well past the threshold")
+      r = store.putSidecar(payload)
     check r.target == rtSidecar
     check r.hash.len == fullDigestBytes
     var got = store.getSidecar(r)

@@ -292,7 +292,7 @@ proc fromNode*[T](n: JsonNode, S: var T, prefix: string,
     else:
       S = @[]
       for ia in n.items:
-        var ta: typeof(S[0])
+        var ta: typeof(S[0]) = default(typeof(S[0]))
         fromNodeB(ia, ta, prefix & "[]", R)
         S.add ta
   elif T is OrderedTable or T is Table:
@@ -300,7 +300,7 @@ proc fromNode*[T](n: JsonNode, S: var T, prefix: string,
       R.mistyped.add prefix
     else:
       for ka, va in n.pairs:
-        var ta: typeof(S[ka])
+        var ta: typeof(S[ka]) = default(typeof(S[ka]))
         if S.hasKey(ka):
           ta = S[ka]
         fromNodeB(va, ta, dottedPath(prefix, ka), R)
@@ -329,7 +329,7 @@ proc fromNodeB[T](n: JsonNode, S: var T, prefix: string,
     else:
       S = @[]
       for ib in n.items:
-        var tb: typeof(S[0])
+        var tb: typeof(S[0]) = default(typeof(S[0]))
         fromNode(ib, tb, prefix & "[]", R)
         S.add tb
   elif T is OrderedTable or T is Table:
@@ -337,7 +337,7 @@ proc fromNodeB[T](n: JsonNode, S: var T, prefix: string,
       R.mistyped.add prefix
     else:
       for kb, vb in n.pairs:
-        var tb: typeof(S[kb])
+        var tb: typeof(S[kb]) = default(typeof(S[kb]))
         if S.hasKey(kb):
           tb = S[kb]
         fromNode(vb, tb, dottedPath(prefix, kb), R)
@@ -656,7 +656,8 @@ proc readDoc*[T](path: string, fallback: T): tuple[value: T,
   ## it already knows the answer to.
   var
     text: string = ""
-    parsed: tuple[ok: bool, node: JsonNode, err: string]
+    parsed: tuple[ok: bool, node: JsonNode, err: string] =
+      (false, default(JsonNode), "")
   result.value = fallback
   result.node = newJObject()
   result.report.ok = true
@@ -729,8 +730,9 @@ proc ensureDoc*[T](path: string, fallback: T,
   ## syntax error is left exactly as it is: overwriting it with defaults
   ## would delete the settings the person was in the middle of fixing.
   var
-    t: tuple[value: T, node: JsonNode, report: DocReport]
-    w: tuple[ok: bool, err: string]
+    t: tuple[value: T, node: JsonNode, report: DocReport] =
+      (default(T), default(JsonNode), default(DocReport))
+    w: tuple[ok: bool, err: string] = (false, "")
   t = readDoc(path, fallback)
   result.value = t.value
   result.report = t.report

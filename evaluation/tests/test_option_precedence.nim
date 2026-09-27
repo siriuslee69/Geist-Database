@@ -43,8 +43,9 @@ limit = 50
 
 suite "the geist CLI: an option beats the file":
   test "a file fills in only what was not typed":
-    var cfg = writeConfig(scratch("geist_t_prec1"))
-    var o = withUserConfig(parseOptions(["list", "--config", cfg]))
+    var
+      cfg = writeConfig(scratch("geist_t_prec1"))
+      o = withUserConfig(parseOptions(["list", "--config", cfg]))
     check o.path == "/from/the/file"
     check o.preset == "secure-app"
     check o.limit == 50
@@ -53,18 +54,20 @@ suite "the geist CLI: an option beats the file":
   test "typing the default value still counts as typing it":
     # The regression: `app` and `20` ARE the defaults, so a parser that
     # compares values cannot tell these were asked for.
-    var cfg = writeConfig(scratch("geist_t_prec2"))
-    var o = withUserConfig(parseOptions(
-      ["list", "--config", cfg, "--preset", "app", "--limit", "20"]))
+    var
+      cfg = writeConfig(scratch("geist_t_prec2"))
+      o = withUserConfig(parseOptions(
+        ["list", "--config", cfg, "--preset", "app", "--limit", "20"]))
     check o.preset == "app"
     check o.limit == 20
     # Everything not typed still comes from the file.
     check o.path == "/from/the/file"
 
   test "a non-default option beats the file too":
-    var cfg = writeConfig(scratch("geist_t_prec3"))
-    var o = withUserConfig(parseOptions(
-      ["list", "--config", cfg, "--path", "/typed", "--limit", "5"]))
+    var
+      cfg = writeConfig(scratch("geist_t_prec3"))
+      o = withUserConfig(parseOptions(
+        ["list", "--config", cfg, "--path", "/typed", "--limit", "5"]))
     check o.path == "/typed"
     check o.limit == 5
 
@@ -76,8 +79,9 @@ suite "the geist CLI: an option beats the file":
 
 suite "geistd: an option beats the file":
   test "a file fills in only what was not given":
-    var cfg = writeConfig(scratch("geist_t_prec4"))
-    var c = resolveConfig(["--config", cfg])
+    var
+      cfg = writeConfig(scratch("geist_t_prec4"))
+      c = resolveConfig(["--config", cfg])
     check c.path == "/from/the/file"
     check c.preset == "secure-app"
     check c.listen == "dac://10.0.0.1:9999"
@@ -87,15 +91,17 @@ suite "geistd: an option beats the file":
     # Binding loopback explicitly is a deployment decision, and a file
     # moving the daemon onto a routable address instead is exactly the
     # surprise this prevents.
-    var cfg = writeConfig(scratch("geist_t_prec5"))
-    var c = resolveConfig(
-      ["--config", cfg, "--listen", "dac://127.0.0.1:47655",
-       "--preset", "app"])
+    var
+      cfg = writeConfig(scratch("geist_t_prec5"))
+      c = resolveConfig(
+        ["--config", cfg, "--listen", "dac://127.0.0.1:47655",
+         "--preset", "app"])
     check c.listen == "dac://127.0.0.1:47655"
     check c.preset == "app"
     check c.path == "/from/the/file"
 
   test "an empty trust list from the command line is not silently refilled":
-    var cfg = writeConfig(scratch("geist_t_prec6"))
-    var c = resolveConfig(["--config", cfg, "--trust", "/typed.pin"])
+    var
+      cfg = writeConfig(scratch("geist_t_prec6"))
+      c = resolveConfig(["--config", cfg, "--trust", "/typed.pin"])
     check c.trust == @["/typed.pin"]

@@ -191,7 +191,7 @@ proc rowBytesAt*(C: ClusterBuild, i: uint32): ByteSeq {.role: parser,
     tag: "appApi|db|read".} =
   ## C/i: one stored row's bytes, whichever addressing applies.
   var
-    span: tuple[at: int, len: int]
+    span: tuple[at: int, len: int] = (0, 0)
     j: int = 0
   span = C.rowSpan(i)
   result = newSeq[uint8](span.len)
@@ -269,13 +269,13 @@ proc writeGeistFile*(path: string, C: openArray[ClusterBuild],
   ## C: clusters written in order; index order is file order.
   ## generation: bumped by the key lifecycle on every rekey.
   var
-    header: FileHeader
+    header: FileHeader = default(FileHeader)
     index: seq[IndexEntry] = @[]
     bodies: seq[ByteSeq] = @[]
     auxes: seq[ByteSeq] = @[]
     aux: ByteSeq = @[]
-    e: IndexEntry
-    enc: tuple[body: ByteSeq, schemaBytes: int]
+    e: IndexEntry = default(IndexEntry)
+    enc: tuple[body: ByteSeq, schemaBytes: int] = (default(ByteSeq), 0)
     base: uint64 = 0'u64
     cursor: uint64 = 0'u64
     buf: ByteSeq = @[]
@@ -377,7 +377,8 @@ proc readIndex*(path: string): tuple[ok: bool, f: GeistFile, err: string] {.
   ## `headerBytes + indexEntryBytes * clusterCount` regardless of file size.
   var
     head: ByteSeq = @[]
-    decoded: tuple[ok: bool, h: FileHeader, err: string]
+    decoded: tuple[ok: bool, h: FileHeader, err: string] =
+      (false, default(FileHeader), "")
     raw: ByteSeq = @[]
     i: int = 0
   if not fileExists(path):

@@ -129,7 +129,7 @@ proc existingTransposed*(baseDir: string,
   for kind, path in walkDir(baseDir):
     if kind != pcFile:
       continue
-    let name = path.extractFilename()
+    var name = path.extractFilename()
     if not name.startsWith(stem):
       continue
     try:
@@ -195,7 +195,7 @@ proc writeTransposed*(path: string, C: ClusterBuild,
     j: int = 0
     rowData: ByteSeq = @[]
     offsets: seq[int] = @[]
-    span: tuple[at, len: int]
+    span: tuple[at, len: int] = (0, 0)
   if n == 0:
     return (false, "a transposed file needs a schema")
   for j in 0 ..< n:
@@ -285,7 +285,7 @@ proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
     n: int = 0
     j: int = 0
     size: int64 = 0
-    e: ColumnRegion
+    e: ColumnRegion = default(ColumnRegion)
   if not fileExists(path):
     return (false, TransposedFile(), "no transposed file at " & path)
   try:
@@ -355,7 +355,7 @@ proc valueSpan*(t: TransposedFile, slot: int,
   ## eight bytes -- its two neighbouring offsets -- rather than the whole
   ## offset table, because gathering one row must not pay for every row.
   var
-    e: ColumnRegion
+    e: ColumnRegion = default(ColumnRegion)
     pair: ByteSeq = @[]
     base: uint64 = 0'u64
   if slot < 0 or slot >= t.columns.len or i >= t.rowCount:
@@ -388,7 +388,7 @@ proc transposedColumn*(t: TransposedFile, slot: int): seq[ByteSeq] {.
   ## other, so the bytes it touches are proportional to the column rather
   ## than to the table.
   var
-    e: ColumnRegion
+    e: ColumnRegion = default(ColumnRegion)
     blob: ByteSeq = @[]
     offsets: seq[uint32] = @[]
     i: uint32 = 0'u32
@@ -468,9 +468,10 @@ proc transposedFind*(t: TransposedFile, field, value: string,
   ## assume it.
   var
     slot: int = -1
-    probe: tuple[ok: bool, data: ByteSeq, err: string]
+    probe: tuple[ok: bool, data: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
     offsets: seq[int] = @[]
-    span: tuple[at, len: int]
+    span: tuple[at, len: int] = (0, 0)
     want: ByteSeq = @[]
     values: seq[ByteSeq] = @[]
     i: int = 0
@@ -555,7 +556,7 @@ proc retireTransposed*(baseDir, baseName: string, keep: uint64) {.
   for kind, path in walkDir(baseDir):
     if kind != pcFile:
       continue
-    let name = path.extractFilename()
+    var name = path.extractFilename()
     if not name.startsWith(stem) or name == keepName:
       continue
     try:

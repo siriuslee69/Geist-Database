@@ -56,14 +56,20 @@ proc runServer(a: ptr ServeArgs) =
   ## would. The handler is `registry.serveQuery` and nothing else -- which
   ## the claim this file exists to check.
   var
-    identity: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
-    pin: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string]
-    address: tuple[ok: bool, a: GeistDacAddress]
-    server: tuple[ok: bool, server: GeistServer, err: string]
-    home: tuple[ok: bool, home: GeistHome, err: string]
-    reg: tuple[ok: bool, registry: StoreRegistry, err: string]
-    step: tuple[ok: bool, served: bool, err: string]
-    opener: OpenStore
+    identity: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+    pin: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
+    address: tuple[ok: bool, a: GeistDacAddress] =
+      (false, default(GeistDacAddress))
+    server: tuple[ok: bool, server: GeistServer, err: string] =
+      (false, default(GeistServer), "")
+    home: tuple[ok: bool, home: GeistHome, err: string] =
+      (false, default(GeistHome), "")
+    reg: tuple[ok: bool, registry: StoreRegistry, err: string] =
+      (false, default(StoreRegistry), "")
+    step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
+    opener: OpenStore = default(OpenStore)
   try:
     identity = loadOrCreateIdentity(a.identityFile, "server-pw", "server",
       geistSignatureSlots())
@@ -155,7 +161,8 @@ proc routedClient(port: uint16, identityFile,
     identity = loadOrCreateIdentity(identityFile, "client-pw", "client",
       geistSignatureSlots())
     table = defaultRouteTable("phone")
-    made: tuple[ok: bool, client: GeistClient, err: string]
+    made: tuple[ok: bool, client: GeistClient, err: string] =
+      (false, default(GeistClient), "")
   check identity.ok
   table.route.add Route(app: "*", instance: "*", hops: @[
     Hop(name: "vps", endpoint: "dac://127.0.0.1:" & $port,
@@ -180,7 +187,7 @@ suite "a client pushes what it wrote while it was away":
       args = ServeArgs(root: base / "server", listen: "dac://127.0.0.1:47811",
         identityFile: base / "server.id", peerPinFile: base / "client.pin",
         port: 47811'u16)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     # Both identities exist before either side starts, so the pins match.
     var
       clientKey = loadOrCreateIdentity(base / "client.id", "client-pw",
@@ -221,7 +228,7 @@ suite "a client pushes what it wrote while it was away":
       args = ServeArgs(root: base / "server", listen: "dac://127.0.0.1:47812",
         identityFile: base / "server.id", peerPinFile: base / "client.pin",
         port: 47812'u16)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     var
       clientKey = loadOrCreateIdentity(base / "client.id", "client-pw",
         "client", geistSignatureSlots())
@@ -261,7 +268,7 @@ suite "a client pushes what it wrote while it was away":
       args = ServeArgs(root: base / "server", listen: "dac://127.0.0.1:47813",
         identityFile: base / "server.id", peerPinFile: base / "client.pin",
         port: 47813'u16)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     var
       clientKey = loadOrCreateIdentity(base / "client.id", "client-pw",
         "client", geistSignatureSlots())
@@ -289,7 +296,7 @@ suite "the two directions keep separate books":
       args = ServeArgs(root: base / "server", listen: "dac://127.0.0.1:47814",
         identityFile: base / "server.id", peerPinFile: base / "client.pin",
         port: 47814'u16)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     var
       clientKey = loadOrCreateIdentity(base / "client.id", "client-pw",
         "client", geistSignatureSlots())
@@ -319,7 +326,7 @@ suite "the two directions keep separate books":
       args = ServeArgs(root: base / "server", listen: "dac://127.0.0.1:47815",
         identityFile: base / "server.id", peerPinFile: base / "client.pin",
         port: 47815'u16)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     var
       clientKey = loadOrCreateIdentity(base / "client.id", "client-pw",
         "client", geistSignatureSlots())
@@ -360,7 +367,7 @@ suite "a refusal is not a dead hop":
       args = ServeArgs(root: base / "server", listen: "dac://127.0.0.1:47816",
         identityFile: base / "server.id", peerPinFile: base / "client.pin",
         port: 47816'u16)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     var
       clientKey = loadOrCreateIdentity(base / "client.id", "client-pw",
         "client", geistSignatureSlots())

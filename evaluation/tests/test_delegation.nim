@@ -61,41 +61,47 @@ suite "the server intersects":
     check s.rightsFor("stranger") == {}
 
   test "with no claim, the connecting peer's own rights stand":
-    var p = PeerContext(subject: "router", rights: {prRead, prWrite})
-    var a = parseAddress("geist://eris/notes").a
-    var e = s.delegatedContext(p, a)
+    var
+      p = PeerContext(subject: "router", rights: {prRead, prWrite})
+      a = parseAddress("geist://eris/notes").a
+      e = s.delegatedContext(p, a)
     check e.subject == "router"
     check e.rights == {prRead, prWrite}
 
   test "a write-capable router forwarding for a reader gets read only":
-    var p = PeerContext(subject: "router", rights: {prRead, prWrite})
-    var a = parseAddress("geist://eris/notes?as=reader").a
-    var e = s.delegatedContext(p, a)
+    var
+      p = PeerContext(subject: "router", rights: {prRead, prWrite})
+      a = parseAddress("geist://eris/notes?as=reader").a
+      e = s.delegatedContext(p, a)
     check e.subject == "reader"
     check e.rights == {prRead}
 
   test "a read-only router can never hand out write":
-    var p = PeerContext(subject: "reader", rights: {prRead})
-    var a = parseAddress("geist://eris/notes?as=writer").a
-    var e = s.delegatedContext(p, a)
+    var
+      p = PeerContext(subject: "reader", rights: {prRead})
+      a = parseAddress("geist://eris/notes?as=writer").a
+      e = s.delegatedContext(p, a)
     check e.rights == {prRead}
 
   test "forwarding for someone this server does not know grants nothing":
-    var p = PeerContext(subject: "router", rights: {prRead, prWrite})
-    var a = parseAddress("geist://eris/notes?as=stranger").a
-    var e = s.delegatedContext(p, a)
+    var
+      p = PeerContext(subject: "router", rights: {prRead, prWrite})
+      a = parseAddress("geist://eris/notes?as=stranger").a
+      e = s.delegatedContext(p, a)
     check e.subject == "stranger"
     check e.rights == {}
 
   test "a router cannot elevate itself by naming a stronger peer":
-    var p = PeerContext(subject: "reader", rights: {prRead})
-    var a = parseAddress("geist://eris/notes?as=router").a
+    var
+      p = PeerContext(subject: "reader", rights: {prRead})
+      a = parseAddress("geist://eris/notes?as=router").a
     check s.delegatedContext(p, a).rights == {prRead}
 
   test "the claimed subject is what the handler is told, so a row is "&
       "attributed to the person who wrote it":
-    var p = PeerContext(subject: "router", rights: {prRead, prWrite})
-    var a = parseAddress("geist://eris/notes?as=writer").a
-    var e = s.delegatedContext(p, a)
+    var
+      p = PeerContext(subject: "router", rights: {prRead, prWrite})
+      a = parseAddress("geist://eris/notes?as=writer").a
+      e = s.delegatedContext(p, a)
     check e.subject == "writer"
     check e.rights == {prRead, prWrite}

@@ -179,8 +179,9 @@ proc benchRefs() =
 proc buildFixture(root, name: string, n: int,
     c: GeistConfig, password: string): string =
   ## Writes `n` rows once and returns the data path. Not timed.
-  var col = openCollection[Reading](root, name, c, password, false)
-  var i = 0
+  var
+    col = openCollection[Reading](root, name, c, password, false)
+    i = 0
   while i < n:
     col.add Reading(sensor: i mod 16, value: i, at: 1_700_000_000 + i,
       flags: i mod 3)
@@ -200,8 +201,9 @@ proc benchWrite() =
 
   started = monotonicTick()
   block:
-    var col = openCollection[Reading](plainRoot, "r", appConfig(), "", false)
-    var i = 0
+    var
+      col = openCollection[Reading](plainRoot, "r", appConfig(), "", false)
+      i = 0
     while i < ioRows:
       col.add Reading(sensor: i mod 16, value: i, at: i, flags: 0)
       i = i + 1
@@ -229,9 +231,10 @@ proc benchWrite() =
   # batching, and it is why `add(openArray)` saves once at the end.
   started = monotonicTick()
   block:
-    var root = benchRoot("wauto")
-    var col = openCollection[Reading](root, "r", appConfig(), "", true)
-    var i = 0
+    var
+      root = benchRoot("wauto")
+      col = openCollection[Reading](root, "r", appConfig(), "", true)
+      i = 0
     while i < 200:
       col.add Reading(sensor: i, value: i, at: i, flags: 0)
       i = i + 1
@@ -276,8 +279,9 @@ proc benchRead() =
     BenchAlgo(name: "seekRange whole cluster (all columns)", run: proc() =
       discard h.seekRange(0'u32, uint32(scanRows))),
     BenchAlgo(name: "readCluster + unpack every object", run: proc() =
-      var cl = readCluster(path, h.entry)
-      var i = 0'u32
+      var
+        cl = readCluster(path, h.entry)
+        i = 0'u32
       while i < cl.rowCount:
         discard objectAt[Reading](cl, i)
         i = i + 1'u32)], 20, 3))
@@ -296,19 +300,22 @@ proc benchRead() =
 proc benchText() =
   var root = benchRoot("text")
   block:
-    var col = openCollection[Note](root, "n", appConfig(), "", false)
-    var i = 0
+    var
+      col = openCollection[Note](root, "n", appConfig(), "", false)
+      i = 0
     while i < ioRows:
       col.add Note(id: i, title: "title-" & $i,
         body: "a body of moderate length for row " & $i)
       i = i + 1
     doAssert col.save().ok
     col.close()
-  var path = root / "n.ge1st.g1"
-  var handle = openSeek(path)
+  var
+    path = liveDataPath(root, "n")   # a save publishes a new generation
+    handle = openSeek(path)
   doAssert handle.ok
-  var h = handle.h
-  var titleSlot = h.schema.slotIndex("title")
+  var
+    h = handle.h
+    titleSlot = h.schema.slotIndex("title")
 
   echo &"--- text column out of {ioRows} rows " &
     &"(file {getFileSize(path) div 1024} KiB)"
@@ -324,8 +331,9 @@ proc benchText() =
     BenchAlgo(name: "seekColumnBytes (two bulk reads)", run: proc() =
       discard h.seekColumnBytes(titleSlot)),
     BenchAlgo(name: "readCluster + unpack every object", run: proc() =
-      var cl = readCluster(path, h.entry)
-      var i = 0'u32
+      var
+        cl = readCluster(path, h.entry)
+        i = 0'u32
       while i < cl.rowCount:
         discard objectAt[Note](cl, i)
         i = i + 1'u32)], 20, 3))
@@ -384,9 +392,9 @@ proc benchLayoutCrossover() =
     i = i + 1
 
   var
-    ip = fileSizeOf(benchRoot("xip"), packedConfig(), ints)
+    ip = fileSizeOf(benchRoot("xip"), collapsedConfig(), ints)
     ifx = fileSizeOf(benchRoot("xif"), appConfig(), ints)
-    tp = fileSizeOf(benchRoot("xtp"), packedConfig(), texts)
+    tp = fileSizeOf(benchRoot("xtp"), collapsedConfig(), texts)
     tfx = fileSizeOf(benchRoot("xtf"), appConfig(), texts)
 
   echo &"--- layout crossover, {ioRows} rows of 8 columns"
@@ -424,9 +432,9 @@ proc benchPacked() =
     dfRoot = benchRoot("pkdf")
     spRoot = benchRoot("pksp")
     sfRoot = benchRoot("pksf")
-    densePacked = writeWith(dpRoot, packedConfig(), dense)
+    densePacked = writeWith(dpRoot, collapsedConfig(), dense)
     denseFixed = writeWith(dfRoot, appConfig(), dense)
-    sparsePacked = writeWith(spRoot, packedConfig(), sparse)
+    sparsePacked = writeWith(spRoot, collapsedConfig(), sparse)
     sparseFixed = writeWith(sfRoot, appConfig(), sparse)
 
   echo &"--- file size, {ioRows} rows of an 8-column schema"
@@ -439,7 +447,7 @@ proc benchPacked() =
   echo ""
 
   var
-    pc = openCollection[Wide](spRoot, "w", packedConfig(), "", false)
+    pc = openCollection[Wide](spRoot, "w", collapsedConfig(), "", false)
     fc = openCollection[Wide](sfRoot, "w", appConfig(), "", false)
 
   report("read one row, sparse 8-column schema", compareAlgorithms(@[

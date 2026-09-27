@@ -44,8 +44,9 @@ suite "a routed address":
     check r.a.isRouted()
 
   test "rendering round-trips":
-    var s = "geist://eris.main@vps-1/notes?ttl=6&via=home-1,gateway"
-    var r = parseAddress(s)
+    var
+      s = "geist://eris.main@vps-1/notes?ttl=6&via=home-1,gateway"
+      r = parseAddress(s)
     check r.ok
     check $r.a == s
 
@@ -93,8 +94,9 @@ suite "malformed is refused, never repaired":
     check not parseAddress("geist://er is/x").ok
 
   test "an over-long address":
-    var t = "geist://eris/"
-    var i = 0
+    var
+      t = "geist://eris/"
+      i = 0
     while i < maxAddressBytes:
       t = t & "a"
       i = i + 1
@@ -138,11 +140,13 @@ suite "forwarding":
 suite "two addresses that differ only in routing state":
 
   test "name the same destination":
-    var a = parseAddress("geist://eris.main@vps-1/notes?ttl=6").a
-    var b = parseAddress("geist://eris.main@vps-1/notes?ttl=2&via=x").a
+    var
+      a = parseAddress("geist://eris.main@vps-1/notes?ttl=6").a
+      b = parseAddress("geist://eris.main@vps-1/notes?ttl=2&via=x").a
     check sameDestination(a, b)
 
   test "but a different target does not":
-    var a = parseAddress("geist://eris.main/notes").a
-    var b = parseAddress("geist://eris.main/drafts").a
+    var
+      a = parseAddress("geist://eris.main/notes").a
+      b = parseAddress("geist://eris.main/drafts").a
     check not sameDestination(a, b)

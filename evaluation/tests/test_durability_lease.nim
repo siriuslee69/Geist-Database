@@ -25,8 +25,9 @@ proc freshRoot(name: string): string =
 
 suite "generation swap":
   test "every save publishes the next generation and the manifest follows":
-    var root = freshRoot("geist_t_gen")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_gen")
+      db = openGeist[Note](root, appConfig())
     db.put(Note(noteId: 1, title: "a", body: "b"))
     check db.save().ok
     var first = db.generation
@@ -38,9 +39,10 @@ suite "generation swap":
     db.close()
 
   test "the previous generation is retained and the one before it is not":
-    var root = freshRoot("geist_t_retain")
-    var db = openGeist[Note](root, appConfig())
-    var i = 0
+    var
+      root = freshRoot("geist_t_retain")
+      db = openGeist[Note](root, appConfig())
+      i = 0
     while i < 4:
       db.put(Note(noteId: i, title: "t" & $i, body: "b"))
       check db.save().ok
@@ -55,8 +57,9 @@ suite "generation swap":
     check not fileExists(root / ("main.ge1st" & generationSuffix(live - 2'u64)))
 
   test "a live generation that will not read back falls back to the retained one":
-    var root = freshRoot("geist_t_fallback")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_fallback")
+      db = openGeist[Note](root, appConfig())
     db.put(Note(noteId: 1, title: "old", body: "b"))
     check db.save().ok
     db.put(Note(noteId: 2, title: "new", body: "b"))
@@ -74,8 +77,9 @@ suite "generation swap":
     db2.close()
 
   test "an interrupted save leaves debris, and the next writer sweeps it":
-    var root = freshRoot("geist_t_sweep")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_sweep")
+      db = openGeist[Note](root, appConfig())
     db.put(Note(noteId: 1, title: "a", body: "b"))
     check db.save().ok
     var live = db.generation
@@ -92,12 +96,14 @@ suite "generation swap":
     db2.close()
 
   test "a failed save leaves the live generation exactly as it was":
-    var root = freshRoot("geist_t_intact")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_intact")
+      db = openGeist[Note](root, appConfig())
     db.put(Note(noteId: 1, title: "keep", body: "b"))
     check db.save().ok
-    var live = db.dataPath()
-    var before = readFile(live)
+    var
+      live = db.dataPath()
+      before = readFile(live)
     db.close()
     # A reader holding the live generation keeps a complete file across any
     # number of further saves, because nothing is ever written over it.
@@ -109,13 +115,15 @@ suite "generation swap":
 
 suite "backup and restore across generations":
   test "slots rotate as the live file moves on":
-    var root = freshRoot("geist_t_bakgen")
-    var cfg = appConfig()
+    var
+      root = freshRoot("geist_t_bakgen")
+      cfg = appConfig()
     cfg.backup.enabled = true
     cfg.backup.copies = 3'u8
     cfg.backup.everyNWrites = 1'u32
-    var db = openGeist[Note](root, cfg)
-    var i = 0
+    var
+      db = openGeist[Note](root, cfg)
+      i = 0
     while i < 3:
       db.put(Note(noteId: i, title: "v" & $i, body: "b"))
       check db.save().ok
@@ -130,8 +138,9 @@ suite "backup and restore across generations":
     check fileExists(stem & ".b3")
 
   test "a restore publishes the backup as a new generation":
-    var root = freshRoot("geist_t_restore")
-    var cfg = appConfig()
+    var
+      root = freshRoot("geist_t_restore")
+      cfg = appConfig()
     cfg.backup.enabled = true
     cfg.backup.copies = 2'u8
     cfg.backup.everyNWrites = 1'u32
@@ -155,12 +164,14 @@ suite "backup and restore across generations":
     re.close()
 
   test "restoring a slot that is not there changes nothing":
-    var root = freshRoot("geist_t_restore2")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_restore2")
+      db = openGeist[Note](root, appConfig())
     db.put(Note(noteId: 1, title: "only", body: "b"))
     check db.save().ok
-    var before = db.generation
-    var done = db.restoreSlot(3)
+    var
+      before = db.generation
+      done = db.restoreSlot(3)
     check not done.ok
     check done.err.contains("missing")
     check db.generation == before
@@ -169,8 +180,9 @@ suite "backup and restore across generations":
 
 suite "write lease":
   test "a second writable open downgrades itself and names the holder":
-    var root = freshRoot("geist_t_lease")
-    var a = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_lease")
+      a = openGeist[Note](root, appConfig())
     check not a.readOnly
     check a.writeLease.held
     var b = openGeist[Note](root, appConfig())
@@ -182,8 +194,9 @@ suite "write lease":
     a.close()
 
   test "a read-only session refuses writes and says why":
-    var root = freshRoot("geist_t_refuse")
-    var a = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_refuse")
+      a = openGeist[Note](root, appConfig())
     a.put(Note(noteId: 1, title: "a", body: "b"))
     check a.save().ok
     var b = openGeist[Note](root, appConfig())
@@ -201,8 +214,9 @@ suite "write lease":
     a.close()
 
   test "closing releases the lease, so the next writer gets it":
-    var root = freshRoot("geist_t_release")
-    var a = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_release")
+      a = openGeist[Note](root, appConfig())
     check a.writeLease.held
     a.close()
     check not fileExists(leasePath(root))
@@ -213,8 +227,9 @@ suite "write lease":
     b.close()
 
   test "a deliberate follower takes no lease at all":
-    var root = freshRoot("geist_t_follow")
-    var a = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_follow")
+      a = openGeist[Note](root, appConfig())
     a.put(Note(noteId: 1, title: "a", body: "b"))
     check a.save().ok
     a.close()
@@ -232,8 +247,9 @@ suite "write lease":
 
 suite "following a moving generation":
   test "observeStore and followStore track the file across saves":
-    var root = freshRoot("geist_t_observe")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_observe")
+      db = openGeist[Note](root, appConfig())
     db.put(Note(noteId: 1, title: "a", body: "b"))
     check db.save().ok
     db.close()

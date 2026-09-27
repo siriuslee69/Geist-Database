@@ -63,7 +63,7 @@ proc openCollection*[T: object](baseDir, name: string,
   ## something specific (`iot`'s interval, `stream`'s volatility) keeps it:
   ## only the default is overridden.
   var
-    cfg: GeistConfig
+    cfg: GeistConfig = default(GeistConfig)
   cfg = normalizeGeistConfig(c)
   if cfg.writeMode == wmManual:
     cfg.writeMode = if autoSave: wmOnChange else: wmManual

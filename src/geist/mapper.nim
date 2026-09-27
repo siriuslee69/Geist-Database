@@ -101,7 +101,7 @@ proc schemaFor*[T: object](typeName: string = ""): Schema {.
     role: truthBuilder, tag: "appApi|codecBoundary|db".} =
   ## typeName: label stored with the cluster; defaults to T's own name.
   var
-    x: T
+    x: T = default(T)
   result.typeName = if typeName.len > 0: typeName else: $T
   schemaOf(x, result)
 

@@ -25,8 +25,9 @@ proc main() =
   # store left behind by the previous run would make it fail for a reason
   # that has nothing to do with what this file is checking.
   removeDir(storeRoot)
-  var db = openGeist[Note](storeRoot, appConfig())
-  var id = db.put(Note(noteId: 1, title: "written", body: "with no sockets"))
+  var
+    db = openGeist[Note](storeRoot, appConfig())
+    id = db.put(Note(noteId: 1, title: "written", body: "with no sockets"))
   discard db.set(id, Note(noteId: 1, title: "corrected", body: "still none"))
   discard db.save()
   # The parts a disk-only embedder actually uses: identity, the live view,

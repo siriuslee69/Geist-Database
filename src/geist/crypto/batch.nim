@@ -132,8 +132,8 @@ proc sealBatch*(master: Secret, e: var LedgerEntry, databaseId: string,
   ## A: concatenated plaintext for this (batch, group).
   ## R: per-row byte slices, used to build the Merkle leaves.
   var
-    key: Secret
-    keys: StreamKeys
+    key: Secret = default(Secret)
+    keys: StreamKeys = default(StreamKeys)
     aad: ByteSeq = @[]
     leaves: seq[ByteSeq] = @[]
     i: int = 0
@@ -153,8 +153,8 @@ proc openBatch*(master: Secret, e: LedgerEntry, databaseId: string,
   ## master/e/databaseId/schemaVersion: as for `sealBatch`.
   ## A: the whole ciphertext for this (batch, group).
   var
-    key: Secret
-    keys: StreamKeys
+    key: Secret = default(Secret)
+    keys: StreamKeys = default(StreamKeys)
     aad: ByteSeq = @[]
   key = deriveBatchKey(master, e.keyRef, e.groupId, e.batchIndex, e.epoch)
   aad = buildAad(databaseId, e.groupId, e.batchIndex, e.epoch, schemaVersion)
@@ -170,8 +170,8 @@ proc openRow*(master: Secret, e: LedgerEntry, databaseId: string,
   ## Only valid for a seekable cipher; callers must check `isSeekable`
   ## and fall back to `openBatch` otherwise.
   var
-    key: Secret
-    keys: StreamKeys
+    key: Secret = default(Secret)
+    keys: StreamKeys = default(StreamKeys)
     aad: ByteSeq = @[]
   if not isSeekable(e.cipher):
     raise newException(ValueError,
@@ -187,7 +187,7 @@ proc verifyRow*(master: Secret, e: LedgerEntry, rowIndex: uint32,
   ## Verify one row against the batch root with a log2(N) sibling path
   ## instead of re-hashing every row in the batch.
   var
-    key: Secret
+    key: Secret = default(Secret)
     leaf: ByteSeq = @[]
   key = deriveBatchKey(master, e.keyRef, e.groupId, e.batchIndex, e.epoch)
   leaf = leafHash(key, rowIndex, rowPlain, e.treeHash)

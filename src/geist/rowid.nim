@@ -228,7 +228,7 @@ proc tombstoneRow*(s: Schema, id: RowId,
   ## like the versions it supersedes -- there is no second record type and
   ## no reader that has to know about one.
   var
-    W: RowWriter
+    W: RowWriter = default(RowWriter)
     i: int = 0
   W = initRowWriter(s, store)
   W.writeU64(id)
@@ -262,7 +262,7 @@ proc restampRow*(s: Schema, A: openArray[uint8], id: RowId,
   ## value. Such a row came from a database that has its own sidecar, which
   ## means it also has its own id, which means it should not be here.
   var
-    W: RowWriter
+    W: RowWriter = default(RowWriter)
     offsets: seq[int] = @[]
     i: int = 0
   offsets = fieldOffsets(s, A)

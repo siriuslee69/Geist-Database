@@ -267,7 +267,8 @@ proc getFile(k: Keystore, name: string): KeyResult {.role: decryptor,
   ## the reason, never as absent. "You never stored this" and "your
   ## password is wrong" are different things to be told.
   var
-    read: tuple[ok: bool, keys: KeySet, err: string]
+    read: tuple[ok: bool, keys: KeySet, err: string] =
+      (false, default(KeySet), "")
   if not fileExists(k.pathFor(name)):
     result.status = ksAbsent
     result.err = "no key called '" & name & "'"

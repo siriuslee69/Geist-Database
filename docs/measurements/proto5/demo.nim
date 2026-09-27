@@ -23,8 +23,9 @@ when isMainModule:
   blobf.report()
 
   echo "\nIoT row, no text fields at all:"
-  var iot = @[("deviceId", 8), ("metric", 8), ("capturedAt", 8), ("value", 8)]
-  var w = 0
+  var
+    iot = @[("deviceId", 8), ("metric", 8), ("capturedAt", 8), ("value", 8)]
+    w = 0
   for f in iot: w = w + f[1]
   echo "  4 fixed slots -> ", w, " B/row, overflow region = 0 B, 1 allocation"
   echo "  1M rows = ", formatFloat((w*1_000_000)/(1024*1024), ffDecimal, 1),

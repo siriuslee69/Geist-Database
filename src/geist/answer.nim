@@ -49,7 +49,7 @@ type
     ## session: a daemon reloads its session when the file changes
     ## underneath, and a subscriber's position must outlive that.
 
-proc initSyncCursors*(): SyncCursors {.role: configurator,
+proc initSyncCursors*(): SyncCursors {.role: configurator, stage: stDone,
     tag: "server|sync|types".} =
   ## An empty cursor table.
   result = initTable[string, uint64]()
@@ -94,16 +94,17 @@ proc answerQuery*(S: var Session, cursors: var SyncCursors, q: Query,
   var
     i: uint32 = 0'u32
     limit: int = 0
-    r: Row
+    r: Row = default(Row)
     incoming: seq[Row] = @[]
     o: int = 0
-    applied: tuple[ok: bool, applied: int, err: string]
+    applied: tuple[ok: bool, applied: int, err: string] = (false, 0, "")
     id: RowId = 0'u64
     cursor: uint64 = 0'u64
     at: int = -1
     used: int = 0
-    stamped: tuple[ok: bool, data: ByteSeq, err: string]
-    committed: tuple[ok: bool, err: string]
+    stamped: tuple[ok: bool, data: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
+    committed: tuple[ok: bool, err: string] = (false, "")
   result.schema = S.entries.schema
   result.epoch = S.logEpoch
   limit = if q.limit == 0'u32: 64 else: int(q.limit)

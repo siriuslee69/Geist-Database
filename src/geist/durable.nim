@@ -110,7 +110,7 @@ proc replaceDurable*(path: string, A: openArray[uint8]): tuple[ok: bool,
   ## A: payload.
   var
     tmp: string = ""
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
   tmp = path & ".tmp"
   written = writeDurable(tmp, A)
   if not written.ok:

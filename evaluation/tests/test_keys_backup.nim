@@ -65,7 +65,7 @@ suite "backup":
       root = getTempDir() / "geist_t_bak"
       p = root / "main.ge1st"
       policy = defaultBackupPolicy()
-      st: BackupState
+      st: BackupState = default(BackupState)
     removeDir(root); createDir(root)
     policy.everyNWrites = 1'u32
     for gen in 1 .. 3:
@@ -84,7 +84,7 @@ suite "backup":
       data = root / "main.ge1st"
       keysF = root / "main.keys"
       policy = defaultBackupPolicy()
-      st: BackupState
+      st: BackupState = default(BackupState)
     removeDir(root); createDir(root)
     policy.everyNWrites = 1'u32
     writeFile(data, "data")
@@ -99,7 +99,7 @@ suite "backup":
       root = getTempDir() / "geist_t_bak3"
       p = root / "main.ge1st"
       policy = defaultBackupPolicy()
-      st: BackupState
+      st: BackupState = default(BackupState)
     removeDir(root); createDir(root)
     policy.everyNWrites = 1'u32
     writeFile(p, "v1")

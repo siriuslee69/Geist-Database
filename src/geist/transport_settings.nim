@@ -117,7 +117,7 @@ proc useTransportDefaults*(d: TransportDefaults) {.role: actor,
   {.gcsafe.}:
     activeTransport = d
 
-proc transportDefaults*(): TransportDefaults {.role: parser,
+proc transportDefaults*(): TransportDefaults {.role: parser, stage: stDone,
     tag: "ame|config|read".} =
   ## The transport defaults in force, built-in unless a file replaced them.
   {.gcsafe.}:

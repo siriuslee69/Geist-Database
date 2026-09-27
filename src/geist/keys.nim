@@ -119,7 +119,7 @@ proc generationArtifacts*(baseDir, baseName: string, n: uint64,
   ## encrypted: false leaves out the key and ledger, which do not exist for
   ##   a plaintext database.
   var
-    g: Generation
+    g: Generation = default(Generation)
   g = generationPaths(baseDir, baseName, n)
   result = @[g.dataPath]
   if encrypted:
@@ -180,7 +180,7 @@ proc liveGeneration*(baseDir: string): uint64 {.role: parser,
   ## One before any file was ever committed, so a fresh directory and a
   ## first-generation database name the same paths.
   var
-    m: tuple[ok: bool, n: uint64, err: string]
+    m: tuple[ok: bool, n: uint64, err: string] = (false, 0'u64, "")
   m = readManifest(baseDir)
   result = if m.ok: m.n else: 1'u64
 
@@ -213,7 +213,7 @@ proc allocKeyRef*(K: var KeySet, label: string): KeyId {.role: actor,
   ## K: key set whose allocator advances.
   ## label: human-readable purpose recorded in the ledger.
   var
-    r: KeyRecord
+    r: KeyRecord = default(KeyRecord)
   result = K.nextKeyRef
   K.nextKeyRef = K.nextKeyRef + 1'u64
   r.keyId = result
@@ -228,8 +228,8 @@ proc writeKeyFile*(path, password: string, K: KeySet): tuple[ok: bool,
   ## K: key set being persisted.
   var
     salt: ByteSeq = @[]
-    fileKey: Secret
-    keys: StreamKeys
+    fileKey: Secret = default(Secret)
+    keys: StreamKeys = default(StreamKeys)
     body: ByteSeq = @[]
     sealedMaster: ByteSeq = @[]
     tag: ByteSeq = @[]
@@ -267,12 +267,12 @@ proc readKeyFile*(path, password: string): tuple[ok: bool, keys: KeySet,
     sealedMaster: ByteSeq = @[]
     tag: ByteSeq = @[]
     body: ByteSeq = @[]
-    fileKey: Secret
-    strm: StreamKeys
+    fileKey: Secret = default(Secret)
+    strm: StreamKeys = default(StreamKeys)
     n: int = 0
     i: int = 0
     bo: int = 0
-    r: KeyRecord
+    r: KeyRecord = default(KeyRecord)
   if not fileExists(path):
     return (false, KeySet(), "no key file at " & path)
   raw = cast[ByteSeq](readFile(path))
@@ -345,7 +345,7 @@ proc decodeLedger(A: openArray[uint8], o: var int): Ledger {.role: parser,
     n: int = 0
     i: int = 0
     j: int = 0
-    g: ColumnGroup
+    g: ColumnGroup = default(ColumnGroup)
   result.databaseId = A.readText(o)
   result.batchRows = A.getU32(o); o = o + 4
   n = int(A.getU32(o)); o = o + 4

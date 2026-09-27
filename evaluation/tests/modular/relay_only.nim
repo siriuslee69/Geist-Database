@@ -24,8 +24,8 @@ proc main() =
       rights: {prRead, prWrite})
     reader: PeerContext = PeerContext(subject: "desk", address: "dac://b:1",
       rights: {prRead})
-    reply: Reply
-    m: RelayMessage
+    reply: Reply = default(Reply)
+    m: RelayMessage = default(RelayMessage)
   removeDir("build/relay-check")
   D.file = logPath
   # A message arrives from a peer whose name came from its pin.

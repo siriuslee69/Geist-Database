@@ -116,7 +116,7 @@ proc initGeistClient*(identity: bfx.AmeIdentityKey, t: RouteTable,
   ##   rather than on the first request that needed the broken route.
   ## policy: tier policy; the defaults are Geist's own.
   var
-    v: tuple[ok: bool, err: string]
+    v: tuple[ok: bool, err: string] = (false, "")
   v = t.validate()
   if not v.ok:
     return (false, GeistClient(), v.err)
@@ -144,7 +144,8 @@ proc pinFor(S: var GeistClient, path: string): tuple[ok: bool,
   ## demote the hop: the daemon at the other end may be perfectly healthy
   ## and the file on this machine merely missing.
   var
-    t: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string]
+    t: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string] =
+      (false, default(bfx.AmePinnedPeerIdentity), "")
   if S.pins.hasKey(path):
     return (true, S.pins[path], "")
   t = loadPin(path)
@@ -161,7 +162,7 @@ proc dropLink*(S: var GeistClient, endpoint: string) {.role: actor,
   ## already failed once turns one dead daemon into an unbounded series of
   ## instant failures, each of which looks like a fresh one.
   var
-    slot: LinkSlot
+    slot: LinkSlot = default(LinkSlot)
   if not S.links.hasKey(endpoint):
     return
   slot = S.links[endpoint]
@@ -174,10 +175,13 @@ proc linkTo(S: var GeistClient, h: Hop): tuple[ok: bool, err: string] {.
   ## S/h: make sure there is an open link to this hop, reusing one if
   ## there already is.
   var
-    remote: tuple[ok: bool, a: bfx.DacAddress]
-    pin: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string]
-    made: tuple[ok: bool, link: GeistLink, err: string]
-    slot: LinkSlot
+    remote: tuple[ok: bool, a: bfx.DacAddress] =
+      (false, default(bfx.DacAddress))
+    pin: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string] =
+      (false, default(bfx.AmePinnedPeerIdentity), "")
+    made: tuple[ok: bool, link: GeistLink, err: string] =
+      (false, default(GeistLink), "")
+    slot: LinkSlot = default(LinkSlot)
   if S.links.hasKey(h.endpoint) and S.links[h.endpoint].link.open:
     return (true, "")
   pin = S.pinFor(h.pin)
@@ -205,9 +209,10 @@ proc askHop(S: var GeistClient, h: Hop, q: Query): tuple[ok: bool,
   ## `ok` true with `reply.ok` false, and the caller must keep the two
   ## apart -- that is the whole distinction this module exists for.
   var
-    made: tuple[ok: bool, err: string]
-    sent: tuple[ok: bool, reply: Reply, err: string]
-    slot: LinkSlot
+    made: tuple[ok: bool, err: string] = (false, "")
+    sent: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
+    slot: LinkSlot = default(LinkSlot)
   made = S.linkTo(h)
   if not made.ok:
     return (false, Reply(), made.err)
@@ -230,9 +235,11 @@ proc ask*(S: var GeistClient, q: Query): AskResult {.role: metaOrchestrator,
   ## chosen from the updated health -- so the second attempt of a single
   ## `ask` already sees the first attempt's failure.
   var
-    parsed: tuple[ok: bool, a: GeistAddress, err: string]
-    choice: HopChoice
-    attempt: tuple[ok: bool, reply: Reply, err: string]
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      (false, default(GeistAddress), "")
+    choice: HopChoice = default(HopChoice)
+    attempt: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
     forward: Query = q
     now: int64 = 0
     i: int = 0

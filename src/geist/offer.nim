@@ -135,7 +135,7 @@ proc loadOffers*(baseDir: string): seq[OfferCursor] {.role: parser,
   ## baseDir: store root. No file means nothing has been offered to
   ## anybody yet, which is the first run and not an error.
   var
-    one: tuple[ok: bool, c: OfferCursor]
+    one: tuple[ok: bool, c: OfferCursor] = (false, default(OfferCursor))
   if not fileExists(offerPath(baseDir)):
     return @[]
   for line in lines(offerPath(baseDir)):
@@ -213,11 +213,12 @@ proc offerVia*(S: var Session, client: var GeistClient, address: string,
   ## skips a version it already has.
   var
     table: seq[OfferCursor] = @[]
-    here: OfferCursor
-    parsed: tuple[ok: bool, a: GeistAddress, err: string]
+    here: OfferCursor = default(OfferCursor)
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      (false, default(GeistAddress), "")
     batch: seq[Row] = @[]
-    got: AskResult
-    saved: tuple[ok: bool, err: string]
+    got: AskResult = default(AskResult)
+    saved: tuple[ok: bool, err: string] = (false, "")
     epoch: uint64 = 0'u64
   parsed = parseAddress(address)
   if not parsed.ok:
@@ -269,8 +270,9 @@ proc pending*(S: Session, baseDir: string, address: string): uint64 {.
   ## rather than remembering, so it is correct after a restart and cannot
   ## drift from what `offerVia` will actually do.
   var
-    parsed: tuple[ok: bool, a: GeistAddress, err: string]
-    here: OfferCursor
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      (false, default(GeistAddress), "")
+    here: OfferCursor = default(OfferCursor)
     total: uint64 = 0'u64
   parsed = parseAddress(address)
   if not parsed.ok:

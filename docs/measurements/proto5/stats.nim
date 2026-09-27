@@ -25,8 +25,9 @@ proc rate*(s: FieldStats): float =
   if s.rows == 0: 0.0 else: overflowing(s) / s.rows
 
 proc avgOverage*(s: FieldStats): float =
-  var t = 0
-  var n = 0
+  var
+    t = 0
+    n = 0
   for L in s.lens:
     if L > s.width: t = t + (L - s.width); n.inc
   if n == 0: 0.0 else: t / n

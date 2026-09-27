@@ -22,8 +22,9 @@ proc scratch(name: string): string =
 suite "collection: objects in, objects out":
 
   test "a collection reads like a seq of the user's own type":
-    var root = scratch("geist_t_coll")
-    var notes = openCollection[Note](root, "notes")
+    var
+      root = scratch("geist_t_coll")
+      notes = openCollection[Note](root, "notes")
     notes.add Note(id: 1, score: 1.5, title: "first", body: "alpha")
     notes.add Note(id: 2, score: -2.25, title: "second", body: "beta")
     check notes.len == 2
@@ -34,8 +35,9 @@ suite "collection: objects in, objects out":
     removeDir(root)
 
   test "items and pairs iterate in stored order":
-    var root = scratch("geist_t_iter")
-    var notes = openCollection[Note](root, "notes")
+    var
+      root = scratch("geist_t_iter")
+      notes = openCollection[Note](root, "notes")
     notes.add @[Note(id: 1, title: "a"), Note(id: 2, title: "b"),
       Note(id: 3, title: "c")]
     var seen: seq[string] = @[]
@@ -48,9 +50,10 @@ suite "collection: objects in, objects out":
     removeDir(root)
 
   test "a bulk add saves once, not once per element":
-    var root = scratch("geist_t_bulk")
-    var notes = openCollection[Note](root, "notes")
-    var batch: seq[Note] = @[]
+    var
+      root = scratch("geist_t_bulk")
+      notes = openCollection[Note](root, "notes")
+      batch: seq[Note] = @[]
     for i in 0 ..< 50:
       batch.add Note(id: i, title: "t" & $i, body: "b" & $i)
     var idx = notes.add(batch)
@@ -61,8 +64,9 @@ suite "collection: objects in, objects out":
     removeDir(root)
 
   test "the same API works sealed; only the constructor differs":
-    var root = scratch("geist_t_collenc")
-    var notes = openEncryptedCollection[Note](root, "notes", "pw")
+    var
+      root = scratch("geist_t_collenc")
+      notes = openEncryptedCollection[Note](root, "notes", "pw")
     notes.add Note(id: 7, title: "secret-title", body: "secret-body")
     check notes.isEncrypted()
     check notes.len == 1
@@ -84,8 +88,9 @@ suite "collection: objects in, objects out":
     removeDir(root)
 
   test "out-of-range access reports the range instead of reading garbage":
-    var root = scratch("geist_t_range")
-    var notes = openCollection[Note](root, "notes")
+    var
+      root = scratch("geist_t_range")
+      notes = openCollection[Note](root, "notes")
     notes.add Note(id: 1, title: "only")
     expect IndexDefect:
       discard notes[1]
@@ -95,8 +100,9 @@ suite "collection: objects in, objects out":
     removeDir(root)
 
   test "find matches on a named field":
-    var root = scratch("geist_t_find")
-    var notes = openCollection[Note](root, "notes")
+    var
+      root = scratch("geist_t_find")
+      notes = openCollection[Note](root, "notes")
     notes.add @[Note(id: 1, title: "x"), Note(id: 2, title: "y"),
       Note(id: 3, title: "x")]
     check notes.find("title", "x").len == 2
@@ -107,8 +113,9 @@ suite "collection: objects in, objects out":
 suite "seek: partial reads without loading the cluster":
 
   test "one row is addressable without reading the rest":
-    var root = scratch("geist_t_seek")
-    var notes = openCollection[Note](root, "notes", appConfig(), "", false)
+    var
+      root = scratch("geist_t_seek")
+      notes = openCollection[Note](root, "notes", appConfig(), "", false)
     for i in 0 ..< 200:
       notes.add Note(id: i, score: float(i), title: "t" & $i, body: "b" & $i)
     check notes.save().ok
@@ -123,9 +130,10 @@ suite "seek: partial reads without loading the cluster":
     removeDir(root)
 
   test "the index cost does not grow with the row count":
-    var small = scratch("geist_t_ix_s")
-    var big = scratch("geist_t_ix_b")
-    var a = openCollection[Reading](small, "r", appConfig(), "", false)
+    var
+      small = scratch("geist_t_ix_s")
+      big = scratch("geist_t_ix_b")
+      a = openCollection[Reading](small, "r", appConfig(), "", false)
     a.add Reading(sensor: 1, value: 1)
     check a.save().ok
     var pa = a.session.dataPath()
@@ -142,8 +150,9 @@ suite "seek: partial reads without loading the cluster":
     removeDir(big)
 
   test "a fixed column is read by striding, not by unpacking rows":
-    var root = scratch("geist_t_col")
-    var rs = openCollection[Reading](root, "r", appConfig(), "", false)
+    var
+      root = scratch("geist_t_col")
+      rs = openCollection[Reading](root, "r", appConfig(), "", false)
     for i in 0 ..< 100:
       rs.add Reading(sensor: i mod 4, value: i)
     check rs.save().ok
@@ -165,8 +174,9 @@ suite "seek: partial reads without loading the cluster":
     removeDir(root)
 
   test "a variable column comes back as slices, two bulk reads":
-    var root = scratch("geist_t_vcol")
-    var notes = openCollection[Note](root, "notes", appConfig(), "", false)
+    var
+      root = scratch("geist_t_vcol")
+      notes = openCollection[Note](root, "notes", appConfig(), "", false)
     for i in 0 ..< 30:
       notes.add Note(id: i, title: "title-" & $i, body: "body-" & $i)
     check notes.save().ok
@@ -182,8 +192,9 @@ suite "seek: partial reads without loading the cluster":
     removeDir(root)
 
   test "a row window is one contiguous read":
-    var root = scratch("geist_t_win")
-    var rs = openCollection[Reading](root, "r", appConfig(), "", false)
+    var
+      root = scratch("geist_t_win")
+      rs = openCollection[Reading](root, "r", appConfig(), "", false)
     for i in 0 ..< 500:
       rs.add Reading(sensor: i, value: i)
     check rs.save().ok
@@ -207,8 +218,9 @@ suite "seek: partial reads without loading the cluster":
     removeDir(root)
 
   test "seeking past the end reports the range":
-    var root = scratch("geist_t_oob")
-    var rs = openCollection[Reading](root, "r", appConfig(), "", false)
+    var
+      root = scratch("geist_t_oob")
+      rs = openCollection[Reading](root, "r", appConfig(), "", false)
     rs.add Reading(sensor: 1, value: 1)
     check rs.save().ok
     var path = rs.session.dataPath()
@@ -220,12 +232,14 @@ suite "seek: partial reads without loading the cluster":
     removeDir(root)
 
   test "a handle notices the file moved on underneath it":
-    var root = scratch("geist_t_stale")
-    var rs = openCollection[Reading](root, "r", appConfig(), "", false)
+    var
+      root = scratch("geist_t_stale")
+      rs = openCollection[Reading](root, "r", appConfig(), "", false)
     rs.add Reading(sensor: 1, value: 1)
     check rs.save().ok
-    var path = rs.session.dataPath()
-    var h = openSeek(path)
+    var
+      path = rs.session.dataPath()
+      h = openSeek(path)
     check h.ok
     check not h.h.isStale()
     rs.close()

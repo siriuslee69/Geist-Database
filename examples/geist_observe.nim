@@ -24,8 +24,9 @@ when isMainModule:
   var
     root: string = ""
     path: string = ""
-    writer: Session
-    seen: tuple[ok: bool, f: GeistFile, path: string, err: string]
+    writer: Session = default(Session)
+    seen: tuple[ok: bool, f: GeistFile, path: string, err: string] =
+      (false, default(GeistFile), "", "")
     step: tuple[ok: bool, f: GeistFile, changed: seq[int], path: string,
       err: string]
     i: int = 0

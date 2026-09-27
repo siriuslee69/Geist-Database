@@ -326,8 +326,9 @@ task runStatistics, "Measure the repository with Otter and record the numbers":
   ## case and not a task failure, so its status is discarded on purpose.
   exec "sh -c 'OTTER_CACHE=build/otter-cache " &
     "./submodules/Otter-RepoEvaluation/tools/agent_hooks/otter-gate.sh " &
-    "--force \"" & at & "\" | sed \"s#" & here & "/" & at &
-    "/##g\" > evaluation/statistics/otter-gate.txt; true'"
+    "--force \"" & at & "\" | sed -e \"s#" & here & "/" & at &
+    "/##g\" -e \"s#" & here & "/" & at & "#.#g\" > " &
+    "evaluation/statistics/otter-gate.txt; true'"
   exec "cat evaluation/statistics/otter-stats.txt"
 
 # ---------------------------------------------------------------------

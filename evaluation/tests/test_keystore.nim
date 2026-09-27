@@ -90,15 +90,17 @@ suite "the file provider":
 
   test "a wrong password fails as PRESENT, not as absent":
     check k.put("master", bytes("hunter2")).ok
-    var other = openKeystore(k.dir, "the-wrong-password", kpFile)
-    var got = other.get("master")
+    var
+      other = openKeystore(k.dir, "the-wrong-password", kpFile)
+      got = other.get("master")
     check not got.ok
     check got.status == ksPresent
     check got.err.len > 0
 
   test "with no password at all it refuses to write":
-    var bare = openKeystore(scratch("nopass"), "", kpFile)
-    var r = bare.put("master", bytes("x"))
+    var
+      bare = openKeystore(scratch("nopass"), "", kpFile)
+      r = bare.put("master", bytes("x"))
     check not r.ok
     check "needs a password" in r.err
 
@@ -134,8 +136,9 @@ suite "the file provider":
 suite "what is too big to be a key":
 
   test "is refused with the limit named":
-    var k = openKeystore(scratch("big"), "pw", kpMemory)
-    var r = k.put("blob", newSeq[uint8](maxSecretBytes + 1))
+    var
+      k = openKeystore(scratch("big"), "pw", kpMemory)
+      r = k.put("blob", newSeq[uint8](maxSecretBytes + 1))
     check not r.ok
     check "the limit is" in r.err
 

@@ -232,8 +232,8 @@ proc closeSlot(S: var StoreRegistry, key: string): tuple[ok: bool,
   ## The caller then tries a different candidate: staying over the limit
   ## for another moment is recoverable, and losing the rows is not.
   var
-    slot: StoreSlot
-    saved: tuple[ok: bool, err: string]
+    slot: StoreSlot = default(StoreSlot)
+    saved: tuple[ok: bool, err: string] = (false, "")
   if not S.slots.hasKey(key):
     return (true, "")
   slot = S.slots[key]
@@ -257,7 +257,7 @@ proc evictTo(S: var StoreRegistry, room: int): tuple[ok: bool, err: string] {.
   ## the whole registry at its limit.
   var
     i: int = 0
-    closed: tuple[ok: bool, err: string]
+    closed: tuple[ok: bool, err: string] = (false, "")
     stuck: string = ""
     candidates: seq[string] = @[]
   while S.slots.len > room and i < S.order.len:
@@ -289,10 +289,10 @@ proc acquire*(S: var StoreRegistry, a: GeistAddress): tuple[ok: bool,
   ## would invalidate.
   var
     key: string = ""
-    path: tuple[ok: bool, path: string, err: string]
-    slot: StoreSlot
-    made: tuple[ok: bool, writable: bool, err: string]
-    room: tuple[ok: bool, err: string]
+    path: tuple[ok: bool, path: string, err: string] = (false, "", "")
+    slot: StoreSlot = default(StoreSlot)
+    made: tuple[ok: bool, writable: bool, err: string] = (false, false, "")
+    room: tuple[ok: bool, err: string] = (false, "")
   if S.open == nil:
     S.report.refused = S.report.refused + 1'u64
     return (false, nil, "this registry has no opener")
@@ -357,8 +357,10 @@ proc serveQuery*(S: var StoreRegistry, q: Query, p: PeerContext): Reply {.
   ## transport failure, so a client's `ask` returns it instead of failing
   ## over to a fallback that would say exactly the same thing.
   var
-    parsed: tuple[ok: bool, a: GeistAddress, err: string]
-    got: tuple[ok: bool, slot: StoreSlot, err: string]
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      (false, default(GeistAddress), "")
+    got: tuple[ok: bool, slot: StoreSlot, err: string] =
+      (false, default(StoreSlot), "")
     inner: Query = q
   parsed = parseAddress(q.collection)
   if not parsed.ok:
@@ -379,7 +381,7 @@ proc saveAll*(S: var StoreRegistry): tuple[ok: bool, saved: int,
   ## stopped at the first unsaveable store would abandon the ones behind
   ## it -- and those may be perfectly saveable.
   var
-    saved: tuple[ok: bool, err: string]
+    saved: tuple[ok: bool, err: string] = (false, "")
   result.ok = true
   for key, slot in S.slots.pairs:
     if not slot.writable:
@@ -401,7 +403,7 @@ proc closeRegistry*(S: var StoreRegistry): tuple[ok: bool, err: string] {.
   ## start would refuse to open them.
   var
     keys: seq[string] = @[]
-    closed: tuple[ok: bool, err: string]
+    closed: tuple[ok: bool, err: string] = (false, "")
     i: int = 0
   for key in S.slots.keys:
     keys.add key

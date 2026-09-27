@@ -59,8 +59,9 @@ suite "where the folder is":
 suite "the six subdirectories":
 
   setup:
-    var p = scratch("tree")
-    var h = openHome(p, nrClient).home
+    var
+      p = scratch("tree")
+      h = openHome(p, nrClient).home
 
   test "are all under the one base":
     check h.configDir() == p / "config"
@@ -126,8 +127,9 @@ suite "the path is the address":
     check r.path.endsWith("db/fjord/mail/alice/inbox")
 
   test "storeFor reads the app out of the address itself":
-    var a = parseAddress("geist://eris.games/games/alderreach").a
-    var r = h.storeFor(a)
+    var
+      a = parseAddress("geist://eris.games/games/alderreach").a
+      r = h.storeFor(a)
     check r.ok
     check r.path.endsWith("db/eris.games/games/alderreach")
 
@@ -137,8 +139,9 @@ suite "the path is the address":
     check "names no app" in r.err
 
   test "two apps cannot collide on a shared target name":
-    var a = h.storePath("fjord", "", "accounts")
-    var b = h.storePath("eris", "", "accounts")
+    var
+      a = h.storePath("fjord", "", "accounts")
+      b = h.storePath("eris", "", "accounts")
     check a.path != b.path
 
 suite "what cannot become a path":
@@ -162,8 +165,9 @@ suite "what cannot become a path":
 suite "what an operator is shown":
 
   test "the tree, with what is missing marked":
-    var h = openHome(scratch("described"), nrClient).home
-    var before = h.describeHome()
+    var
+      h = openHome(scratch("described"), nrClient).home
+      before = h.describeHome()
     check "-- missing" in before
     check h.ensureHome().ok
     var after = h.describeHome()

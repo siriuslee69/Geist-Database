@@ -18,7 +18,7 @@ type
 
 when isMainModule:
   var
-    s: Schema
+    s: Schema = default(Schema)
     note = ContactNote(noteId: 7, title: "case-note-7", clearance: 42,
       body: "sensitive text",
       attachment: Ref(target: rtBlob, locator: "koerper/9f2a",

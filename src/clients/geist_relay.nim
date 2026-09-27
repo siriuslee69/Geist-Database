@@ -34,6 +34,8 @@ type
 
   Options* {.role: configurator, tag: "cli|config|entrypoint|stream|types".} = object
     verb*: Verb
+    help*: bool
+      ## no verb, or --help: print the usage and stop.
     remote*: string
     identity*: string
     identityPassword*: string
@@ -102,15 +104,15 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
   result.timeoutMs = 30_000
   result.intervalMs = 1000
   if argv.len == 0:
-    echo usageText
-    quit(0)
+    result.help = true
+    return
   case argv[0]
   of "send": result.verb = vSend
   of "poll", "recv", "collect": result.verb = vPoll
   of "pin", "pin-out": result.verb = vPin
   of "--help", "-h", "help":
-    echo usageText
-    quit(0)
+    result.help = true
+    return
   else:
     raise newException(ValueError, "unknown verb '" & argv[0] &
       "'; expected send, poll or pin")
@@ -148,9 +150,7 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     of "follow": result.follow = true
     of "verbose": result.verbose = true
     of "config": result.configFile = value
-    of "help":
-      echo usageText
-      quit(0)
+    of "help": result.help = true
     else:
       raise newException(ValueError, "unknown option --" & key)
     result.given.add key
@@ -168,8 +168,9 @@ proc withUserConfig*(o: Options): Options {.role: configurator,
   ## and a single section would make "which side is this?" a guess.
   var
     where: string = ""
-    doc: tuple[ok: bool, node: JsonNode, err: string]
-    client: JsonNode
+    doc: tuple[ok: bool, node: JsonNode, err: string] =
+      (false, default(JsonNode), "")
+    client: JsonNode = default(JsonNode)
     complaint: string = ""
   result = o
   for candidate in (if o.configFile.len > 0: @[o.configFile]
@@ -229,7 +230,8 @@ proc mineFor(o: Options): AmeIdentityKey {.role: configurator,
     tag: "cli|cryptoBoundary".} =
   ## o: this client's signing identity, created on first use.
   var
-    loaded: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
+    loaded: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
   if o.identity.len == 0:
     raise newException(ValueError,
       "--identity <file> is required: the relay pins its peers, and a key " &
@@ -244,9 +246,12 @@ proc connectRelay(o: Options): GeistLink {.role: orchestrator,
     tag: "cli|networkSurface|orchestrator".} =
   ## o: options naming the relay and the pin it is checked against.
   var
-    address: tuple[ok: bool, a: GeistDacAddress]
-    pin: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string]
-    link: tuple[ok: bool, link: GeistLink, err: string]
+    address: tuple[ok: bool, a: GeistDacAddress] =
+      (false, default(GeistDacAddress))
+    pin: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
+    link: tuple[ok: bool, link: GeistLink, err: string] =
+      (false, default(GeistLink), "")
   address = parseDacAddress(o.remote)
   if not address.ok:
     raise newException(ValueError,
@@ -273,7 +278,8 @@ proc sendOne(link: var GeistLink, o: Options,
   ## stamps who sent it from the pin it verified, so there is nothing for
   ## a sender to describe.
   var
-    sent: tuple[ok: bool, reply: Reply, err: string]
+    sent: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
   sent = link.send(Query(op: qoPut, collection: o.stream, payload: body),
     o.timeoutMs)
   if not sent.ok:
@@ -284,13 +290,34 @@ proc sendOne(link: var GeistLink, o: Options,
     result.answer = sent.reply.rows[0].data
   result.ok = true
 
+proc sendAndEcho(link: var GeistLink, o: Options, text: string) {.
+    role: orchestrator, tag: "cli|networkSurface|write".} =
+  ## link/o/text: send one message; whatever the far side answered goes to
+  ## stdout. A refused message raises, which ends the whole send.
+  var
+    sent: tuple[ok: bool, answer: ByteSeq, err: string] =
+      sendOne(link, o, asBytes(text))
+  if not sent.ok:
+    raise newException(IOError, sent.err)
+  if sent.answer.len > 0:
+    stdout.write(asText(sent.answer))
+
+proc sendLines(link: var GeistLink, o: Options, input: string): int {.
+    role: orchestrator, tag: "cli|networkSurface|write".} =
+  ## link/o/input: one message per non-empty line, on ONE link -> how many
+  ## were sent. A log fan-in sends thousands, and a handshake per line
+  ## would cost more than the lines do.
+  for line in input.splitLines():
+    if line.len > 0:
+      sendAndEcho(link, o, line)
+      result = result + 1
+
 proc cmdSend(o: Options): int {.role: metaOrchestrator,
     tag: "cli|entrypoint|stream|write".} =
   ## o: read the input and hand it over, one message or one per line.
   var
-    link: GeistLink
+    link: GeistLink = default(GeistLink)
     input: string = ""
-    sent: tuple[ok: bool, answer: ByteSeq, err: string]
     count: int = 0
   if o.file.len > 0:
     if not fileExists(o.file):
@@ -301,26 +328,12 @@ proc cmdSend(o: Options): int {.role: metaOrchestrator,
   link = connectRelay(o)
   try:
     if o.splitLines:
-      # One message per line, on ONE link: a log fan-in sends thousands,
-      # and a handshake per line would cost more than the lines do.
-      for line in input.splitLines():
-        if line.len == 0:
-          continue
-        sent = sendOne(link, o, asBytes(line))
-        if not sent.ok:
-          raise newException(IOError, sent.err)
-        count = count + 1
-        if sent.answer.len > 0:
-          stdout.write(asText(sent.answer))
+      count = sendLines(link, o, input)
+    elif input.len == 0:
+      raise newException(ValueError, "nothing to send: stdin was empty")
     else:
-      if input.len == 0:
-        raise newException(ValueError, "nothing to send: stdin was empty")
-      sent = sendOne(link, o, asBytes(input))
-      if not sent.ok:
-        raise newException(IOError, sent.err)
+      sendAndEcho(link, o, input)
       count = 1
-      if sent.answer.len > 0:
-        stdout.write(asText(sent.answer))
     stdout.flushFile()
     if o.verbose:
       stderr.writeLine("sent " & $count & " message(s) to " & o.remote &
@@ -338,11 +351,12 @@ proc cmdPoll(o: Options): int {.role: metaOrchestrator,
     tag: "cli|entrypoint|read|stream".} =
   ## o: collect what the relay is holding for this reader, once or forever.
   var
-    link: GeistLink
-    got: tuple[ok: bool, reply: Reply, err: string]
+    link: GeistLink = default(GeistLink)
+    got: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
     format: RelayFormat = rfRaw
     seen: int = 0
-    m: RelayMessage
+    m: RelayMessage = default(RelayMessage)
   case o.format.toLowerAscii()
   of "", "raw", "bytes": format = rfRaw
   of "lines", "line", "plain", "text": format = rfLines
@@ -377,7 +391,7 @@ proc cmdPin(o: Options): int {.role: orchestrator,
     tag: "cli|cryptoBoundary|entrypoint".} =
   ## o: write this client's pin, which the relay must be given to trust it.
   var
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
     where: string = o.pinOut
   if where.len == 0:
     where = o.identity & ".pin"
@@ -393,9 +407,13 @@ proc runRelayClient*(argv: seq[string]): int {.role: metaOrchestrator,
     tag: "cli|entrypoint|orchestrator".} =
   ## argv: command line without the executable name.
   var
-    o: Options
+    o: Options = default(Options)
   try:
-    o = withUserConfig(parseOptions(argv))
+    o = parseOptions(argv)
+    if o.help:
+      echo usageText
+      return 0
+    o = withUserConfig(o)
     case o.verb
     of vSend: result = cmdSend(o)
     of vPoll: result = cmdPoll(o)

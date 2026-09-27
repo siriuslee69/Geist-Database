@@ -66,6 +66,9 @@ type
     configFile*: string
     oneshot*: bool
     quiet*: bool
+    help*: bool
+      ## --help was asked for: print the usage and stop, before anything
+      ## is checked or opened.
     ## given: the long option names ACTUALLY TYPED, so a config file can
     ## fill in what was left out without overruling what was not. `--spool
     ## 256` is a thing an operator writes on purpose and also happens to
@@ -209,9 +212,7 @@ proc parseArgs*(argv: openArray[string]): RelayConfig {.role: parser,
     of "config": result.configFile = value
     of "oneshot": result.oneshot = true
     of "quiet": result.quiet = true
-    of "help":
-      echo usageText
-      quit(0)
+    of "help": result.help = true
     else:
       raise newException(ValueError, "unknown option --" & key)
     result.given.add key
@@ -238,8 +239,9 @@ proc withUserConfig*(c: RelayConfig): RelayConfig {.role: configurator,
   ## an argument still wins, or debugging one by hand would be impossible.
   var
     where: string = ""
-    doc: tuple[ok: bool, node: JsonNode, err: string]
-    relay: JsonNode
+    doc: tuple[ok: bool, node: JsonNode, err: string] =
+      (false, default(JsonNode), "")
+    relay: JsonNode = default(JsonNode)
     complaint: string = ""
   result = c
   for candidate in relayConfigCandidates(c.configFile):
@@ -298,6 +300,8 @@ proc resolveConfig*(argv: openArray[string]): RelayConfig {.role: parser,
   ## The check happens AFTER the merge, or a setting supplied by the file
   ## would be reported missing.
   result = withUserConfig(parseArgs(argv))
+  if result.help:
+    return
   if parseSink(result.to) == rsExec and result.exec.len == 0:
     raise newException(ValueError, "--to exec needs --exec <command>")
   if parseSink(result.to) == rsFile and result.file.len == 0:
@@ -324,7 +328,8 @@ proc collectTrust(c: RelayConfig): tuple[ok: bool, peers: seq[TrustedPeer],
   ## gets the union, because the operator clearly meant the wider one.
   var
     i: int = 0
-    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string]
+    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
     at: int = -1
     j: int = 0
   while i < c.trust.len + c.allowWrite.len:
@@ -361,17 +366,24 @@ proc runRelayd*(argv: seq[string]): int {.role: metaOrchestrator,
     tag: "entrypoint|lifecycle|orchestrator|server|stream".} =
   ## argv: command line without the executable name.
   var
-    c: RelayConfig
-    D: RelayDesk
-    address: tuple[ok: bool, a: GeistDacAddress]
-    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
-    trusted: tuple[ok: bool, peers: seq[TrustedPeer], err: string]
-    written: tuple[ok: bool, err: string]
-    server: tuple[ok: bool, server: GeistServer, err: string]
-    step: tuple[ok: bool, served: bool, err: string]
+    c: RelayConfig = default(RelayConfig)
+    D: RelayDesk = default(RelayDesk)
+    address: tuple[ok: bool, a: GeistDacAddress] =
+      (false, default(GeistDacAddress))
+    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+    trusted: tuple[ok: bool, peers: seq[TrustedPeer], err: string] =
+      (false, @[], "")
+    written: tuple[ok: bool, err: string] = (false, "")
+    server: tuple[ok: bool, server: GeistServer, err: string] =
+      (false, default(GeistServer), "")
+    step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
     served: int = 0
   try:
     c = resolveConfig(argv)
+    if c.help:
+      echo usageText
+      return 0
     installSignalHandlers()
     # configs/default.toml carries the tier policy. A relay has no storage settings
     # to adopt, so it validates only the section it acts on.

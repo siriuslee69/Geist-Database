@@ -135,7 +135,7 @@ proc openGeist*[T: object](path: string, c: GeistConfig = appConfig(),
     name = path.splitFile().name
   result = openSession[T](dir, name, c, password, readOnly)
 
-proc geistVersion*(): string {.role: helper,
+proc geistVersion*(): string {.role: helper, stage: stDone,
     tag: "appApi|status".} =
   ## The format version this build reads and writes.
   result = "geist format v" & $geistFormatVersion

@@ -185,7 +185,7 @@ proc validate*(t: RouteTable): tuple[ok: bool, err: string] {.
     j: int = 0
     key: string = ""
     seenRoute: Table[string, bool] = initTable[string, bool]()
-    seenPriority: Table[uint8, string]
+    seenPriority: Table[uint8, string] = default(Table[uint8, string])
   if t.node.len == 0:
     return (false, "routing.node is empty; a router that cannot name " &
       "itself cannot detect a loop through itself")
@@ -325,7 +325,7 @@ proc byPriority(hops: seq[Hop]): seq[Hop] {.role: helper,
   var
     i: int = 0
     j: int = 0
-    t: Hop
+    t: Hop = default(Hop)
   result = hops
   i = 1
   while i < result.len:
@@ -415,7 +415,7 @@ proc describe*(V: RouteView, now: int64): string {.role: helper,
     L: seq[string] = @[]
     i: int = 0
     j: int = 0
-    h: HopHealth
+    h: HopHealth = default(HopHealth)
     state: string = ""
     hops: seq[Hop] = @[]
   L.add "node " & V.table.node & ", takeover after " &

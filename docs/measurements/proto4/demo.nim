@@ -11,9 +11,9 @@ proc bytes(s: string): ByteSeq =
 
 when isMainModule:
   var
-    o: Overflow
-    meta: ClusterBuild
-    notes: ClusterBuild
+    o: Overflow = default(Overflow)
+    meta: ClusterBuild = default(ClusterBuild)
+    notes: ClusterBuild = default(ClusterBuild)
     path = getTempDir() / "geist_proto4.ge1st"
 
   # ---- meta cluster: fixed order, first in the file ----
@@ -74,8 +74,9 @@ when isMainModule:
   # ================= random access check =================
   echo "\n=== row i is at base + i*", rowW, " -- addressable, no scan ==="
   for i in 0'u32 ..< 3'u32:
-    var r = readOneRow(path, ne, uint64(schemaBytes), rowW, i)
-    var s = r.getU32(int(slotAt(1)))
-    var n = r.getU32(int(slotAt(1)) + 4)
+    var
+      r = readOneRow(path, ne, uint64(schemaBytes), rowW, i)
+      s = r.getU32(int(slotAt(1)))
+      n = r.getU32(int(slotAt(1)) + 4)
     echo "  row ", i, ": noteId=", r.getU64(0), " title=\"",
       str(readOverflowSlice(path, overflowAt, s, n)), "\""

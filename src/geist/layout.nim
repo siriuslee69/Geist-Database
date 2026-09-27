@@ -239,7 +239,8 @@ proc storePath*(h: GeistHome, app, instance: string,
   ## with `address.nim`: this is the function that turns it into a
   ## filesystem path, so this is where `..` has to be impossible.
   var
-    parsed: tuple[ok: bool, a: GeistAddress, err: string]
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      (false, default(GeistAddress), "")
   if target.len == 0:
     return (false, "", "a store needs a target")
   parsed = parseAddress(target)

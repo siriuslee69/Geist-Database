@@ -47,7 +47,7 @@ proc heapOfNodes(ns: seq[Node]): int =
 
 when isMainModule:
   var
-    s: Schema
+    s: Schema = default(Schema)
     note = ContactNote(noteId: 7, title: "case-note-7", clearance: 42,
       body: "sensitive text",
       attachment: Ref(target: rtBlob, locator: "koerper/9f2a",
@@ -75,12 +75,14 @@ when isMainModule:
     " MiB   Node = ", (heapOfNodes(ns)*N) div (1024*1024), " MiB"
 
   # hot-path field read: schema offset vs name scan
-  var t0 = cpuTime()
-  var acc1: uint64 = 0
+  var
+    t0 = cpuTime()
+    acc1: uint64 = 0
   for i in 0 ..< N:
     acc1 = acc1 + r.data.getU64(s.slots[7].offset)   # attachment.size, O(1)
-  var t1 = cpuTime()
-  var acc2: int64 = 0
+  var
+    t1 = cpuTime()
+    acc2: int64 = 0
   for i in 0 ..< N:
     for n in ns:                                      # scan to find slot 7
       if n.nameId == 7'u16:

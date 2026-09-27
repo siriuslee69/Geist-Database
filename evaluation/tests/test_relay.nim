@@ -20,7 +20,7 @@ proc peer(name: string, rights: set[PeerRight]): PeerContext =
   result = PeerContext(subject: name, address: "dac://127.0.0.1:1",
     rights: rights)
 
-let
+var
   phone = peer("phone", {prRead, prWrite})
   watcher = peer("watcher", {prRead})
 
@@ -32,13 +32,14 @@ proc put(D: var RelayDesk, stream, body: string,
 suite "a message keeps who sent it":
 
   test "the sender is the pin's subject, not anything the payload said":
-    var D = initRelayDesk()
-    var reply = D.put("voice", "sender: someone-else")
+    var
+      D = initRelayDesk()
+      reply = D.put("voice", "sender: someone-else")
     check reply.ok
     reply = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "r"), watcher)
     check reply.rows.len == 1
-    let m = decodeMessage(reply.rows[0].data)
+    var m = decodeMessage(reply.rows[0].data)
     # The body says one thing; the envelope says who the handshake proved.
     check m.sender == "phone"
     check asText(m.body) == "sender: someone-else"
@@ -46,7 +47,7 @@ suite "a message keeps who sent it":
   test "an envelope survives a round trip":
     var m = RelayMessage(stream: "voice", sender: "phone", at: 1_700_000_000'i64,
       ordinal: 7'u64, body: asBytes("bytes\x00with a nul"))
-    let back = decodeMessage(encodeMessage(m))
+    var back = decodeMessage(encodeMessage(m))
     check back.stream == "voice"
     check back.sender == "phone"
     check back.at == 1_700_000_000'i64
@@ -54,8 +55,9 @@ suite "a message keeps who sent it":
     check back.body == m.body
 
   test "a truncated envelope decodes to nothing rather than reading past it":
-    var m = RelayMessage(stream: "voice", sender: "phone", body: asBytes("hi"))
-    var wire = encodeMessage(m)
+    var
+      m = RelayMessage(stream: "voice", sender: "phone", body: asBytes("hi"))
+      wire = encodeMessage(m)
     check decodeMessage(wire[0 ..< wire.len - 1]).body.len == 0
     check decodeMessage(@[]).stream == ""
 
@@ -73,11 +75,11 @@ suite "rights come from the pin":
   test "a peer pinned for reading may collect but not send":
     var D = initRelayDesk()
     discard D.put("voice", "from the phone")
-    let refused = D.put("voice", "from the watcher", watcher)
+    var refused = D.put("voice", "from the watcher", watcher)
     check not refused.ok
     check "may read but not send" in refused.err
     check "--allow-write" in refused.err
-    let allowed = answerRelay(D, Query(op: qoPoll, collection: "voice",
+    var allowed = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "w"), watcher)
     check allowed.ok
     check allowed.rows.len == 1
@@ -85,14 +87,15 @@ suite "rights come from the pin":
   test "a peer with no rights at all may not even collect":
     var D = initRelayDesk()
     discard D.put("voice", "held")
-    let refused = answerRelay(D, Query(op: qoPoll, collection: "voice",
+    var refused = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "n"), peer("nobody", {}))
     check not refused.ok
     check "may not read" in refused.err
 
   test "an empty message is refused, and counted":
-    var D = initRelayDesk()
-    let refused = answerRelay(D, Query(op: qoPut, collection: "voice"), phone)
+    var
+      D = initRelayDesk()
+      refused = answerRelay(D, Query(op: qoPut, collection: "voice"), phone)
     check not refused.ok
     check "carried no bytes" in refused.err
     check D.refused == 1
@@ -101,7 +104,7 @@ suite "rights come from the pin":
     var D = initRelayDesk()
     D.streams = @["voice", "notes"]
     check D.put("voice", "fine").ok
-    let refused = D.put("whatever", "not fine")
+    var refused = D.put("whatever", "not fine")
     check not refused.ok
     check "takes no stream 'whatever'" in refused.err
     check "voice, notes" in refused.err
@@ -115,7 +118,7 @@ suite "the spool is bounded and says so":
       check D.put("voice", "message " & $i).ok
     check D.holds("voice") == 3
     check D.droppedFrom("voice") == 7'u64
-    let reply = answerRelay(D, Query(op: qoPoll, collection: "voice",
+    var reply = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "late"), watcher)
     check reply.rows.len == 3
     # What is left is the NEWEST three: a relay that shed the newest would
@@ -150,7 +153,7 @@ suite "readers do not consume each other":
     check answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "alpha"), watcher).rows.len == 0
     discard D.put("voice", "third")
-    let more = answerRelay(D, Query(op: qoPoll, collection: "voice",
+    var more = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "alpha"), watcher)
     check more.rows.len == 1
     check asText(decodeMessage(more.rows[0].data).body) == "third"
@@ -159,11 +162,11 @@ suite "readers do not consume each other":
     var D = initRelayDesk()
     for i in 1 .. 5:
       discard D.put("voice", $i)
-    let first = answerRelay(D, Query(op: qoPoll, collection: "voice",
+    var first = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "r", limit: 2'u32), watcher)
     check first.rows.len == 2
     check first.cursor == 2'u64
-    let rest = answerRelay(D, Query(op: qoPoll, collection: "voice",
+    var rest = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "r", limit: 10'u32), watcher)
     check rest.rows.len == 3
 
@@ -185,7 +188,7 @@ suite "a relay says it is not a database":
   test "every stored-data question is refused by name":
     var D = initRelayDesk()
     for op in [qoGet, qoFind, qoFetch, qoDelete]:
-      let refused = answerRelay(D, Query(op: op, collection: "voice"), phone)
+      var refused = answerRelay(D, Query(op: op, collection: "voice"), phone)
       check not refused.ok
       check "not a database" in refused.err
       check "geistd" in refused.err
@@ -193,9 +196,9 @@ suite "a relay says it is not a database":
 suite "how a message is written down":
 
   test "plain lines stay one line each":
-    let m = RelayMessage(stream: "logs", sender: "phone", at: 1_700_000_000'i64,
+    var m = RelayMessage(stream: "logs", sender: "phone", at: 1_700_000_000'i64,
       ordinal: 1'u64, body: asBytes("two\nlines\there"))
-    let line = render(m, rfLines)
+    var line = render(m, rfLines)
     check line.count('\n') == 1
     check line.endsWith("\n")
     check "\\n" in line
@@ -204,9 +207,9 @@ suite "how a message is written down":
     check " phone logs " in line
 
   test "json carries text as text":
-    let m = RelayMessage(stream: "notes", sender: "phone", at: 1_700_000_000'i64,
+    var m = RelayMessage(stream: "notes", sender: "phone", at: 1_700_000_000'i64,
       ordinal: 3'u64, body: asBytes("hello \"world\""))
-    let node = parseJson(render(m, rfJson))
+    var node = parseJson(render(m, rfJson))
     check node["from"].getStr() == "phone"
     check node["stream"].getStr() == "notes"
     check node["ordinal"].getInt() == 3
@@ -215,27 +218,27 @@ suite "how a message is written down":
     check not node.hasKey("base64")
 
   test "json carries bytes as base64":
-    let m = RelayMessage(stream: "voice", sender: "phone",
+    var m = RelayMessage(stream: "voice", sender: "phone",
       body: @[0'u8, 1'u8, 2'u8, 255'u8])
-    let node = parseJson(render(m, rfJson))
+    var node = parseJson(render(m, rfJson))
     check not node.hasKey("body")
     check node["base64"].getStr() == "AAEC/w=="
     check node["bytes"].getInt() == 4
 
   test "raw adds nothing at all":
-    let m = RelayMessage(stream: "voice", sender: "phone",
+    var m = RelayMessage(stream: "voice", sender: "phone",
       body: asBytes("exactly these bytes"))
     check render(m, rfRaw) == "exactly these bytes"
 
   test "a file sink appends and can be read back":
-    let path = "build/test-relay/log.jsonl"
+    var path = "build/test-relay/log.jsonl"
     removeDir("build/test-relay")
     var D = initRelayDesk(rsFile, rfJson)
     D.file = path
     check D.put("logs", "first").ok
     check D.put("logs", "second").ok
     D.closeRelay()
-    let lines = readFile(path).strip().splitLines()
+    var lines = readFile(path).strip().splitLines()
     check lines.len == 2
     check parseJson(lines[0])["body"].getStr() == "first"
     check parseJson(lines[1])["ordinal"].getInt() == 2
@@ -251,7 +254,7 @@ suite "a delivered command":
   test "gets the body on stdin and answers with its stdout":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "tr a-z A-Z"
-    let reply = D.put("voice", "pretend this is a transcript")
+    var reply = D.put("voice", "pretend this is a transcript")
     check reply.ok
     check reply.rows.len == 1
     check asText(reply.rows[0].data).strip() == "PRETEND THIS IS A TRANSCRIPT"
@@ -259,7 +262,7 @@ suite "a delivered command":
   test "is told about the message in its environment":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "printf '%s/%s/%s' \"$GEIST_STREAM\" \"$GEIST_FROM\" \"$GEIST_BYTES\""
-    let reply = D.put("voice", "0123456789")
+    var reply = D.put("voice", "0123456789")
     check reply.ok
     check asText(reply.rows[0].data) == "voice/phone/10"
 
@@ -267,14 +270,14 @@ suite "a delivered command":
     var D = initRelayDesk(rsExec, rfRaw)
     # If the body were interpolated into the command, this would run `id`.
     D.exec = "cat"
-    let reply = D.put("voice", "$(id) `id` ; id")
+    var reply = D.put("voice", "$(id) `id` ; id")
     check reply.ok
     check asText(reply.rows[0].data) == "$(id) `id` ; id"
 
   test "that fails is reported with what it exited":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "exit 3"
-    let reply = D.put("voice", "anything")
+    var reply = D.put("voice", "anything")
     check not reply.ok
     check "exited 3" in reply.err
     check D.failed == 1
@@ -283,18 +286,18 @@ suite "a delivered command":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "sleep 30"
     D.execTimeoutMs = 200
-    let reply = D.put("voice", "anything")
+    var reply = D.put("voice", "anything")
     check not reply.ok
     check "did not finish within 200ms" in reply.err
 
   test "with no timeout is started and not waited for":
-    let flag = "build/test-relay/triggered"
+    var flag = "build/test-relay/triggered"
     removeDir("build/test-relay")
     createDir("build/test-relay")
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "sleep 0.2; touch " & flag
     D.execTimeoutMs = 0
-    let reply = D.put("voice", "go")
+    var reply = D.put("voice", "go")
     # Answered immediately, with nothing to say yet.
     check reply.ok
     check reply.rows.len == 0
@@ -306,7 +309,7 @@ suite "a delivered command":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "cat"
     check D.put("voice", "also kept").ok
-    let reply = answerRelay(D, Query(op: qoPoll, collection: "voice",
+    var reply = answerRelay(D, Query(op: qoPoll, collection: "voice",
       subscriptionId: "r"), watcher)
     check reply.rows.len == 1
     check asText(decodeMessage(reply.rows[0].data).body) == "also kept"

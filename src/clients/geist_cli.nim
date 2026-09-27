@@ -127,10 +127,18 @@ Pinned trust means each side must already know the other's public keys, so
 exchange the .pin files; hand the daemon your pin with its --trust option.
 """
 
-proc fail(msg: string) {.role: helper, tag: "cli|status".} =
-  ## msg: operator-facing error written to stderr before a non-zero exit.
-  stderr.writeLine("geist: " & msg)
-  quit(1)
+type
+  GeistCliFailure* = object of CatchableError
+    ## One operator-facing error. `fail` raises it and `runGeistCli` prints
+    ## it and returns 1, so a command several calls deep can end the RUN
+    ## without ending the PROCESS -- a test, or a program embedding the
+    ## CLI, keeps going.
+
+proc fail(msg: string) {.noreturn, role: helper, stage: stDone,
+    tag: "cli|status".} =
+  ## msg: operator-facing error; `runGeistCli` writes it to stderr and
+  ## exits non-zero.
+  raise newException(GeistCliFailure, msg)
 
 proc resolvePassword(o: Options): string {.role: sanitizer,
     tag: "cli|cryptoBoundary|parsing".} =
@@ -213,7 +221,8 @@ proc withUserConfig*(o: Options): Options {.role: configurator,
   ## see on their own command line.
   var
     where: string = ""
-    loaded: tuple[ok: bool, user: UserConfig, err: string]
+    loaded: tuple[ok: bool, user: UserConfig, err: string] =
+      (false, default(UserConfig), "")
   result = o
   where = firstExisting(userConfigCandidates(o.config))
   if where.len == 0:
@@ -271,7 +280,7 @@ proc openDirect(o: Options, schema: Schema = Schema(),
   ##   a running daemon or a live application.
   var
     sp = storePaths(o)
-    c: GeistConfig
+    c: GeistConfig = default(GeistConfig)
   try:
     # An unnamed preset means "whatever configs/default.toml says", which is the
     # library default when there is no such file.
@@ -302,7 +311,7 @@ template writing(o: Options, db, body: untyped) =
   ## saved, so nothing is half-written.
   var
     db {.inject.}: Session = openDirect(o, forWriting = true)
-    saved: tuple[ok: bool, err: string]
+    saved: tuple[ok: bool, err: string] = (false, "")
   body
   saved = db.save()
   if not saved.ok:
@@ -375,7 +384,8 @@ proc cmdInspect(o: Options) {.role: actor,
   ## another process currently owns.
   var
     p: string = livePath(o)
-    got: tuple[ok: bool, f: GeistFile, err: string]
+    got: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
   got = observe(p)
   if not got.ok:
     fail(got.err)
@@ -402,9 +412,10 @@ proc cmdSchema(o: Options) {.role: actor,
   ## o: options. The schema block is stored in clear, so this needs no key.
   var
     p: string = livePath(o)
-    got: tuple[ok: bool, f: GeistFile, err: string]
+    got: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
     at: int = -1
-    sc: tuple[s: Schema, schemaBytes: int]
+    sc: tuple[s: Schema, schemaBytes: int] = (default(Schema), 0)
     i: int = 0
   got = observe(p)
   if not got.ok:
@@ -438,9 +449,10 @@ proc cmdInit(o: Options) {.role: actor,
     tag: "cli|db|write".} =
   ## o: options carrying --schema and optionally --type.
   var
-    parsed: tuple[ok: bool, s: Schema, err: string]
-    db: Session
-    written: tuple[ok: bool, err: string]
+    parsed: tuple[ok: bool, s: Schema, err: string] =
+      (false, default(Schema), "")
+    db: Session = default(Session)
+    written: tuple[ok: bool, err: string] = (false, "")
   if o.schemaSpec.len == 0:
     fail("init needs --schema \"name:type,name:type\"")
   parsed = parseSchemaSpec(o.typeName, o.schemaSpec)
@@ -459,8 +471,10 @@ proc cmdPut(o: Options) {.role: actor,
   ## o: options whose trailing arguments are `field=value` pairs.
   var
     id: RowId = 0'u64
-    pairs: tuple[ok: bool, values: Table[string, string], err: string]
-    built: tuple[ok: bool, data: ByteSeq, err: string]
+    pairs: tuple[ok: bool, values: Table[string, string], err: string] =
+      (false, default(Table[string, string]), "")
+    built: tuple[ok: bool, data: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
   if o.args.len == 0:
     fail("put needs at least one field=value")
   pairs = parsePairs(o.args)
@@ -502,9 +516,11 @@ proc cmdSet(o: Options) {.role: actor,
   ## stored row is replaced whole.
   var
     id: RowId = 0'u64
-    pairs: tuple[ok: bool, values: Table[string, string], err: string]
-    merged: Table[string, string]
-    built: tuple[ok: bool, data: ByteSeq, err: string]
+    pairs: tuple[ok: bool, values: Table[string, string], err: string] =
+      (false, default(Table[string, string]), "")
+    merged: Table[string, string] = default(Table[string, string])
+    built: tuple[ok: bool, data: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
     at: int = -1
   if o.args.len < 2:
     fail("set needs a row (id or @position) and at least one field=value")
@@ -553,10 +569,10 @@ proc cmdTranspose(o: Options) {.role: actor,
   ## an operator who runs this wants the copy to be current, and wants to
   ## be told whether it already was.
   var
-    db: Session
+    db: Session = default(Session)
     state: tuple[state: TransposeState, live: uint64, built: uint64,
       path: string]
-    built: tuple[ok: bool, err: string]
+    built: tuple[ok: bool, err: string] = (false, "")
   db = openDirect(o, forWriting = false)
   state = db.transposeState()
   echo "column copy:   ", describeTransposeState(state.state, state.live,
@@ -591,8 +607,9 @@ proc cmdSweep(o: Options) {.role: actor,
   ## reference like any other, so nothing is reclaimable until the log has
   ## let go of it.
   var
-    db: Session
-    swept: tuple[ok: bool, removed: int, bytes: uint64, err: string]
+    db: Session = default(Session)
+    swept: tuple[ok: bool, removed: int, bytes: uint64, err: string] =
+      (false, 0, 0'u64, "")
   db = openDirect(o, forWriting = true)
   swept = db.sweepSidecar()
   if not swept.ok:
@@ -608,7 +625,7 @@ proc cmdCompact(o: Options) {.role: actor,
   ## and their ids are untouched; the file gets smaller.
   var
     before: uint32 = 0'u32
-    done: tuple[ok: bool, removed: uint32, err: string]
+    done: tuple[ok: bool, removed: uint32, err: string] = (false, 0'u32, "")
   writing(o, db):
     before = db.logCount()
     done = db.compact()
@@ -621,7 +638,7 @@ proc cmdList(o: Options) {.role: actor,
     tag: "cli|db|read".} =
   ## o: options; --limit caps the output.
   var
-    db: Session
+    db: Session = default(Session)
     rows: seq[Row] = @[]
     at: seq[int] = @[]
     i: uint32 = 0'u32
@@ -642,7 +659,7 @@ proc cmdGet(o: Options) {.role: actor,
     tag: "cli|db|read".} =
   ## o: options whose first argument is a row index.
   var
-    db: Session
+    db: Session = default(Session)
     idx: int = 0
   if o.args.len == 0:
     fail("get needs a row index")
@@ -658,6 +675,47 @@ proc cmdGet(o: Options) {.role: actor,
     o.transposed)
   db.close()
 
+proc findInCopy(db: Session, t: TransposedFile, o: Options,
+    R: var seq[Row], A: var seq[int]): uint64 {.role: parser,
+    tag: "cli|db|read".} =
+  ## db/t: the session and its column copy.
+  ## o: options whose arguments are a field name and an exact value.
+  ## R/A: matching rows and their visible positions, appended to.
+  ## Returns how many bytes the search read; 0 means the copy could not
+  ## answer and the caller has to scan.
+  ##
+  ## The column copy holds the LOG: superseded versions and tombstones are
+  ## in it, because that is what the entry cluster contains. A hit is only
+  ## an answer if that row is still the visible version of its id, which
+  ## `visibleIndexOf` decides -- without it, `find` would start returning
+  ## rows that `list` does not show.
+  var
+    hit: tuple[ok: bool, rows: seq[uint32], read: uint64, err: string] =
+      t.transposedFind(o.args[0], o.args[1])
+    seen: int = -1
+  if not hit.ok:
+    return 0'u64
+  for pos in hit.rows:
+    seen = db.visibleIndexOf(pos)
+    if seen >= 0 and R.len < o.limit:
+      R.add t.transposedRow(pos)
+      A.add seen
+  result = hit.read
+
+proc findByScan(db: Session, o: Options, R: var seq[Row],
+    A: var seq[int]) {.role: parser, tag: "cli|db|read".} =
+  ## db/o: the session, and a field name and exact value in o.args.
+  ## R/A: matching rows and their visible positions, appended to.
+  var
+    i: uint32 = 0'u32
+    r: Row = Row()
+  while i < db.entryCount() and R.len < o.limit:
+    r = db.entries.rowAt(db.livePosition(i))
+    if matchesText(db.entries.schema, r.data, o.args[0], o.args[1]):
+      R.add r
+      A.add int(i)
+    i = i + 1'u32
+
 proc cmdFind(o: Options) {.role: actor,
     tag: "cli|db|read".} =
   ## o: options whose arguments are a field name and an exact value.
@@ -667,13 +725,11 @@ proc cmdFind(o: Options) {.role: actor,
   ## the same either way -- only what it cost differs -- so a stale or
   ## missing copy is not an error, it is the ordinary scan.
   var
-    db: Session
+    db: Session = default(Session)
     rows: seq[Row] = @[]
     at: seq[int] = @[]
-    i: uint32 = 0'u32
-    r: Row
-    view: tuple[ok: bool, t: TransposedFile, err: string]
-    hit: tuple[ok: bool, rows: seq[uint32], read: uint64, err: string]
+    view: tuple[ok: bool, t: TransposedFile, err: string] =
+      (false, default(TransposedFile), "")
     scanned: uint64 = 0'u64
   if o.args.len < 2:
     fail("find needs a field and a value")
@@ -683,27 +739,9 @@ proc cmdFind(o: Options) {.role: actor,
       describeSchema(db.entries.schema) & ")")
   view = db.transposedView()
   if view.ok:
-    # The column copy holds the LOG: superseded versions and tombstones
-    # are in it, because that is what the entry cluster contains. A hit is
-    # only an answer if that row is still the visible version of its id,
-    # which `visibleIndexOf` decides -- without it, `find` would start
-    # returning rows that `list` does not show.
-    hit = view.t.transposedFind(o.args[0], o.args[1])
-    if hit.ok:
-      scanned = hit.read
-      for pos in hit.rows:
-        let seen = db.visibleIndexOf(pos)
-        if seen < 0 or rows.len >= o.limit:
-          continue
-        rows.add view.t.transposedRow(pos)
-        at.add seen
+    scanned = findInCopy(db, view.t, o, rows, at)
   if scanned == 0'u64:
-    while i < db.entryCount() and rows.len < o.limit:
-      r = db.entries.rowAt(db.livePosition(i))
-      if matchesText(db.entries.schema, r.data, o.args[0], o.args[1]):
-        rows.add r
-        at.add int(i)
-      i = i + 1'u32
+    findByScan(db, o, rows, at)
   emitRows(db.entries.schema, rows, o.json, at, o.transposed)
   if not o.json:
     echo ""
@@ -717,8 +755,8 @@ proc cmdInfo(o: Options) {.role: actor,
     tag: "cli|read|status".} =
   ## o: options. Needs the password when the database is encrypted.
   var
-    db: Session
-    stats: StorageStats
+    db: Session = default(Session)
+    stats: StorageStats = default(StorageStats)
   db = openDirect(o)
   stats = db.storageStats()
   echo "preset:        ", db.config.name
@@ -738,7 +776,7 @@ proc cmdInfo(o: Options) {.role: actor,
   block:
     # Only worth a line when the database asked for one. A store that is
     # row-major by choice should not be told about a file it does not have.
-    let ts = db.transposeState()
+    var ts = db.transposeState()
     if db.config.transpose != tmNone or ts.state != tsAbsent:
       echo "column copy:   ", describeTransposeState(ts.state, ts.live,
         ts.built)
@@ -777,9 +815,9 @@ proc cmdBackup(o: Options) {.role: actor,
     tag: "backup|cli|write".} =
   ## o: options. Forces a rotation regardless of the configured triggers.
   var
-    db: Session
-    policy: BackupPolicy
-    got: BackupResult
+    db: Session = default(Session)
+    policy: BackupPolicy = default(BackupPolicy)
+    got: BackupResult = default(BackupResult)
   db = openDirect(o, forWriting = true)
   policy = db.backupPolicy
   policy.enabled = true
@@ -799,9 +837,9 @@ proc cmdRestore(o: Options) {.role: actor,
     tag: "backup|cli|write".} =
   ## o: options; --slot selects the rotation slot, 1 being most recent.
   var
-    db: Session
+    db: Session = default(Session)
     paths: seq[string] = @[]
-    got: tuple[ok: bool, err: string]
+    got: tuple[ok: bool, err: string] = (false, "")
   db = openDirect(o, forWriting = true)
   paths = db.artifactSet()
   # Published as a new generation, like any other write: the current
@@ -822,11 +860,11 @@ proc cmdRekey(o: Options) {.role: actor,
   ## o: options. Re-keys only the batches at their epoch high-water mark;
   ## a fresh keyRef is a fresh nonce space, so no global rewrite happens.
   var
-    db: Session
+    db: Session = default(Session)
     due: seq[tuple[batchIndex: uint32, groupId: uint16]] = @[]
     fresh: KeyId = 0'u64
     i: int = 0
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
   db = openDirect(o, forWriting = true)
   if not db.encrypted:
     fail("this database is not encrypted; there is nothing to re-key")
@@ -851,8 +889,9 @@ proc cmdKeygen(o: Options) {.role: actor,
     tag: "cli|cryptoBoundary|networkSurface|write".} =
   ## o: options carrying --identity, --pin-out and --subject.
   var
-    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
-    written: tuple[ok: bool, err: string]
+    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+    written: tuple[ok: bool, err: string] = (false, "")
     pinPath: string = ""
   if o.identity.len == 0:
     fail("keygen needs --identity <file>")
@@ -890,10 +929,14 @@ proc remotePut(o: Options, link: var GeistLink) {.role: actor,
   ## it. The id is left at zero: this client has no id space of its own,
   ## so the receiving database names the row and reports what it chose.
   var
-    pairs: tuple[ok: bool, values: Table[string, string], err: string]
-    probe: tuple[ok: bool, reply: Reply, err: string]
-    built: tuple[ok: bool, data: ByteSeq, err: string]
-    sent: tuple[ok: bool, reply: Reply, err: string]
+    pairs: tuple[ok: bool, values: Table[string, string], err: string] =
+      (false, default(Table[string, string]), "")
+    probe: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
+    built: tuple[ok: bool, data: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
+    sent: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
   if o.args.len == 0:
     fail("put needs at least one field=value")
   pairs = parsePairs(o.args)
@@ -922,10 +965,14 @@ proc connectRemote(o: Options): GeistLink {.role: orchestrator,
   ## client that would connect without checking the pin is a client that
   ## can be answered by anyone who reaches the port first.
   var
-    parsed: tuple[ok: bool, a: GeistDacAddress]
-    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
-    peer: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string]
-    got: tuple[ok: bool, link: GeistLink, err: string]
+    parsed: tuple[ok: bool, a: GeistDacAddress] =
+      (false, default(GeistDacAddress))
+    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+    peer: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
+    got: tuple[ok: bool, link: GeistLink, err: string] =
+      (false, default(GeistLink), "")
   parsed = parseDacAddress(o.remote)
   if not parsed.ok:
     fail("--remote must be dac://host:port, got '" & o.remote & "'")
@@ -955,8 +1002,8 @@ proc cmdSync(o: Options) {.role: orchestrator, tag: "ame|cli|db|networkSurface|o
   ## desktops away keeps the id it was born with, and this database can be
   ## followed in turn by somebody else.
   var
-    link: GeistLink
-    db: Session
+    link: GeistLink = default(GeistLink)
+    db: Session = default(Session)
     caught: tuple[ok: bool, applied: int, rounds: int, cursor: uint64,
       rewound: bool, err: string]
   if o.path.len == 0:
@@ -984,8 +1031,10 @@ proc runRemote(o: Options, q: Query) {.role: orchestrator,
   ## o: options carrying --remote.
   ## q: the same Query the direct path would have run locally.
   var
-    got: tuple[ok: bool, link: GeistLink, err: string]
-    answer: tuple[ok: bool, reply: Reply, err: string]
+    got: tuple[ok: bool, link: GeistLink, err: string] =
+      (false, default(GeistLink), "")
+    answer: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
   got.link = connectRemote(o)
   # `put` is the one command that has to ASK before it can send: the row
   # must be built against the daemon's schema, and only the daemon has it.
@@ -1050,11 +1099,11 @@ proc remoteQuery(o: Options): Query {.role: truthBuilder,
 
 ## ------------------------------ entry -------------------------------
 
-proc runGeistCli*(argv: seq[string]): int {.role: metaOrchestrator,
+proc dispatchCli(argv: seq[string]): int {.role: metaOrchestrator,
     tag: "cli|entrypoint|orchestrator".} =
   ## argv: command line without the executable name.
   var
-    o: Options
+    o: Options = default(Options)
   o = parseOptions(argv)
   if o.command.len == 0 or o.command == "help":
     echo usageText
@@ -1101,6 +1150,18 @@ proc runGeistCli*(argv: seq[string]): int {.role: metaOrchestrator,
   else:
     fail("unknown command '" & o.command & "'; try `geist help`")
   result = 0
+
+proc runGeistCli*(argv: seq[string]): int {.role: metaOrchestrator,
+    tag: "cli|entrypoint|orchestrator".} =
+  ## argv: command line without the executable name -> the exit code.
+  ##
+  ##   dispatchCli  ->  0                  the command did its job
+  ##                ->  GeistCliFailure    "geist: <why>" on stderr, 1
+  try:
+    result = dispatchCli(argv)
+  except GeistCliFailure as e:
+    stderr.writeLine("geist: " & e.msg)
+    result = 1
 
 when isMainModule:
   quit(runGeistCli(commandLineParams()))

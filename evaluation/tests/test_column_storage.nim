@@ -28,8 +28,9 @@ proc scratch(name: string): string =
 suite "packed storage":
 
   test "packed rows survive save and reopen":
-    var root = scratch("geist_t_pk1")
-    var c = openCollection[Note](root, "n", collapsedConfig(), "", false)
+    var
+      root = scratch("geist_t_pk1")
+      c = openCollection[Note](root, "n", collapsedConfig(), "", false)
     c.add @[Note(id: 1, score: 1.5, title: "first", body: "alpha"),
             Note(id: 2, score: -2.5, title: "second", body: "beta"),
             Note(id: 3, title: "third")]
@@ -47,8 +48,9 @@ suite "packed storage":
     removeDir(root)
 
   test "the index declares varying rows with rowBytes = 0":
-    var root = scratch("geist_t_pk2")
-    var c = openCollection[Note](root, "n", collapsedConfig(), "", false)
+    var
+      root = scratch("geist_t_pk2")
+      c = openCollection[Note](root, "n", collapsedConfig(), "", false)
     c.add Note(id: 1, title: "x")
     check c.save().ok
     var path = c.session.dataPath()
@@ -63,9 +65,10 @@ suite "packed storage":
     removeDir(root)
 
   test "a packed file is smaller than a fixed one for sparse data":
-    var packedRoot = scratch("geist_t_pk3a")
-    var fixedRoot = scratch("geist_t_pk3b")
-    var rows: seq[Wide] = @[]
+    var
+      packedRoot = scratch("geist_t_pk3a")
+      fixedRoot = scratch("geist_t_pk3b")
+      rows: seq[Wide] = @[]
     for i in 0 ..< 300:
       # Only two of eight columns are ever set.
       rows.add Wide(a: i, e: i * 2)
@@ -92,9 +95,10 @@ suite "packed storage":
     # rather than the default.
     type AllSet = object
       a*, b*, c*, d*, e*, f*, g*, h*: int
-    var onRoot = scratch("geist_t_cc_on")
-    var offRoot = scratch("geist_t_cc_off")
-    var rows: seq[AllSet] = @[]
+    var
+      onRoot = scratch("geist_t_cc_on")
+      offRoot = scratch("geist_t_cc_off")
+      rows: seq[AllSet] = @[]
     for i in 1 .. 400:
       rows.add AllSet(a: i, b: i, c: i, d: i, e: i, f: i, g: i, h: i)
 
@@ -129,9 +133,10 @@ suite "packed storage":
   test "collapsing pays for itself as soon as columns go unset":
     type AllSet = object
       a*, b*, c*, d*, e*, f*, g*, h*: int
-    var onRoot = scratch("geist_t_cs_on")
-    var offRoot = scratch("geist_t_cs_off")
-    var rows: seq[AllSet] = @[]
+    var
+      onRoot = scratch("geist_t_cs_on")
+      offRoot = scratch("geist_t_cs_off")
+      rows: seq[AllSet] = @[]
     for i in 1 .. 400:
       rows.add AllSet(a: i, e: i)      # 2 of 8 set
 
@@ -152,8 +157,9 @@ suite "packed storage":
     removeDir(offRoot)
 
   test "find works on a packed cluster":
-    var root = scratch("geist_t_pk4")
-    var c = openCollection[Note](root, "n", collapsedConfig(), "", false)
+    var
+      root = scratch("geist_t_pk4")
+      c = openCollection[Note](root, "n", collapsedConfig(), "", false)
     c.add @[Note(id: 1, title: "x"), Note(id: 2, title: "y"),
             Note(id: 3, title: "x")]
     check c.save().ok
@@ -163,9 +169,10 @@ suite "packed storage":
     removeDir(root)
 
   test "iteration and indexing agree with what was written":
-    var root = scratch("geist_t_pk5")
-    var c = openCollection[Note](root, "n", collapsedConfig(), "", false)
-    var want: seq[Note] = @[]
+    var
+      root = scratch("geist_t_pk5")
+      c = openCollection[Note](root, "n", collapsedConfig(), "", false)
+      want: seq[Note] = @[]
     for i in 0 ..< 120:
       want.add Note(id: i, score: float(i) / 4.0, title: "t" & $i,
         body: "b" & $i)
@@ -185,8 +192,9 @@ suite "packed storage":
     removeDir(root)
 
   test "an encrypted packed database seals whole rows and reopens":
-    var root = scratch("geist_t_pk6")
-    var c = openCollection[Note](root, "n", secureCollapsedConfig(), "pw", false)
+    var
+      root = scratch("geist_t_pk6")
+      c = openCollection[Note](root, "n", secureCollapsedConfig(), "pw", false)
     c.add @[Note(id: 1, title: "SECRET-TITLE", body: "SECRET-BODY"),
             Note(id: 2, title: "other", body: "more")]
     check c.save().ok
@@ -206,8 +214,9 @@ suite "packed storage":
     removeDir(root)
 
   test "a sealed packed database needs its ledger":
-    var root = scratch("geist_t_pk7")
-    var c = openCollection[Note](root, "n", secureCollapsedConfig(), "pw", false)
+    var
+      root = scratch("geist_t_pk7")
+      c = openCollection[Note](root, "n", secureCollapsedConfig(), "pw", false)
     c.add Note(id: 1, title: "keep", body: "safe")
     check c.save().ok
     var ledger = c.session.ledgerPath()
@@ -223,17 +232,19 @@ suite "packed storage":
     removeDir(root)
 
   test "putRow takes a complete row, and only a complete one":
-    var root = scratch("geist_t_pk8")
-    var s = openSession[Note](root, "n", collapsedConfig(), "")
+    var
+      root = scratch("geist_t_pk8")
+      s = openSession[Note](root, "n", collapsedConfig(), "")
     # A hand-made buffer is not a row: it agrees with no schema, so the
     # identity columns it would have to carry are not there.
     expect ValueError:
       s.putRow(Row(data: newSeq[uint8](32)))
     # A row built against the session's own schema is accepted, varying
     # widths and all -- this is the path `geist put` takes.
-    var id = s.nextIdFor()
-    var built = buildRow(s.entries.schema,
-      {"id": "1", "title": "hello"}.toTable, s.sidecarStore, id)
+    var
+      id = s.nextIdFor()
+      built = buildRow(s.entries.schema,
+        {"id": "1", "title": "hello"}.toTable, s.sidecarStore, id)
     check built.ok
     check s.putRow(Row(data: built.data)) == id
     check s.entryCount() == 1'u32
@@ -241,8 +252,9 @@ suite "packed storage":
     removeDir(root)
 
   test "checkpoint still chains on a packed cluster":
-    var root = scratch("geist_t_pk9")
-    var c = openCollection[Note](root, "n", collapsedConfig(), "", false)
+    var
+      root = scratch("geist_t_pk9")
+      c = openCollection[Note](root, "n", collapsedConfig(), "", false)
     c.add Note(id: 1, title: "x")
     discard c.checkpoint("first")
     discard c.checkpoint("second")
@@ -252,8 +264,9 @@ suite "packed storage":
     removeDir(root)
 
   test "an empty packed collection saves and reopens":
-    var root = scratch("geist_t_pk10")
-    var c = openCollection[Note](root, "n", collapsedConfig(), "", false)
+    var
+      root = scratch("geist_t_pk10")
+      c = openCollection[Note](root, "n", collapsedConfig(), "", false)
     check c.save().ok
     c.close()
     var re = openCollection[Note](root, "n", collapsedConfig(), "", false)

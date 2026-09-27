@@ -102,7 +102,6 @@ type
     password*: string
     encrypted*: bool
     dirty*: bool
-    loaded*: bool
     readOnly*: bool
     ## writeLease: held for the whole life of a writable session. A session
     ## that could not take it is opened READ-ONLY rather than being allowed
@@ -213,7 +212,7 @@ proc readMetaCounter(s: Session, label: string): uint64 {.role: parser,
   ## s/label: one stored bookkeeping number, zero when it was never written.
   var
     i: uint32 = 0'u32
-    r: Record
+    r: Record = default(Record)
   while i < s.meta.rowCount:
     r = objectAt[Record](s.meta, i)
     if r.kind == rkVersion and r.label == label:
@@ -233,10 +232,10 @@ proc stampMetaCounters(S: var Session) {.role: dataWriter,
   ## bookkeeping number. The meta cluster is `cmMutable`, so replacing it is
   ## what it is for; two rows with the same label would be ambiguous.
   var
-    fresh: ClusterBuild
-    r: Record
+    fresh: ClusterBuild = default(ClusterBuild)
+    r: Record = default(Record)
     i: uint32 = 0'u32
-    old: Record
+    old: Record = default(Record)
   if not S.entries.schema.hasIdentity():
     return
   fresh = initClusterBuild(crMeta, cmMutable, S.meta.schema, S.sidecarStore,
@@ -282,7 +281,7 @@ proc indexLive*(S: var Session) {.role: truthBuilder,
   ##   live: [2]                                     (only row 2 remains)
   var
     i: uint32 = 0'u32
-    ident: tuple[id: RowId, flags: uint64]
+    ident: tuple[id: RowId, flags: uint64] = (default(RowId), 0'u64)
     tag: uint64 = 0'u64
     seed: ByteSeq = @[]
   # A database that has never been saved has no tag yet: mint one. It is
@@ -348,7 +347,7 @@ proc resolveGeneration*(baseDir, baseName: string,
   var
     live: uint64 = 0'u64
     n: uint64 = 0'u64
-    v: tuple[ok: bool, err: string]
+    v: tuple[ok: bool, err: string] = (false, "")
   live = liveGeneration(baseDir)
   n = live
   result = (live, false)
@@ -383,15 +382,20 @@ proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
   ## the common case (an app started twice) an error, when the useful
   ## behaviour is to show the data and refuse the writes.
   var
-    validated: tuple[ok: bool, err: string]
-    resolved: tuple[n: uint64, repaired: bool]
-    claimed: tuple[ok: bool, lease: Lease, err: string]
-    schema: Schema
-    loadedKeys: tuple[ok: bool, keys: KeySet, err: string]
-    loadedLedger: tuple[ok: bool, ledgers: seq[Ledger], err: string]
-    recordSchema: Schema
-    index: tuple[ok: bool, f: GeistFile, err: string]
-    applied: tuple[ok: bool, s: Schema, err: string]
+    validated: tuple[ok: bool, err: string] = (false, "")
+    resolved: tuple[n: uint64, repaired: bool] = (0'u64, false)
+    claimed: tuple[ok: bool, lease: Lease, err: string] =
+      (false, default(Lease), "")
+    schema: Schema = default(Schema)
+    loadedKeys: tuple[ok: bool, keys: KeySet, err: string] =
+      (false, default(KeySet), "")
+    loadedLedger: tuple[ok: bool, ledgers: seq[Ledger], err: string] =
+      (false, @[], "")
+    recordSchema: Schema = default(Schema)
+    index: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
+    applied: tuple[ok: bool, s: Schema, err: string] =
+      (false, default(Schema), "")
     at: int = -1
   result.config = normalizeGeistConfig(c)
   validated = validateGeistConfig(result.config)
@@ -536,7 +540,6 @@ proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
   # fixed columns per row and no payload, and it is the same pass the load
   # above already paid for in cache terms.
   result.indexLive()
-  result.loaded = true
 
 proc openSession*[T: object](baseDir, baseName: string,
     c: GeistConfig = appConfig(), password: string = "",
@@ -651,7 +654,7 @@ proc put*[T: object](S: var Session, x: T): RowId {.role: orchestrator,
   ## same row as soon as anything is replaced or removed; an id does not,
   ## which is what makes it the thing worth handing back.
   var
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
   result = S.nextRowId()
   discard S.appendPacked(S.packFor(x, result, 0'u64), result, 0'u64, ckAdded)
   written = S.maybeFlush()
@@ -668,7 +671,7 @@ proc put*[T: object](S: var Session, A: openArray[T]): seq[RowId] {.
   var
     i: int = 0
     id: RowId = 0'u64
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
   while i < A.len:
     id = S.nextRowId()
     discard S.appendPacked(S.packFor(A[i], id, 0'u64), id, 0'u64, ckAdded)
@@ -691,7 +694,7 @@ proc set*[T: object](S: var Session, id: RowId, x: T): bool {.
   ## Replacing a deleted row revives it: the tombstone is just the previous
   ## version, and a later version supersedes it like any other.
   var
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
   S.requireIdentity()
   if S.live.positionOf(id) < 0:
     return false
@@ -716,7 +719,7 @@ proc delete*(S: var Session, id: RowId): bool {.role: orchestrator,
   ## mean "there was nothing here to remove", and appending a second
   ## tombstone would only grow the log.
   var
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
     at: int = -1
   S.requireIdentity()
   at = S.live.positionOf(id)
@@ -748,9 +751,9 @@ proc putRow*(S: var Session, r: Row): RowId {.role: dataWriter,
   ## so the only thing it must agree with is the schema it was packed
   ## against. `buildRow` in dynamic.nim produces exactly that.
   var
-    written: tuple[ok: bool, err: string]
-    ident: tuple[id: RowId, flags: uint64]
-    shaped: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
+    ident: tuple[id: RowId, flags: uint64] = (default(RowId), 0'u64)
+    shaped: tuple[ok: bool, err: string] = (false, "")
     kind: ChangeKind = ckAdded
   if S.readOnly:
     raise newException(IOError, S.writeRefusal())
@@ -798,7 +801,7 @@ proc compact*(S: var Session): tuple[ok: bool, removed: uint32,
   ## The allocator does NOT go backwards, even though the largest stored id
   ## may just have been removed. See the watermark note above.
   var
-    fresh: ClusterBuild
+    fresh: ClusterBuild = default(ClusterBuild)
     i: int = 0
     keep: RowId = 0'u64
     before: uint32 = 0'u32
@@ -999,9 +1002,10 @@ proc verifyGeneration*(baseDir, baseName: string, n: uint64,
   ## is a write that stopped halfway. Publishing a truncated generation is
   ## the one mistake the manifest cannot undo.
   var
-    g: Generation
-    idx: tuple[ok: bool, f: GeistFile, err: string]
-    led: tuple[ok: bool, ledgers: seq[Ledger], err: string]
+    g: Generation = default(Generation)
+    idx: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
+    led: tuple[ok: bool, ledgers: seq[Ledger], err: string] = (false, @[], "")
   g = generationPaths(baseDir, baseName, n)
   idx = readIndex(g.dataPath)
   if not idx.ok:
@@ -1036,7 +1040,7 @@ proc publishGeneration(S: var Session, next: uint64,
   ## that point throws the staged generation away and leaves the live one
   ## exactly as it was.
   var
-    step: tuple[ok: bool, err: string]
+    step: tuple[ok: bool, err: string] = (false, "")
   if not staged.ok:
     discard retireGeneration(S.baseDir, S.baseName, next)
     return staged
@@ -1065,7 +1069,7 @@ proc transposeDue(S: Session): bool {.role: parser,
   ## than from a counter on the session. A counter would restart every
   ## time the process did, and the file already knows when it was written.
   var
-    found: tuple[path: string, generation: uint64]
+    found: tuple[path: string, generation: uint64] = ("", 0'u64)
     age: int64 = 0
   case S.config.transpose
   of tmNone, tmManual:
@@ -1111,14 +1115,14 @@ proc save*(S: var Session): tuple[ok: bool, err: string] =
   ## generation N keeps reading a complete N while N+1 is being built, and a
   ## crash at any point leaves N exactly as it was.
   var
-    written: tuple[ok: bool, err: string]
-    br: BackupResult
-    onDisk: ClusterBuild
-    metaDisk: ClusterBuild
-    journalDisk: ClusterBuild
+    written: tuple[ok: bool, err: string] = (false, "")
+    br: BackupResult = default(BackupResult)
+    onDisk: ClusterBuild = default(ClusterBuild)
+    metaDisk: ClusterBuild = default(ClusterBuild)
+    journalDisk: ClusterBuild = default(ClusterBuild)
     keyRef: KeyId = 0'u64
     next: uint64 = 0'u64
-    staging: Generation
+    staging: Generation = default(Generation)
   if S.readOnly:
     return (false, S.writeRefusal())
   next = S.generation + 1'u64
@@ -1187,8 +1191,8 @@ proc checkpoint*(S: var Session, message: string = "checkpoint"): uint32 {.
   ## S: session whose journal receives a hash-chained checkpoint row.
   ## message: human-readable reason.
   var
-    r: Record
-    written: tuple[ok: bool, err: string]
+    r: Record = default(Record)
+    written: tuple[ok: bool, err: string] = (false, "")
   if not S.config.keepHistory:
     raise newException(ValueError,
       S.config.name & " configuration disables history")
@@ -1215,7 +1219,7 @@ proc close*(S: var Session) {.role: actor,
   ## must still let the next process in, or one bad write locks the database
   ## until somebody deletes a file by hand.
   var
-    written: tuple[ok: bool, err: string]
+    written: tuple[ok: bool, err: string] = (false, "")
   try:
     if S.dirty and not S.readOnly and S.config.writeMode != wmVolatile:
       written = S.save()
@@ -1227,7 +1231,6 @@ proc close*(S: var Session) {.role: actor,
   S.meta = ClusterBuild()
   S.journal = ClusterBuild()
   S.keySet = KeySet()
-  S.loaded = false
 
 proc restoreSlot*(S: var Session, slot: int): tuple[ok: bool,
     err: string] {.role: orchestrator, tag: "appApi|backup|db|orchestrator|storageIo|write".} =
@@ -1247,10 +1250,10 @@ proc restoreSlot*(S: var Session, slot: int): tuple[ok: bool,
     stems: seq[string] = @[]
     src: seq[string] = @[]
     next: uint64 = 0'u64
-    staging: Generation
+    staging: Generation = default(Generation)
     dst: seq[string] = @[]
     i: int = 0
-    step: tuple[ok: bool, err: string]
+    step: tuple[ok: bool, err: string] = (false, "")
   if S.readOnly:
     return (false, S.writeRefusal())
   stems = S.backupStems()
@@ -1348,8 +1351,8 @@ proc backupSidecarRefs(s: Session): tuple[ok: bool, refs: seq[string],
     live: seq[string] = @[]
     src: seq[string] = @[]
     scratch: string = ""
-    g: Generation
-    other: Session
+    g: Generation = default(Generation)
+    other: Session = default(Session)
     i: int = 0
     present: bool = false
   live = s.backupStems()
@@ -1400,7 +1403,8 @@ proc sweepSidecar*(S: var Session): tuple[ok: bool, removed: int,
   ## Returns how much went, so a caller can report it rather than guess.
   var
     reachable: seq[string] = @[]
-    fromBackups: tuple[ok: bool, refs: seq[string], err: string]
+    fromBackups: tuple[ok: bool, refs: seq[string], err: string] =
+      (false, @[], "")
     locator: string = ""
     size: uint64 = 0'u64
   if S.readOnly:
@@ -1488,8 +1492,8 @@ proc applyRow*(S: var Session, r: Row): tuple[ok: bool, id: RowId,
   ## overlapping range is harmless. Peers retry; an apply that was not
   ## idempotent would turn a retry into a duplicate.
   var
-    shaped: tuple[ok: bool, err: string]
-    ident: tuple[id: RowId, flags: uint64]
+    shaped: tuple[ok: bool, err: string] = (false, "")
+    ident: tuple[id: RowId, flags: uint64] = (default(RowId), 0'u64)
     at: int = -1
     kind: ChangeKind = ckAdded
   if S.readOnly:
@@ -1522,8 +1526,8 @@ proc applyRows*(S: var Session, R: openArray[Row]): tuple[ok: bool,
   ## swap places on the way in, or the older one would win.
   var
     i: int = 0
-    one: tuple[ok: bool, id: RowId, err: string]
-    written: tuple[ok: bool, err: string]
+    one: tuple[ok: bool, id: RowId, err: string] = (false, default(RowId), "")
+    written: tuple[ok: bool, err: string] = (false, "")
   while i < R.len:
     one = S.applyRow(R[i])
     if not one.ok:
@@ -1613,7 +1617,8 @@ proc observeStore*(baseDir: string,
   ## index, so the next call can tell "the file moved on" from "the rows
   ## changed".
   var
-    idx: tuple[ok: bool, f: GeistFile, err: string]
+    idx: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
   result.path = liveDataPath(baseDir, baseName)
   idx = readIndex(result.path)
   result.ok = idx.ok
@@ -1630,7 +1635,8 @@ proc followStore*(before: GeistFile, baseDir: string,
   ## Returns which clusters moved, without reading a row and without caring
   ## which generation is live now. Cost is one manifest line plus one index.
   var
-    now: tuple[ok: bool, f: GeistFile, path: string, err: string]
+    now: tuple[ok: bool, f: GeistFile, path: string, err: string] =
+      (false, default(GeistFile), "", "")
   now = observeStore(baseDir, baseName)
   if not now.ok:
     return (false, GeistFile(), @[], now.path, now.err)
@@ -1669,7 +1675,7 @@ proc show*(s: Session,
     tag: "appApi|db|formatting|read".} =
   ## s/style: the visible rows as an aligned table, elided by default.
   var
-    slice: tuple[rows: seq[Row], at: seq[int], gapAfter: int]
+    slice: tuple[rows: seq[Row], at: seq[int], gapAfter: int] = (@[], @[], 0)
   slice = s.shownSlice(style.maxRows)
   result = showSelection(s.entries.schema, slice.rows, slice.at,
     int(s.entryCount()), slice.gapAfter, style)
@@ -1680,7 +1686,7 @@ proc showTransposed*(s: Session,
   ## s/style: the same rows with the axes swapped -- one line per field.
   var
     swapped: ShowStyle = style
-    slice: tuple[rows: seq[Row], at: seq[int], gapAfter: int]
+    slice: tuple[rows: seq[Row], at: seq[int], gapAfter: int] = (@[], @[], 0)
   swapped.maxRows = style.maxColumns
   swapped.maxColumns = style.maxRows
   slice = s.shownSlice(swapped.maxRows)

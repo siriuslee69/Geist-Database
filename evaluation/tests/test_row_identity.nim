@@ -24,10 +24,11 @@ proc freshRoot(name: string): string =
 
 suite "identity":
   test "a stored row gets an id, and the id is what comes back":
-    var root = freshRoot("geist_t_id1")
-    var db = openGeist[Note](root, appConfig())
-    var a = db.put(Note(noteId: 1, title: "first", body: "x"))
-    var b = db.put(Note(noteId: 2, title: "second", body: "y"))
+    var
+      root = freshRoot("geist_t_id1")
+      db = openGeist[Note](root, appConfig())
+      a = db.put(Note(noteId: 1, title: "first", body: "x"))
+      b = db.put(Note(noteId: 2, title: "second", body: "y"))
     # An id is this database's node tag plus a counter, so the numbers are
     # large and the SEQUENCE is what is guaranteed -- see rowid.nim.
     check a != 0'u64
@@ -41,9 +42,10 @@ suite "identity":
     db.close()
 
   test "ids survive save and reopen":
-    var root = freshRoot("geist_t_id2")
-    var db = openGeist[Note](root, appConfig())
-    var ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b")])
+    var
+      root = freshRoot("geist_t_id2")
+      db = openGeist[Note](root, appConfig())
+      ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b")])
     check db.save().ok
     db.close()
     var re = openGeist[Note](root, appConfig())
@@ -54,10 +56,11 @@ suite "identity":
     re.close()
 
   test "set replaces the row without moving anyone else":
-    var root = freshRoot("geist_t_id3")
-    var db = openGeist[Note](root, appConfig())
-    var a = db.put(Note(noteId: 1, title: "draft", body: "x"))
-    var b = db.put(Note(noteId: 2, title: "other", body: "y"))
+    var
+      root = freshRoot("geist_t_id3")
+      db = openGeist[Note](root, appConfig())
+      a = db.put(Note(noteId: 1, title: "draft", body: "x"))
+      b = db.put(Note(noteId: 2, title: "other", body: "y"))
     check db.set(a, Note(noteId: 1, title: "final", body: "x2"))
     check byId[Note](db, a).value.title == "final"
     check byId[Note](db, b).value.title == "other"
@@ -72,11 +75,12 @@ suite "identity":
     db.close()
 
   test "delete hides the row and keeps the tombstone in the log":
-    var root = freshRoot("geist_t_id4")
-    var db = openGeist[Note](root, appConfig())
-    var a = db.put(Note(noteId: 1, title: "a"))
-    var b = db.put(Note(noteId: 2, title: "b"))
-    var c = db.put(Note(noteId: 3, title: "c"))
+    var
+      root = freshRoot("geist_t_id4")
+      db = openGeist[Note](root, appConfig())
+      a = db.put(Note(noteId: 1, title: "a"))
+      b = db.put(Note(noteId: 2, title: "b"))
+      c = db.put(Note(noteId: 3, title: "c"))
     check db.delete(b)
     check db.entryCount() == 2'u32
     check db.logCount() == 4'u32
@@ -91,10 +95,11 @@ suite "identity":
     db.close()
 
   test "updates and deletes survive a reopen":
-    var root = freshRoot("geist_t_id5")
-    var db = openGeist[Note](root, appConfig())
-    var ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b"),
-      Note(noteId: 3, title: "c")])
+    var
+      root = freshRoot("geist_t_id5")
+      db = openGeist[Note](root, appConfig())
+      ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b"),
+        Note(noteId: 3, title: "c")])
     check db.set(ids[0], Note(noteId: 1, title: "a-changed"))
     check db.delete(ids[2])
     check db.save().ok
@@ -107,9 +112,10 @@ suite "identity":
     re.close()
 
   test "a deleted row can be brought back by name":
-    var root = freshRoot("geist_t_id6")
-    var db = openGeist[Note](root, appConfig())
-    var a = db.put(Note(noteId: 1, title: "here"))
+    var
+      root = freshRoot("geist_t_id6")
+      db = openGeist[Note](root, appConfig())
+      a = db.put(Note(noteId: 1, title: "here"))
     check db.delete(a)
     check not byId[Note](db, a).found
     # The tombstone is just the previous version; a newer one supersedes it.
@@ -119,10 +125,11 @@ suite "identity":
     db.close()
 
   test "find and findIds see current versions only":
-    var root = freshRoot("geist_t_id7")
-    var db = openGeist[Note](root, appConfig())
-    var a = db.put(Note(noteId: 1, title: "keep"))
-    var b = db.put(Note(noteId: 2, title: "keep"))
+    var
+      root = freshRoot("geist_t_id7")
+      db = openGeist[Note](root, appConfig())
+      a = db.put(Note(noteId: 1, title: "keep"))
+      b = db.put(Note(noteId: 2, title: "keep"))
     check db.set(a, Note(noteId: 1, title: "changed"))
     check find[Note](db, "title", "keep").len == 1
     check db.findIds("title", "keep") == @[b]
@@ -133,9 +140,10 @@ suite "identity":
 
 suite "identity and encryption":
   test "the id columns are sealed with the row":
-    var root = freshRoot("geist_t_idenc")
-    var db = openGeist[Note](root, secureAppConfig(), "pw")
-    var a = db.put(Note(noteId: 1, title: "SECRET", body: "MARKER"))
+    var
+      root = freshRoot("geist_t_idenc")
+      db = openGeist[Note](root, secureAppConfig(), "pw")
+      a = db.put(Note(noteId: 1, title: "SECRET", body: "MARKER"))
     check db.set(a, Note(noteId: 1, title: "SECRET2", body: "MARKER2"))
     check db.save().ok
     db.close()
@@ -148,10 +156,11 @@ suite "identity and encryption":
 
 suite "compaction":
   test "compact drops superseded versions and keeps the visible ones":
-    var root = freshRoot("geist_t_comp1")
-    var db = openGeist[Note](root, appConfig())
-    var ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b"),
-      Note(noteId: 3, title: "c")])
+    var
+      root = freshRoot("geist_t_comp1")
+      db = openGeist[Note](root, appConfig())
+      ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b"),
+        Note(noteId: 3, title: "c")])
     check db.set(ids[0], Note(noteId: 1, title: "a2"))
     check db.set(ids[0], Note(noteId: 1, title: "a3"))
     check db.delete(ids[2])
@@ -168,17 +177,19 @@ suite "compaction":
     db.close()
 
   test "compaction never hands a retired id back out":
-    var root = freshRoot("geist_t_comp2")
-    var db = openGeist[Note](root, appConfig())
-    var ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b")])
+    var
+      root = freshRoot("geist_t_comp2")
+      db = openGeist[Note](root, appConfig())
+      ids = db.put(@[Note(noteId: 1, title: "a"), Note(noteId: 2, title: "b")])
     check db.delete(ids[1])          # the HIGHEST id is the one removed
     discard db.compact()
     check db.save().ok
     db.close()
     # A peer may still be holding the tombstone for that id. Reusing it
     # would make that tombstone delete a different row.
-    var re = openGeist[Note](root, appConfig())
-    var fresh = re.put(Note(noteId: 3, title: "new"))
+    var
+      re = openGeist[Note](root, appConfig())
+      fresh = re.put(Note(noteId: 3, title: "new"))
     check fresh != ids[0]
     check fresh != ids[1]
     # Same database, so the same node tag, and the counter has moved past
@@ -189,8 +200,9 @@ suite "compaction":
 
 suite "databases without identity":
   test "a telemetry preset stores no identity and says so":
-    var root = freshRoot("geist_t_noid")
-    var db = openGeist[Reading](root, iotConfig(), "pw")
+    var
+      root = freshRoot("geist_t_noid")
+      db = openGeist[Reading](root, iotConfig(), "pw")
     discard db.put(Reading(sensor: 1, value: 10))
     discard db.put(Reading(sensor: 2, value: 20))
     check not db.hasIdentity()
@@ -203,8 +215,9 @@ suite "databases without identity":
     db.close()
 
   test "identity-free rows stay dense":
-    var root = freshRoot("geist_t_noid2")
-    var db = openGeist[Reading](root, iotConfig(), "pw")
+    var
+      root = freshRoot("geist_t_noid2")
+      db = openGeist[Reading](root, iotConfig(), "pw")
     discard db.put(Reading(sensor: 1, value: 10))
     check db.save().ok
     var path = db.dataPath()
@@ -217,13 +230,15 @@ suite "databases without identity":
 
 suite "the schema-driven path":
   test "a dynamic row carries the id it was built with":
-    var root = freshRoot("geist_t_dyn")
-    var spec = parseSchemaSpec("Note", "id:int,title:text")
+    var
+      root = freshRoot("geist_t_dyn")
+      spec = parseSchemaSpec("Note", "id:int,title:text")
     check spec.ok
-    var db = openSessionWithSchema(root, "main", spec.s, appConfig())
-    var id = db.nextIdFor()
-    var built = buildRow(db.entries.schema,
-      {"id": "1", "title": "hello"}.toTable, db.sidecarStore, id)
+    var
+      db = openSessionWithSchema(root, "main", spec.s, appConfig())
+      id = db.nextIdFor()
+      built = buildRow(db.entries.schema,
+        {"id": "1", "title": "hello"}.toTable, db.sidecarStore, id)
     check built.ok
     check db.putRow(Row(data: built.data)) == id
     check db.entryCount() == 1'u32
@@ -243,16 +258,18 @@ suite "the schema-driven path":
     check spec.err.contains("reserved")
 
   test "a malformed row is refused, not decoded":
-    var root = freshRoot("geist_t_badrow")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_badrow")
+      db = openGeist[Note](root, appConfig())
     expect ValueError:
       db.putRow(Row(data: @[1'u8, 2'u8, 3'u8]))
     db.close()
 
 suite "the changefeed says what happened":
   test "add, update and delete are distinguishable, and name the row":
-    var root = freshRoot("geist_t_feed")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("geist_t_feed")
+      db = openGeist[Note](root, appConfig())
     discard db.subscribe("watcher")
     var a = db.put(Note(noteId: 1, title: "a"))
     check db.set(a, Note(noteId: 1, title: "a2"))
@@ -295,8 +312,9 @@ suite "appending stays cheap as the log grows":
       if i mod 7 == 0 and ids.len > 2:
         check db.delete(ids[^3])
     check db.save().ok
-    var visible = db.entryCount()
-    var idsNow = db.rowIds()
+    var
+      visible = db.entryCount()
+      idsNow = db.rowIds()
     check idsNow.len == int(visible)
     # Reopening rebuilds the view by a full pass, which is the independent
     # answer: the incremental path must agree with it exactly.
@@ -310,8 +328,9 @@ suite "appending stays cheap as the log grows":
     # A ratio, not a wall clock, so it means the same on a slow machine.
     # Linear is ~4x; the quadratic version this guards against was ~16x.
     proc appendCost(n: int, name: string): float =
-      var db = openGeist[Note](freshRoot(name), appConfig())
-      var t0 = getMonoTime()
+      var
+        db = openGeist[Note](freshRoot(name), appConfig())
+        t0 = getMonoTime()
       for i in 0 ..< n:
         discard db.put(Note(noteId: i, title: "t", body: "b"))
       var t1 = getMonoTime()
@@ -319,9 +338,10 @@ suite "appending stays cheap as the log grows":
       db.close()
       result = float((t1 - t0).inNanoseconds)
 
-    var small = appendCost(10_000, "geist_t_grow_small")
-    var large = appendCost(40_000, "geist_t_grow_large")
-    var ratio = large / small
+    var
+      small = appendCost(10_000, "geist_t_grow_small")
+      large = appendCost(40_000, "geist_t_grow_large")
+      ratio = large / small
     # Generous: linear lands near 4, and anything under 8 cannot be
     # quadratic at this spread.
     check ratio < 8.0

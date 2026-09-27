@@ -113,7 +113,7 @@ type
     ok*: bool
     err*: string
 
-proc userOk(): UserResult {.role: helper, inline,
+proc userOk(): UserResult {.role: helper, stage: stDone, inline,
     tag: "cryptoBoundary".} =
   result.ok = true
 
@@ -178,7 +178,7 @@ proc saveUsers*(S: var UserStore): UserResult {.role: dataWriter,
     tag: "cryptoBoundary|storageIo|write".} =
   ## S: publish a new generation.
   var
-    t: tuple[ok: bool, err: string]
+    t: tuple[ok: bool, err: string] = (false, "")
   if not S.open:
     return userErr("user store is not open")
   t = S.session.save()
@@ -236,8 +236,8 @@ proc createUser*(S: var UserStore, name, password: string,
   var
     who: string = name.toLowerAscii()
     bad: string = checkUserName(who)
-    hashed: PasswordRecord
-    r: UserRecord
+    hashed: PasswordRecord = default(PasswordRecord)
+    r: UserRecord = default(UserRecord)
   if not S.open:
     return userErr("user store is not open")
   # Checked AFTER lower-casing, or `Alice` would be refused for holding a
@@ -271,9 +271,9 @@ proc setPassword*(S: var UserStore, name, password: string): UserResult {.
   ## ties the new password to the same derived key, and rotating it here
   ## would silently destroy data on every device they own.
   var
-    at: tuple[found: bool, id: RowId]
-    got: tuple[found: bool, value: UserRecord]
-    hashed: PasswordRecord
+    at: tuple[found: bool, id: RowId] = (false, default(RowId))
+    got: tuple[found: bool, value: UserRecord] = (false, default(UserRecord))
+    hashed: PasswordRecord = default(PasswordRecord)
   if not S.open:
     return userErr("user store is not open")
   at = S.userRowFor(name)
@@ -295,8 +295,8 @@ proc setDisabled*(S: var UserStore, name: string,
     tag: "cryptoBoundary|write".} =
   ## S/name/disabled: suspend or restore an account without deleting it.
   var
-    at: tuple[found: bool, id: RowId]
-    got: tuple[found: bool, value: UserRecord]
+    at: tuple[found: bool, id: RowId] = (false, default(RowId))
+    got: tuple[found: bool, value: UserRecord] = (false, default(UserRecord))
   if not S.open:
     return userErr("user store is not open")
   at = S.userRowFor(name)
@@ -314,7 +314,7 @@ proc deleteUser*(S: var UserStore, name: string): UserResult {.
     role: dataWriter, tag: "cryptoBoundary|delete|write".} =
   ## S/name: a tombstone, so the removal can reach a mirror.
   var
-    at: tuple[found: bool, id: RowId]
+    at: tuple[found: bool, id: RowId] = (false, default(RowId))
   if not S.open:
     return userErr("user store is not open")
   at = S.userRowFor(name)
@@ -329,7 +329,7 @@ proc userNames*(s: UserStore): seq[string] {.role: parser,
   var
     i: uint32 = 0
     total: uint32 = 0
-    one: UserRecord
+    one: UserRecord = default(UserRecord)
   result = @[]
   if not s.open:
     return @[]
@@ -367,7 +367,7 @@ proc authenticate*(s: UserStore, name, password: string): AuthOutcome {.
   ## the module note for why that matters more than the better error
   ## message it costs.
   var
-    got: tuple[found: bool, value: UserRecord]
+    got: tuple[found: bool, value: UserRecord] = (false, default(UserRecord))
   if not s.open:
     return AuthOutcome(result: arRefused, reason: "user store is not open")
   # Lower-cased before the check for the same reason as `createUser`:
@@ -409,8 +409,8 @@ proc signIn*(S: var UserStore, name, password: string): AuthOutcome {.
   ## exists. A server that raised its Argon2 cost gets its users upgraded
   ## as they come back, without asking anyone to change anything.
   var
-    at: tuple[found: bool, id: RowId]
-    got: tuple[found: bool, value: UserRecord]
+    at: tuple[found: bool, id: RowId] = (false, default(RowId))
+    got: tuple[found: bool, value: UserRecord] = (false, default(UserRecord))
   result = S.authenticate(name, password)
   if result.result != arOk:
     return

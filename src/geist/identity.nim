@@ -61,7 +61,7 @@ proc decodeSigningKeys(A: openArray[uint8],
     n: int = 0
     i: int = 0
     m: int = 0
-    k: bfx.AmeIdentitySigningKey
+    k: bfx.AmeIdentitySigningKey = default(bfx.AmeIdentitySigningKey)
   n = int(A.getU32(o)); o = o + 4
   while i < n:
     k = bfx.AmeIdentitySigningKey()
@@ -137,8 +137,8 @@ proc saveIdentity*(path, password: string,
   ## be re-derived without the password; only the secret keys are sealed.
   var
     salt: ByteSeq = @[]
-    fileKey: Secret
-    strm: StreamKeys
+    fileKey: Secret = default(Secret)
+    strm: StreamKeys = default(StreamKeys)
     plain: ByteSeq = @[]
     sealedSecrets: ByteSeq = @[]
     publicPart: ByteSeq = @[]
@@ -187,8 +187,8 @@ proc loadIdentity*(path, password: string): tuple[ok: bool,
     publicPart: ByteSeq = @[]
     sealedSecrets: ByteSeq = @[]
     tag: ByteSeq = @[]
-    fileKey: Secret
-    strm: StreamKeys
+    fileKey: Secret = default(Secret)
+    strm: StreamKeys = default(StreamKeys)
     plain: ByteSeq = @[]
     po: int = 0
     m: int = 0
@@ -239,8 +239,9 @@ proc loadOrCreateIdentity*(path, password, subject: string,
   ## mint a new identity: silently rotating a pinned key would break every
   ## peer that trusts it.
   var
-    loaded: tuple[ok: bool, key: bfx.AmeIdentityKey, err: string]
-    written: tuple[ok: bool, err: string]
+    loaded: tuple[ok: bool, key: bfx.AmeIdentityKey, err: string] =
+      (false, default(bfx.AmeIdentityKey), "")
+    written: tuple[ok: bool, err: string] = (false, "")
   if fileExists(path):
     loaded = loadIdentity(path, password)
     return (loaded.ok, loaded.key, false, loaded.err)

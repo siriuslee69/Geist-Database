@@ -344,7 +344,7 @@ proc parseAddress*(s: string): tuple[ok: bool, a: GeistAddress,
     t: string = s
     n: int = 0
     err: string = ""
-    a: GeistAddress
+    a: GeistAddress = default(GeistAddress)
     hadTtl: bool = false
   if s.len > maxAddressBytes:
     return refuse("address is longer than " & $maxAddressBytes & " bytes")

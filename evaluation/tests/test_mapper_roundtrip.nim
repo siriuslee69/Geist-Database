@@ -83,9 +83,10 @@ suite "schema derivation":
 suite "row codec":
 
   test "a full row round-trips":
-    var s = schemaFor[Note]()
-    var x = Note(id: 42, score: 1.5, title: "hello", body: "world")
-    var built = toRowBytes(x, s)
+    var
+      s = schemaFor[Note]()
+      x = Note(id: 42, score: 1.5, title: "hello", body: "world")
+      built = toRowBytes(x, s)
     check built.err == ""
     check fromRowBytes[Note](built.data, s) == x
 
@@ -97,26 +98,30 @@ suite "row codec":
       check fromRowBytes[Signed](toRowBytes(x, s).data, s) == x
 
   test "nested objects flatten and round-trip":
-    var s = schemaFor[Nested]()
-    var r = Ref(target: rtSidecar, hash: newSeq[uint8](fullDigestBytes))
+    var
+      s = schemaFor[Nested]()
+      r = Ref(target: rtSidecar, hash: newSeq[uint8](fullDigestBytes))
     r.hash[0] = 9'u8
-    var x = Nested(id: 3, label: "deep", payload: r)
-    var back = fromRowBytes[Nested](toRowBytes(x, s).data, s)
+    var
+      x = Nested(id: 3, label: "deep", payload: r)
+      back = fromRowBytes[Nested](toRowBytes(x, s).data, s)
     check back.id == 3
     check back.label == "deep"
     check back.payload.hash == r.hash
 
   test "a dense row is exactly its declared width":
-    var s = schemaFor[Flat]()
-    var built = toRowBytes(Flat(a: 1, b: 2.0, c: 3, d: true, e: 5), s)
+    var
+      s = schemaFor[Flat]()
+      built = toRowBytes(Flat(a: 1, b: 2.0, c: 3, d: true, e: 5), s)
     check built.data.len == int(s.rowBytes())
     check built.data.len == 40
 
 suite "column kinds":
 
   test "colFixed refuses an oversized value by default":
-    var s = schemaFor[Note]()
-    var at = s.slotIndex("title")
+    var
+      s = schemaFor[Note]()
+      at = s.slotIndex("title")
     s.slots[at].column = colFixed
     s.slots[at].width = 8'u32
     var built = toRowBytes(Note(id: 1, title: "far too long for eight"), s)
@@ -125,8 +130,9 @@ suite "column kinds":
     check built.data.len == 0
 
   test "colFixed truncates when told to, and only then":
-    var s = schemaFor[Note]()
-    var at = s.slotIndex("title")
+    var
+      s = schemaFor[Note]()
+      at = s.slotIndex("title")
     s.slots[at].column = colFixed
     s.slots[at].width = 8'u32
     s.slots[at].onOverflow = opTruncate
@@ -137,8 +143,9 @@ suite "column kinds":
     check back.title == "far too "
 
   test "colCapped keeps a short value inline":
-    var s = schemaFor[Note]()
-    var at = s.slotIndex("title")
+    var
+      s = schemaFor[Note]()
+      at = s.slotIndex("title")
     s.slots[at].column = colCapped
     s.slots[at].width = 48'u32
     var built = toRowBytes(Note(id: 1, title: "short"), s)
@@ -149,9 +156,10 @@ suite "column kinds":
   test "colCapped externalises a long value into the same space":
     var root = getTempDir() / "geist_t_capped"
     removeDir(root)
-    var store = initSidecarStore(root, 1'u32)
-    var s = schemaFor[Note]()
-    var at = s.slotIndex("body")
+    var
+      store = initSidecarStore(root, 1'u32)
+      s = schemaFor[Note]()
+      at = s.slotIndex("body")
     s.slots[at].column = colCapped
     s.slots[at].width = 48'u32
     var big = newString(4096)
@@ -189,9 +197,10 @@ suite "collapsing":
   test "omitting zeros is lossless":
     var s = schemaFor[Note]()
     s.autoCollapse = true
-    var x = Note(id: 0, score: 0.0, title: "", body: "only-this")
-    var built = toRowBytes(x, s)
-    var back = fromRowBytes[Note](built.data, s)
+    var
+      x = Note(id: 0, score: 0.0, title: "", body: "only-this")
+      built = toRowBytes(x, s)
+      back = fromRowBytes[Note](built.data, s)
     check back == x
     check back.id == 0
     check back.title == ""
@@ -216,8 +225,9 @@ suite "collapsing":
   test "row statistics report what the bitmaps did":
     var s = schemaFor[Wide]()
     s.autoCollapse = true
-    var built = toRowBytes(Wide(a: 1, e: 5), s)
-    var st = rowStats(s, built.data)
+    var
+      built = toRowBytes(Wide(a: 1, e: 5), s)
+      st = rowStats(s, built.data)
     check st.present == 2
     check st.omitted == 6
     check st.external == 0
@@ -225,8 +235,9 @@ suite "collapsing":
   test "collapsing works on an all-fixed schema too":
     var s = schemaFor[Flat]()
     s.autoCollapse = true
-    var x = Flat(a: 7, e: 9)
-    var built = toRowBytes(x, s)
+    var
+      x = Flat(a: 7, e: 9)
+      built = toRowBytes(x, s)
     # 5 columns -> 1 bitmap byte; two present ints -> 16 bytes.
     check built.data.len == 1 + 16
     check fromRowBytes[Flat](built.data, s) == x

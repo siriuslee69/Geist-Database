@@ -267,7 +267,7 @@ proc decodeSchema*(A: openArray[uint8], o: var int): Schema {.role: parser,
   var
     n: int = 0
     i: int = 0
-    sl: Slot
+    sl: Slot = default(Slot)
     a: string = ""
     b: string = ""
   result.typeName = A.readText(o)

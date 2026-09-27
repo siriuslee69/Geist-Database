@@ -39,10 +39,11 @@ proc sidecarFiles(root: string): int =
 
 suite "sidecar sweep":
   test "a payload no row references is reclaimed":
-    var root = freshRoot("geist_t_sw1")
-    var db = openGeist[Doc](root, cappedConfig())
-    var a = db.put(Doc(docId: 1, title: "keep", blob: repeat("K", 4096)))
-    var b = db.put(Doc(docId: 2, title: "drop", blob: repeat("D", 4096)))
+    var
+      root = freshRoot("geist_t_sw1")
+      db = openGeist[Doc](root, cappedConfig())
+      a = db.put(Doc(docId: 1, title: "keep", blob: repeat("K", 4096)))
+      b = db.put(Doc(docId: 2, title: "drop", blob: repeat("D", 4096)))
     check db.save().ok
     check sidecarFiles(root) == 2
     # Replacing the value orphans the OLD payload -- but only once the log
@@ -60,9 +61,10 @@ suite "sidecar sweep":
     db.close()
 
   test "a superseded version still in the log keeps its payload":
-    var root = freshRoot("geist_t_sw2")
-    var db = openGeist[Doc](root, cappedConfig())
-    var a = db.put(Doc(docId: 1, title: "v1", blob: repeat("A", 4096)))
+    var
+      root = freshRoot("geist_t_sw2")
+      db = openGeist[Doc](root, cappedConfig())
+      a = db.put(Doc(docId: 1, title: "v1", blob: repeat("A", 4096)))
     check db.set(a, Doc(docId: 1, title: "v2", blob: repeat("B", 4096)))
     check db.save().ok
     check sidecarFiles(root) == 2
@@ -80,13 +82,15 @@ suite "sidecar sweep":
     db.close()
 
   test "a payload a backup slot references is not touched":
-    var root = freshRoot("geist_t_sw3")
-    var cfg = cappedConfig()
+    var
+      root = freshRoot("geist_t_sw3")
+      cfg = cappedConfig()
     cfg.backup.enabled = true
     cfg.backup.copies = 2'u8
     cfg.backup.everyNWrites = 1'u32
-    var db = openGeist[Doc](root, cfg)
-    var a = db.put(Doc(docId: 1, title: "backed up", blob: repeat("Z", 4096)))
+    var
+      db = openGeist[Doc](root, cfg)
+      a = db.put(Doc(docId: 1, title: "backed up", blob: repeat("Z", 4096)))
     check db.save().ok
     # Slots hang off the generation-FREE stem, so they keep rotating as
     # the live file moves on.
@@ -105,12 +109,14 @@ suite "sidecar sweep":
     db.close()
 
   test "a read-only session refuses to sweep":
-    var root = freshRoot("geist_t_sw4")
-    var db = openGeist[Doc](root, cappedConfig())
+    var
+      root = freshRoot("geist_t_sw4")
+      db = openGeist[Doc](root, cappedConfig())
     discard db.put(Doc(docId: 1, title: "x", blob: repeat("Q", 4096)))
     check db.save().ok
-    var reader = openGeist[Doc](root, cappedConfig(), "", readOnly = true)
-    var swept = reader.sweepSidecar()
+    var
+      reader = openGeist[Doc](root, cappedConfig(), "", readOnly = true)
+      swept = reader.sweepSidecar()
     check not swept.ok
     check swept.err.contains("read-only")
     check sidecarFiles(root) == 1
@@ -118,8 +124,9 @@ suite "sidecar sweep":
     db.close()
 
   test "a database with no sidecar sweeps to nothing and says so":
-    var root = freshRoot("geist_t_sw5")
-    var db = openGeist[Doc](root, appConfig())
+    var
+      root = freshRoot("geist_t_sw5")
+      db = openGeist[Doc](root, appConfig())
     discard db.put(Doc(docId: 1, title: "small", blob: "short"))
     check db.save().ok
     var swept = db.sweepSidecar()

@@ -116,11 +116,11 @@ proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
     b: uint32 = 0'u32
     first: uint32 = 0'u32
     last: uint32 = 0'u32
-    built: tuple[pieces: seq[Piece], rowLens: seq[int]]
+    built: tuple[pieces: seq[Piece], rowLens: seq[int]] = (@[], @[])
     plain: ByteSeq = @[]
     sealedBytes: ByteSeq = @[]
     rowSlices: seq[ByteSeq] = @[]
-    e: LedgerEntry
+    e: LedgerEntry = default(LedgerEntry)
     slot: int = 0
     o: int = 0
     i: int = 0
@@ -173,10 +173,10 @@ proc openCluster*(master: Secret, L: Ledger, s: Schema,
     b: uint32 = 0'u32
     first: uint32 = 0'u32
     last: uint32 = 0'u32
-    built: tuple[pieces: seq[Piece], rowLens: seq[int]]
+    built: tuple[pieces: seq[Piece], rowLens: seq[int]] = (@[], @[])
     cipherBytes: ByteSeq = @[]
     plain: ByteSeq = @[]
-    e: LedgerEntry
+    e: LedgerEntry = default(LedgerEntry)
     slot: int = 0
   if L.batchRows == 0'u32 or rowCount == 0'u32:
     return
@@ -231,7 +231,7 @@ proc sealPacked*(master: Secret, L: var Ledger, rows: var ByteSeq,
     plain: ByteSeq = @[]
     sealedBytes: ByteSeq = @[]
     rowSlices: seq[ByteSeq] = @[]
-    e: LedgerEntry
+    e: LedgerEntry = default(LedgerEntry)
     slot: int = 0
     r: uint32 = 0'u32
     i: int = 0
@@ -279,7 +279,7 @@ proc openPacked*(master: Secret, L: Ledger, rows: var ByteSeq,
     a: int = 0
     z: int = 0
     plain: ByteSeq = @[]
-    e: LedgerEntry
+    e: LedgerEntry = default(LedgerEntry)
     slot: int = 0
     i: int = 0
   if L.batchRows == 0'u32 or rowCount == 0'u32 or offsets.len == 0:

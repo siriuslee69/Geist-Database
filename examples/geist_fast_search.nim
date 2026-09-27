@@ -30,12 +30,14 @@ type
 when isMainModule:
   var
     root: string = ""
-    db: Session
-    view: tuple[ok: bool, t: TransposedFile, err: string]
-    hit: tuple[ok: bool, rows: seq[uint32], read: uint64, err: string]
+    db: Session = default(Session)
+    view: tuple[ok: bool, t: TransposedFile, err: string] =
+      (false, default(TransposedFile), "")
+    hit: tuple[ok: bool, rows: seq[uint32], read: uint64, err: string] =
+      (false, @[], 0'u64, "")
     state: tuple[state: TransposeState, live: uint64, built: uint64,
       path: string]
-    c: GeistConfig
+    c: GeistConfig = default(GeistConfig)
     started: float = 0.0
     rowMs: float = 0.0
     colMs: float = 0.0

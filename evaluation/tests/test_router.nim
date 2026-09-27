@@ -107,17 +107,19 @@ instance = "*"
 suite "what an option on the command line does":
 
   test "it wins over the file":
-    var c = exampleRouterConfig()
-    var a = parseArgs(@["--listen", "dac://0.0.0.0:1", "--node", "edge",
-      "--timeout-ms", "50"])
+    var
+      c = exampleRouterConfig()
+      a = parseArgs(@["--listen", "dac://0.0.0.0:1", "--node", "edge",
+        "--timeout-ms", "50"])
     var t = c.applyArgs(a)
     check t.listen == "dac://0.0.0.0:1"
     check t.routing.node == "edge"
     check t.timeoutMs == 50
 
   test "and what was not typed is left alone":
-    var c = exampleRouterConfig()
-    var t = c.applyArgs(parseArgs(@["--quiet"]))
+    var
+      c = exampleRouterConfig()
+      t = c.applyArgs(parseArgs(@["--quiet"]))
     check t.listen == c.listen
     check t.routing.node == c.routing.node
     check t.quiet
@@ -133,15 +135,17 @@ suite "what an option on the command line does":
 suite "what the router refuses, and why":
 
   test "an address that is not one":
-    var S = stateFor(gatewayTable())
-    var r = S.routeQuery(Query(op: qoFind, collection: "geist://eris/../x"),
-      asker())
+    var
+      S = stateFor(gatewayTable())
+      r = S.routeQuery(Query(op: qoFind, collection: "geist://eris/../x"),
+        asker())
     check not r.ok
     check "'..'" in r.err
 
   test "a bare name, when there is no catch-all":
-    var S = stateFor(gatewayTable())
-    var r = S.routeQuery(Query(op: qoFind, collection: "notes"), asker())
+    var
+      S = stateFor(gatewayTable())
+      r = S.routeQuery(Query(op: qoFind, collection: "notes"), asker())
     check not r.ok
     check "names no app" in r.err
     check "geist://<app>/<target>" in r.err
@@ -151,31 +155,35 @@ suite "what the router refuses, and why":
     t.route.add Route(app: "*", instance: "*", hops: @[
       Hop(name: "home", endpoint: "dac://127.0.0.1:47909", pin: "home.pin",
         priority: 0'u8)])
-    var S = stateFor(t)
-    var r = S.routeQuery(Query(op: qoFind, collection: "notes"), asker())
+    var
+      S = stateFor(t)
+      r = S.routeQuery(Query(op: qoFind, collection: "notes"), asker())
     # It gets as far as trying to connect, which is the point: it was not
     # refused for being unaddressed.
     check "names no app" notin r.err
 
   test "an app nothing serves, by name":
-    var S = stateFor(gatewayTable())
-    var r = S.routeQuery(Query(op: qoFind, collection: "geist://snotra/x"),
-      asker())
+    var
+      S = stateFor(gatewayTable())
+      r = S.routeQuery(Query(op: qoFind, collection: "geist://snotra/x"),
+        asker())
     check not r.ok
     check "no route for snotra" in r.err
 
   test "a request that has already been here":
-    var S = stateFor(gatewayTable())
-    var r = S.routeQuery(Query(op: qoFind,
-      collection: "geist://eris/notes?ttl=4&via=gateway"), asker())
+    var
+      S = stateFor(gatewayTable())
+      r = S.routeQuery(Query(op: qoFind,
+        collection: "geist://eris/notes?ttl=4&via=gateway"), asker())
     check not r.ok
     check "routing loop" in r.err
     check "gateway" in r.err
 
   test "a request that has run out of hops":
-    var S = stateFor(gatewayTable())
-    var r = S.routeQuery(Query(op: qoFind,
-      collection: "geist://eris/notes?ttl=0"), asker())
+    var
+      S = stateFor(gatewayTable())
+      r = S.routeQuery(Query(op: qoFind,
+        collection: "geist://eris/notes?ttl=0"), asker())
     check not r.ok
     check "hop limit" in r.err
 
@@ -192,8 +200,9 @@ suite "a request on its way out":
   test "carries this router in via, and the caller in as":
     # The forward is built before the connection is attempted, so the
     # address the upstream WOULD see is observable through the failure.
-    var S = stateFor(gatewayTable())
-    var a = parseAddress("geist://eris/notes").a
+    var
+      S = stateFor(gatewayTable())
+      a = parseAddress("geist://eris/notes").a
     check a.hop(S.node).ok
     a.onBehalfOf = asker().subject
     check $a == "geist://eris/notes?ttl=5&via=gateway&as=phone"

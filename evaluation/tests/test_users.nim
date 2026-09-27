@@ -30,7 +30,7 @@ suite "accounts":
   test "one is created and found":
     var
       h = scratch("create")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2", "Alice").ok
     check users.userExists("alice")
@@ -41,7 +41,7 @@ suite "accounts":
   test "it lands under db/<app>/users, in the one folder":
     var
       h = scratch("path")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.root == h.base / "db" / "fjord" / "users"
     discard users.closeUsers()
@@ -49,8 +49,8 @@ suite "accounts":
   test "a staging instance is a different table":
     var
       h = scratch("instance")
-      main: UserStore
-      staging: UserStore
+      main: UserStore = default(UserStore)
+      staging: UserStore = default(UserStore)
     check openUsers(main, h, "eris", appConfig()).ok
     check openUsers(staging, h, "eris", appConfig(), instance = "staging").ok
     check main.root != staging.root
@@ -61,7 +61,7 @@ suite "accounts":
   test "the name is lower-cased, so one person is not two":
     var
       h = scratch("case")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("Alice", "hunter2").ok
     check users.userExists("alice")
@@ -72,7 +72,7 @@ suite "accounts":
   test "a duplicate is refused rather than replacing":
     var
       h = scratch("dup")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     var again = users.createUser("alice", "different")
@@ -85,7 +85,7 @@ suite "accounts":
   test "a name that could not be logged safely is refused":
     var
       h = scratch("badname")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check not users.createUser("", "hunter2").ok
     check not users.createUser("alice bob", "hunter2").ok
@@ -97,7 +97,7 @@ suite "accounts":
   test "an empty password cannot make an account":
     var
       h = scratch("nopw")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     var got = users.createUser("alice", "")
     check not got.ok
@@ -108,7 +108,7 @@ suite "accounts":
   test "the password is not in the record":
     var
       h = scratch("nostore")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "SECRETMARKER").ok
     var r = users.getUser("alice").value
@@ -122,7 +122,7 @@ suite "signing in":
   test "the right password works":
     var
       h = scratch("signin")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     var got = users.authenticate("alice", "hunter2")
@@ -133,7 +133,7 @@ suite "signing in":
   test "an unknown user and a wrong password give ONE answer":
     var
       h = scratch("sameanswer")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     var
@@ -149,7 +149,7 @@ suite "signing in":
   test "and take a comparable amount of time":
     var
       h = scratch("timing")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
 
@@ -173,7 +173,7 @@ suite "signing in":
   test "a malformed request is still charged a derivation":
     var
       h = scratch("malformed")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     # An impossible name must not return faster than a wrong password.
@@ -184,7 +184,7 @@ suite "signing in":
   test "a disabled account is told apart, but only after the password":
     var
       h = scratch("disabled")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.setDisabled("alice", true).ok
@@ -200,7 +200,7 @@ suite "signing in":
   test "an account can be restored":
     var
       h = scratch("restore")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.setDisabled("alice", true).ok
@@ -210,13 +210,13 @@ suite "signing in":
 
   test "a closed store refuses rather than crashing":
     var
-      users: UserStore
+      users: UserStore = default(UserStore)
     check users.authenticate("alice", "hunter2").result == arRefused
 
   test "signing in records when they were last seen":
     var
       h = scratch("lastseen")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.getUser("alice").value.lastSeenAt == 0
@@ -228,7 +228,7 @@ suite "signing in":
   test "a failed sign-in records nothing":
     var
       h = scratch("nofail")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.signIn("alice", "wrong").result == arWrong
@@ -240,7 +240,7 @@ suite "changing a password":
   test "the new one works and the old one does not":
     var
       h = scratch("setpw")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.setPassword("alice", "correct-horse").ok
@@ -251,7 +251,7 @@ suite "changing a password":
   test "the storage salt is NOT rotated":
     var
       h = scratch("saltkept")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     var before = users.getUser("alice").value.salt
@@ -264,7 +264,7 @@ suite "changing a password":
   test "an unknown account cannot have its password set":
     var
       h = scratch("setpw-ghost")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check not users.setPassword("ghost", "anything").ok
     discard users.closeUsers()
@@ -272,7 +272,7 @@ suite "changing a password":
   test "an empty new password is refused":
     var
       h = scratch("setpw-empty")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check not users.setPassword("alice", "").ok
@@ -284,7 +284,7 @@ suite "raising the cost later":
   test "a weak hash verifies, and is reported for upgrade":
     var
       h = scratch("rehash")
-      users: UserStore
+      users: UserStore = default(UserStore)
       cheap = PasswordParams(passes: 1'u32, memoryKiB: 256'u32, lanes: 1'u32)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
@@ -304,7 +304,7 @@ suite "raising the cost later":
   test "signing in upgrades it, since that is when the password exists":
     var
       h = scratch("rehash-signin")
-      users: UserStore
+      users: UserStore = default(UserStore)
       cheap = PasswordParams(passes: 1'u32, memoryKiB: 256'u32, lanes: 1'u32)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
@@ -325,7 +325,7 @@ suite "the key a user's own stores are unlocked with":
   test "it is derived from their salt, and is not what the server holds":
     var
       h = scratch("storagekey")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     var
@@ -339,7 +339,7 @@ suite "the key a user's own stores are unlocked with":
   test "the same password gives the same key every time":
     var
       h = scratch("storagekey-stable")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     var
@@ -352,7 +352,7 @@ suite "the key a user's own stores are unlocked with":
   test "two users with one password get different keys":
     var
       h = scratch("storagekey-users")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.createUser("bob", "hunter2").ok
@@ -368,7 +368,7 @@ suite "removing an account":
   test "it is a tombstone, so the removal can reach a mirror":
     var
       h = scratch("delete")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.deleteUser("alice").ok
@@ -380,7 +380,7 @@ suite "removing an account":
   test "deleting what is not there succeeds":
     var
       h = scratch("delete-ghost")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.deleteUser("ghost").ok
     discard users.closeUsers()
@@ -388,13 +388,13 @@ suite "removing an account":
   test "an account survives being reopened":
     var
       h = scratch("reopen")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     check users.saveUsers().ok
     discard users.closeUsers()
 
-    var again: UserStore
+    var again: UserStore = default(UserStore)
     check openUsers(again, h, "fjord", appConfig()).ok
     check again.authenticate("alice", "hunter2").result == arOk
     discard again.closeUsers()
@@ -404,7 +404,7 @@ suite "what a log is told":
   test "it says nothing that would enumerate accounts":
     var
       h = scratch("logline")
-      users: UserStore
+      users: UserStore = default(UserStore)
     check openUsers(users, h, "fjord", appConfig()).ok
     check users.createUser("alice", "hunter2").ok
     var

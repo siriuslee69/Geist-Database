@@ -18,9 +18,10 @@ type
 when isMainModule:
   var
     root: string = ""
-    db: Session
-    found: seq[Note]
-    seen: tuple[ok: bool, f: GeistFile, path: string, err: string]
+    db: Session = default(Session)
+    found: seq[Note] = @[]
+    seen: tuple[ok: bool, f: GeistFile, path: string, err: string] =
+      (false, default(GeistFile), "", "")
     later: tuple[ok: bool, f: GeistFile, changed: seq[int], path: string,
       err: string]
 

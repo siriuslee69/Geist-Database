@@ -17,8 +17,9 @@ proc scratch(name: string): string =
 
 suite "library defaults":
   test "an absent file leaves the built-in defaults alone":
-    var dir = scratch("geist_t_cfg1")
-    var got = loadGeistDefaults(dir / "config.toml")
+    var
+      dir = scratch("geist_t_cfg1")
+      got = loadGeistDefaults(dir / "config.toml")
     check got.ok
     check got.defaults.preset == "app"
     check got.defaults.sidecarThreshold == defaultSidecarThreshold
@@ -26,8 +27,9 @@ suite "library defaults":
     check got.defaults.loadedFrom == ""
 
   test "the file replaces exactly what it names":
-    var dir = scratch("geist_t_cfg2")
-    var path = dir / "config.toml"
+    var
+      dir = scratch("geist_t_cfg2")
+      path = dir / "config.toml"
     writeFile(path, """
 [runtime.storage]
 preset = "secure-app"
@@ -48,8 +50,9 @@ copies = 3
     check got.defaults.loadedFrom == path
 
   test "a misspelled setting is refused, not ignored":
-    var dir = scratch("geist_t_cfg3")
-    var path = dir / "config.toml"
+    var
+      dir = scratch("geist_t_cfg3")
+      path = dir / "config.toml"
     writeFile(path, "[runtime.storage]\nsidecarTreshold = 4096\n")
     var got = loadGeistDefaults(path)
     check not got.ok
@@ -57,8 +60,9 @@ copies = 3
     check got.err.contains("known:")
 
   test "a preset that does not exist fails at the file, not at the open":
-    var dir = scratch("geist_t_cfg4")
-    var path = dir / "config.toml"
+    var
+      dir = scratch("geist_t_cfg4")
+      path = dir / "config.toml"
     writeFile(path, "[runtime.storage]\npreset = \"turbo\"\n")
     var got = loadGeistDefaults(path)
     check not got.ok
@@ -107,8 +111,9 @@ copies = 3
   test "a file that names rowIdentity still wins over the preset":
     # The override has to keep working, or turning identity ON for a
     # telemetry store would become impossible.
-    var dir = scratch("geist_t_cfg5b")
-    var path = dir / "config.toml"
+    var
+      dir = scratch("geist_t_cfg5b")
+      path = dir / "config.toml"
     writeFile(path, "[runtime.storage]\nrowIdentity = true\n")
     var got = loadGeistDefaults(path)
     check got.ok
@@ -123,8 +128,9 @@ copies = 3
 
 suite "user configuration":
   test "sections are read and an absent file is not an error":
-    var dir = scratch("geist_t_ucfg1")
-    var path = dir / "userconfig.toml"
+    var
+      dir = scratch("geist_t_ucfg1")
+      path = dir / "userconfig.toml"
     check loadUserConfig(path).ok
     writeFile(path, """
 [database]
@@ -155,24 +161,27 @@ limit = 50
     check got.user.limit == 50
 
   test "one pin may be written without a list around it":
-    var dir = scratch("geist_t_ucfg2")
-    var path = dir / "userconfig.toml"
+    var
+      dir = scratch("geist_t_ucfg2")
+      path = dir / "userconfig.toml"
     writeFile(path, "[daemon]\ntrust = \"peers/only.pin\"\n")
     var got = loadUserConfig(path)
     check got.ok
     check got.user.trust == @["peers/only.pin"]
 
   test "an unknown key in any section is refused":
-    var dir = scratch("geist_t_ucfg3")
-    var path = dir / "userconfig.toml"
+    var
+      dir = scratch("geist_t_ucfg3")
+      path = dir / "userconfig.toml"
     writeFile(path, "[client]\nremoteHost = \"desk\"\n")
     var got = loadUserConfig(path)
     check not got.ok
     check got.err.contains("remoteHost")
 
   test "a file that is not TOML fails rather than being skipped":
-    var dir = scratch("geist_t_ucfg4")
-    var path = dir / "userconfig.toml"
+    var
+      dir = scratch("geist_t_ucfg4")
+      path = dir / "userconfig.toml"
     writeFile(path, "[database\npath = ")
     var got = loadUserConfig(path)
     check not got.ok
@@ -180,8 +189,9 @@ limit = 50
 
 suite "transport settings":
   test "the tier policy comes from the file and still validates":
-    var dir = scratch("geist_t_cfg6")
-    var path = dir / "config.toml"
+    var
+      dir = scratch("geist_t_cfg6")
+      path = dir / "config.toml"
     writeFile(path, """
 [runtime.transport]
 startTier = "secret"
@@ -200,8 +210,9 @@ archiveAtMiB = 256
     check validateTriggerPolicy(policy).ok
 
   test "an unknown tier name is refused":
-    var dir = scratch("geist_t_cfg7")
-    var path = dir / "config.toml"
+    var
+      dir = scratch("geist_t_cfg7")
+      path = dir / "config.toml"
     writeFile(path, "[runtime.transport]\nstartTier = \"paranoid\"\n")
     var got = loadTransportDefaults(path)
     check not got.ok
@@ -220,9 +231,10 @@ archiveAtMiB = 256
 suite "build presets at run time":
   # {.testKind: tkUnit, covers: "runtimeOf".}
   test "a preset file replaces only the keys it names":
-    var dir = scratch("geist_t_layer1")
-    var base = dir / "default.toml"
-    var over = dir / "iot.toml"
+    var
+      dir = scratch("geist_t_layer1")
+      base = dir / "default.toml"
+      over = dir / "iot.toml"
     writeFile(base, "[project]\nname = \"x\"\n\n[runtime.storage]\n" &
       "preset = \"app\"\nsidecarThreshold = 1024\n\n[runtime.backup]\n" &
       "copies = 2\n")
@@ -239,9 +251,10 @@ suite "build presets at run time":
 
   # {.testKind: tkEdgeCase, covers: "runtimeOf".}
   test "a preset file that will not parse stops the load":
-    var dir = scratch("geist_t_layer2")
-    var base = dir / "default.toml"
-    var over = dir / "broken.toml"
+    var
+      dir = scratch("geist_t_layer2")
+      base = dir / "default.toml"
+      over = dir / "broken.toml"
     writeFile(base, "[runtime.storage]\npreset = \"app\"\n")
     writeFile(over, "[runtime.storage\npreset = \n")
     var got = runtimeOf(base, @[over])
@@ -254,12 +267,14 @@ suite "build presets at run time":
 
   # {.testKind: tkSmoke, covers: "loadGeistDefaults, loadTransportDefaults".}
   test "every shipped configs/*.toml loads without a complaint":
-    var dir = currentSourcePath().parentDir() / ".." / ".." / "configs"
-    var n = 0
+    var
+      dir = currentSourcePath().parentDir() / ".." / ".." / "configs"
+      n = 0
     for f in walkFiles(dir / "*.toml"):
-      var storage = loadGeistDefaults(dir / "default.toml")
-      var layered = runtimeOf(dir / "default.toml", @[f])
-      var transport = loadTransportDefaults(f)
+      var
+        storage = loadGeistDefaults(dir / "default.toml")
+        layered = runtimeOf(dir / "default.toml", @[f])
+        transport = loadTransportDefaults(f)
       check storage.ok
       check storage.defaults.loadedFrom.len > 0
       check layered.ok

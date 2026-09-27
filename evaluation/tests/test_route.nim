@@ -104,8 +104,9 @@ suite "matching picks the most specific route":
 suite "with everything healthy, priority zero serves":
 
   test "eris goes to d1":
-    var v = initRouteView(vpsTable())
-    var c = v.chooseHop(at("geist://eris/notes"), 100)
+    var
+      v = initRouteView(vpsTable())
+      c = v.chooseHop(at("geist://eris/notes"), 100)
     check c.ok
     check c.hop.name == "d1"
     check not c.probing
@@ -115,8 +116,9 @@ suite "with everything healthy, priority zero serves":
     check v.chooseHop(at("geist://fjord/mail"), 100).hop.name == "d1"
 
   test "an unroutable app is refused by name":
-    var v = initRouteView(vpsTable())
-    var c = v.chooseHop(at("geist://snotra/cards"), 100)
+    var
+      v = initRouteView(vpsTable())
+      c = v.chooseHop(at("geist://snotra/cards"), 100)
     check not c.ok
     check "no route for snotra" in c.err
 
@@ -231,8 +233,9 @@ suite "an address that names a machine":
     check c.probing
 
   test "and a machine that serves no such app is refused, not redirected":
-    var v = initRouteView(vpsTable())
-    var c = v.chooseHop(at("geist://eris@d4/notes"), 100)
+    var
+      v = initRouteView(vpsTable())
+      c = v.chooseHop(at("geist://eris@d4/notes"), 100)
     check not c.ok
     check "no hop is named d4" in c.err
 

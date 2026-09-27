@@ -19,9 +19,9 @@ type
 when isMainModule:
   var
     root: string = ""
-    db: Session
+    db: Session = default(Session)
     onDisk: string = ""
-    needing: seq[tuple[batchIndex: uint32, groupId: uint16]]
+    needing: seq[tuple[batchIndex: uint32, groupId: uint16]] = @[]
     fresh: KeyId = 0'u64
 
   root = getTempDir() / "geist_encrypted_example"

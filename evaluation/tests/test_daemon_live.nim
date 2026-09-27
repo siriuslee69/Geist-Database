@@ -54,14 +54,18 @@ proc runServer(a: ptr ServeArgs) =
   ## shape. Kept here rather than spawning the binary so a failure points
   ## at a line of Geist instead of at a process exit code.
   var
-    S: Session
+    S: Session = default(Session)
     cursors: SyncCursors = initSyncCursors()
-    identity: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
-    pin: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string]
-    address: tuple[ok: bool, a: GeistDacAddress]
-    server: tuple[ok: bool, server: GeistServer, err: string]
-    step: tuple[ok: bool, served: bool, err: string]
-    rights: set[PeerRight]
+    identity: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+    pin: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
+    address: tuple[ok: bool, a: GeistDacAddress] =
+      (false, default(GeistDacAddress))
+    server: tuple[ok: bool, server: GeistServer, err: string] =
+      (false, default(GeistServer), "")
+    step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
+    rights: set[PeerRight] = default(set[PeerRight])
   try:
     identity = loadOrCreateIdentity(a.identityFile, "server-pw", "server",
       geistSignatureSlots())
@@ -162,7 +166,7 @@ suite "a live daemon answers over a real socket":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47811",
         port: 47811'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin")
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     discard seedNotes(root, ["alpha", "beta", "gamma"])
     # Both sides mint an identity and hand over the public half.
     var clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
@@ -209,7 +213,7 @@ suite "a live daemon answers over a real socket":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47812",
         port: 47812'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin")
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     discard seedNotes(root, ["one", "two"])
     var clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
       "client", geistSignatureSlots())
@@ -221,12 +225,14 @@ suite "a live daemon answers over a real socket":
     startServer(addr args, t)
     # Both connect BEFORE either sends: with a one-shot server the second
     # handshake would find nothing listening.
-    var a = clientFor(47812'u16, keys / "client.id", keys / "server.pin")
-    var b = clientFor(47812'u16, keys / "client.id", keys / "server.pin")
+    var
+      a = clientFor(47812'u16, keys / "client.id", keys / "server.pin")
+      b = clientFor(47812'u16, keys / "client.id", keys / "server.pin")
     check a.ok
     check b.ok
-    var fromA = a.link.send(Query(op: qoFind, limit: 10'u32))
-    var fromB = b.link.send(Query(op: qoFind, limit: 10'u32))
+    var
+      fromA = a.link.send(Query(op: qoFind, limit: 10'u32))
+      fromB = b.link.send(Query(op: qoFind, limit: 10'u32))
     check fromA.reply.rows.len == 2
     check fromB.reply.rows.len == 2
     # Interleaved, not just sequential: the sessions must not depend on
@@ -246,7 +252,7 @@ suite "syncing between two desktops":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47813",
         port: 47813'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin")
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     discard seedNotes(root, ["r1", "r2", "r3", "r4"])
     var clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
       "client", geistSignatureSlots())
@@ -261,9 +267,10 @@ suite "syncing between two desktops":
 
     # An empty follower asks from zero and receives the rows themselves,
     # not a count.
-    var mirrorRoot = freshRoot("geist_t_live3_mirror")
-    var mirror = openSessionWithSchema(mirrorRoot, "main", Schema(),
-      appConfig())
+    var
+      mirrorRoot = freshRoot("geist_t_live3_mirror")
+      mirror = openSessionWithSchema(mirrorRoot, "main", Schema(),
+        appConfig())
     var first = link.link.syncRemote(0'u64, 2'u32)
     check first.ok
     check first.reply.ok
@@ -306,7 +313,7 @@ suite "syncing between two desktops":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47814",
         port: 47814'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin")
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     discard seedNotes(root, ["s1", "s2"])
     var clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
       "client", geistSignatureSlots())
@@ -341,12 +348,13 @@ suite "payloads bigger than a datagram":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47817",
         port: 47817'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin")
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     # One row far past the 32 KB whole-frame threshold, so the reply has to
     # be packaged whatever the row limit is.
-    var big = openGeist[Note](root, appConfig())
-    var bigId = big.put(Note(noteId: 1, title: "huge",
-      body: repeat("0123456789", 20_000)))    # 200 KB
+    var
+      big = openGeist[Note](root, appConfig())
+      bigId = big.put(Note(noteId: 1, title: "huge",
+        body: repeat("0123456789", 20_000)))    # 200 KB
     discard big.put(Note(noteId: 2, title: "small", body: "x"))
     check big.save().ok
     big.close()
@@ -395,7 +403,7 @@ suite "writing across the wire":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47815",
         port: 47815'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin", writable: false)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     discard seedNotes(root, ["w1"])
     var clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
       "client", geistSignatureSlots())
@@ -431,10 +439,11 @@ suite "writing across the wire":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47816",
         port: 47816'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin", writable: true)
-      t: Thread[ptr ServeArgs]
-    var receiverIds = seedNotes(root, ["kept"])
-    var clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
-      "client", geistSignatureSlots())
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
+    var
+      receiverIds = seedNotes(root, ["kept"])
+      clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
+        "client", geistSignatureSlots())
     check savePin(keys / "client.pin", pinOf(clientKey.key)).ok
     var serverKey = loadOrCreateIdentity(keys / "server.id", "server-pw",
       "server", geistSignatureSlots())
@@ -447,8 +456,9 @@ suite "writing across the wire":
 
     # The sender is a database in its own right; its rows go over as they
     # are stored, identity and all.
-    var srcRoot = freshRoot("geist_t_live6_src")
-    var src = openGeist[Note](srcRoot, appConfig())
+    var
+      srcRoot = freshRoot("geist_t_live6_src")
+      src = openGeist[Note](srcRoot, appConfig())
     discard src.put(Note(noteId: 7, title: "from-peer", body: "hello"))
     discard src.put(Note(noteId: 8, title: "also-peer", body: "there"))
     var outgoing = src.rowsSince(0'u64, 100)
@@ -490,7 +500,7 @@ suite "writing across the wire":
       args = ServeArgs(root: root, listen: "dac://127.0.0.1:47818",
         port: 47818'u16, identityFile: keys / "server.id",
         peerPinFile: keys / "client.pin", writable: true)
-      t: Thread[ptr ServeArgs]
+      t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     discard seedNotes(root, ["existing"])
     var clientKey = loadOrCreateIdentity(keys / "client.id", "client-pw",
       "client", geistSignatureSlots())
@@ -544,7 +554,8 @@ proc chainIdentities(keys: string) =
   ## checks the other against. B gets two, because B is a client to A and a
   ## server to C, and reusing one key for both would blur which of the two
   ## roles a pin actually authorises.
-  var k: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
+  var k: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+    (false, default(AmeIdentityKey), false, "")
   for who in ["b", "c"]:
     k = loadOrCreateIdentity(keys / (who & ".id"), "client-pw", "client",
       geistSignatureSlots())
@@ -569,8 +580,8 @@ suite "a chain of three desktops":
       argsB = ServeArgs(root: rootB, listen: "dac://127.0.0.1:47822",
         port: 47822'u16, identityFile: keys / "b-server.id",
         peerPinFile: keys / "c.pin")
-      tA: Thread[ptr ServeArgs]
-      tB: Thread[ptr ServeArgs]
+      tA: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
+      tB: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     chainIdentities(keys)
     var originIds = seedNotes(rootA, ["origin-1", "origin-2"])
     check originIds.len == 2
@@ -580,8 +591,9 @@ suite "a chain of three desktops":
     startServer(addr argsA, tA)
     var toA = clientFor(47821'u16, keys / "b.id", keys / "a.pin")
     check toA.ok
-    var mid = openSessionWithSchema(rootB, "main", Schema(), appConfig())
-    var caughtB = needRemote(mid, toA.link, "dac://127.0.0.1:47821")
+    var
+      mid = openSessionWithSchema(rootB, "main", Schema(), appConfig())
+      caughtB = needRemote(mid, toA.link, "dac://127.0.0.1:47821")
     check caughtB.ok
     check caughtB.err == ""
     check caughtB.applied == 2
@@ -596,8 +608,9 @@ suite "a chain of three desktops":
     startServer(addr argsB, tB)
     var toB = clientFor(47822'u16, keys / "c.id", keys / "b-server.pin")
     check toB.ok
-    var tail = openSessionWithSchema(rootC, "main", Schema(), appConfig())
-    var caughtC = needRemote(tail, toB.link, "dac://127.0.0.1:47822")
+    var
+      tail = openSessionWithSchema(rootC, "main", Schema(), appConfig())
+      caughtC = needRemote(tail, toB.link, "dac://127.0.0.1:47822")
     check caughtC.ok
     check caughtC.err == ""
     check caughtC.applied == 2
@@ -633,8 +646,8 @@ suite "a chain of three desktops":
       argsB = ServeArgs(root: rootB, listen: "dac://127.0.0.1:47824",
         port: 47824'u16, identityFile: keys / "b-server.id",
         peerPinFile: keys / "c.pin")
-      tA: Thread[ptr ServeArgs]
-      tB: Thread[ptr ServeArgs]
+      tA: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
+      tB: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     chainIdentities(keys)
     var originIds = seedNotes(rootA, ["keep", "change", "remove"])
     check originIds.len == 3
@@ -655,8 +668,9 @@ suite "a chain of three desktops":
       ## the claim this test exists to check.
       var link = clientFor(fromPort, clientId, peerPin)
       check link.ok
-      var db = openSessionWithSchema(intoRoot, "main", Schema(), appConfig())
-      var caught = needRemote(db, link.link, remote)
+      var
+        db = openSessionWithSchema(intoRoot, "main", Schema(), appConfig())
+        caught = needRemote(db, link.link, remote)
       check caught.ok
       check caught.err == ""
       result = caught.applied

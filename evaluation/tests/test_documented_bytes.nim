@@ -94,7 +94,7 @@ suite "the request, as the README lays it out":
   test "a find lands on the offsets the README prints":
     var q = Query(op: qoFind, collection: "notes", limit: 20'u32)
     q.where.add Predicate(field: "title", text: "hi", isText: true)
-    let b = encodeQuery(q)
+    var b = encodeQuery(q)
     check b.len == 58
     check b[0] == 2'u8                 # 0   op
     check b.getU32(1) == 5'u32         # 1   collection length
@@ -111,7 +111,7 @@ suite "the request, as the README lays it out":
   test "a reply lands on the offsets the README prints":
     var r = Reply(ok: true, cursor: 3'u64, matched: 1'u32, epoch: 7'u64)
     r.rows.add Row(schemaId: 0'u16, data: @[0x68'u8, 0x69'u8])
-    let b = encodeReply(r)
+    var b = encodeReply(r)
     check b[0] == 1'u8                 # 0   ok
     check b.getU32(1) == 0'u32         # 1   err length
     check b.getU64(5) == 3'u64         # 5   cursor
@@ -132,10 +132,10 @@ suite "the derived files, as the README names them":
   test "a relay envelope is stream, sender, at, ordinal, body":
     var m = RelayMessage(stream: "voice", sender: "phone", at: 5'i64,
       ordinal: 3'u64, body: asBytes("hi"))
-    let b = encodeMessage(m)
+    var b = encodeMessage(m)
     check b.getU32(0) == 5'u32          # stream length
     check b.getU32(9) == 5'u32          # sender length, after "voice"
-    let back = decodeMessage(b)
+    var back = decodeMessage(b)
     check back.stream == "voice"
     check back.sender == "phone"
     check back.at == 5'i64

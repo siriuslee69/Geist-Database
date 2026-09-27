@@ -10,6 +10,7 @@
 import std/[os, strutils, tables, unittest]
 
 import geist/network
+import runePragmas
 
 proc scratch(name: string): string =
   result = getTempDir() / "geist_registry_test" / name
@@ -29,7 +30,7 @@ proc homeAt(name: string): GeistHome =
   result = h.home
 
 ## An opener that behaves: every address gets a writable store.
-proc plainOpener(): OpenStore =
+proc plainOpener(): OpenStore {.role: configurator, stage: stDone.} =
   result = proc (h: GeistHome, a: GeistAddress, path: string,
       S: var Session): tuple[ok: bool, writable: bool, err: string] =
     S = openSession[Note](path, "main")

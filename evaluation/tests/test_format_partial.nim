@@ -35,8 +35,9 @@ suite "format":
     var h = openSeek(path)
     check h.ok
     check not h.h.isDenseHandle()
-    var row = h.h.seekRow(7'u32)
-    var offs = fieldOffsets(h.h.schema, row.data)
+    var
+      row = h.h.seekRow(7'u32)
+      offs = fieldOffsets(h.h.schema, row.data)
     check h.h.schema.u64At(row.data, offs, 0) == 7'u64
     check h.h.schema.u64At(row.data, offs, 2) == 21'u64
     check h.h.seekObject[:Row3](7'u32).name == "row-7"

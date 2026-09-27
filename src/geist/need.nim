@@ -123,7 +123,7 @@ proc loadCursors*(baseDir: string): seq[NeedCursor] {.role: parser,
   ## baseDir: store root. An absent file means nothing has been needed from
   ## any peer yet, which is not an error -- it is the first run.
   var
-    one: tuple[ok: bool, c: NeedCursor]
+    one: tuple[ok: bool, c: NeedCursor] = (false, default(NeedCursor))
   if not fileExists(cursorPath(baseDir)):
     return @[]
   for line in lines(cursorPath(baseDir)):
@@ -206,10 +206,11 @@ proc needLoop(S: var Session, remote: string, limit: uint32,
   ## ignores. The other order would lose rows.
   var
     table: seq[NeedCursor] = @[]
-    here: NeedCursor
-    answer: tuple[ok: bool, reply: Reply, err: string]
-    stored: tuple[ok: bool, applied: int, err: string]
-    saved: tuple[ok: bool, err: string]
+    here: NeedCursor = default(NeedCursor)
+    answer: tuple[ok: bool, reply: Reply, err: string] =
+      (false, default(Reply), "")
+    stored: tuple[ok: bool, applied: int, err: string] = (false, 0, "")
+    saved: tuple[ok: bool, err: string] = (false, "")
   if S.readOnly:
     return (false, 0, 0, 0'u64, false, S.writeRefusal())
   table = loadCursors(S.baseDir)
@@ -310,7 +311,8 @@ proc needVia*(S: var Session, client: var GeistClient, address: string,
   ## and if they turn out NOT to be the same log, the epoch check catches
   ## it and rewinds, which is exactly what it is there for.
   var
-    parsed: tuple[ok: bool, a: GeistAddress, err: string]
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      (false, default(GeistAddress), "")
     dialled: ptr GeistClient = addr client
     named: string = ""
   parsed = parseAddress(address)
@@ -322,7 +324,7 @@ proc needVia*(S: var Session, client: var GeistClient, address: string,
     proc (cursor: uint64, lim: uint32): tuple[ok: bool, reply: Reply,
         err: string] =
       var
-        got: AskResult
+        got: AskResult = default(AskResult)
       got = dialled[].ask(Query(op: qoSync, collection: address,
         cursor: cursor, limit: lim))
       result = (got.ok, got.reply, got.err))

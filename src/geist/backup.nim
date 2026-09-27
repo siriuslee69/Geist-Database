@@ -40,7 +40,6 @@ type
     totalWrites*: uint64
     lastBackupAt*: int64
     rotations*: uint32
-    lastError*: string
 
   BackupResult* {.role: truthState, tag: "backup|status|types".} = object
     performed*: bool
@@ -48,7 +47,7 @@ type
     copied*: seq[string]
     err*: string
 
-proc defaultBackupPolicy*(): BackupPolicy {.role: configurator,
+proc defaultBackupPolicy*(): BackupPolicy {.role: configurator, stage: stDone,
     tag: "backup|config".} =
   ## Three rotating copies, rotated every 64 writes or every 15 minutes.
   result.enabled = true
@@ -125,8 +124,8 @@ proc runBackup*(P: openArray[string], stems: openArray[string],
   ## now: unix time; zero asks for the current clock.
   var
     t: int64 = now
-    decision: tuple[yes: bool, reason: string]
-    step: tuple[ok: bool, err: string]
+    decision: tuple[yes: bool, reason: string] = (false, "")
+    step: tuple[ok: bool, err: string] = (false, "")
     i: int = 0
   if t == 0'i64:
     t = getTime().toUnix()
@@ -139,7 +138,6 @@ proc runBackup*(P: openArray[string], stems: openArray[string],
       if P[i].len > 0 and not fileExists(P[i]):
         result.err = "refusing to rotate an incomplete artifact set: " &
           "missing " & P[i]
-        S.lastError = result.err
         return
       i = i + 1
   i = 0
@@ -148,7 +146,6 @@ proc runBackup*(P: openArray[string], stems: openArray[string],
       step = rotateOne(P[i], stems[i], int(p.copies))
       if not step.ok:
         result.err = step.err
-        S.lastError = step.err
         return
       result.copied.add slotPath(stems[i], 1)
     i = i + 1
@@ -156,7 +153,6 @@ proc runBackup*(P: openArray[string], stems: openArray[string],
   S.writesSinceBackup = 0'u32
   S.lastBackupAt = t
   S.rotations = S.rotations + 1'u32
-  S.lastError = ""
 
 proc noteWrite*(S: var BackupState) {.role: actor, inline,
     tag: "backup|status|write".} =

@@ -66,6 +66,9 @@ type
     configFile*: string
     oneshot*: bool
     quiet*: bool
+    help*: bool
+      ## --help was asked for: print the usage and stop, before anything
+      ## is checked or opened.
     ## given: the long option names ACTUALLY TYPED. `--preset app` and
     ## `--listen dac://127.0.0.1:47655` are both things an operator writes
     ## on purpose, and both happen to equal the built-in default, so the
@@ -187,9 +190,7 @@ proc parseArgs*(argv: openArray[string]): DaemonConfig {.role: parser,
     of "config": result.configFile = value
     of "oneshot": result.oneshot = true
     of "quiet": result.quiet = true
-    of "help":
-      echo usageText
-      quit(0)
+    of "help": result.help = true
     else:
       raise newException(ValueError, "unknown option --" & key)
     result.given.add key
@@ -205,7 +206,8 @@ proc withUserConfig(c: DaemonConfig): DaemonConfig {.role: configurator,
   ## debugging one by hand would be impossible.
   var
     where: string = ""
-    loaded: tuple[ok: bool, user: UserConfig, err: string]
+    loaded: tuple[ok: bool, user: UserConfig, err: string] =
+      (false, default(UserConfig), "")
   result = c
   where = firstExisting(userConfigCandidates(c.configFile))
   if where.len == 0:
@@ -239,6 +241,8 @@ proc resolveConfig*(argv: openArray[string]): DaemonConfig {.role: parser,
   ## The check happens AFTER the merge, or a setting supplied by the file
   ## would be reported missing.
   result = withUserConfig(parseArgs(argv))
+  if result.help:
+    return
   if result.path.len == 0:
     raise newException(ValueError,
       "--path is required (or [database] path in userconfig.toml)")
@@ -285,7 +289,8 @@ proc collectTrust(c: DaemonConfig): tuple[ok: bool, peers: seq[TrustedPeer],
   ## union, because the operator clearly meant to allow the wider one.
   var
     i: int = 0
-    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string]
+    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
     at: int = -1
     j: int = 0
   while i < c.trust.len + c.allowWrite.len:
@@ -325,8 +330,9 @@ proc reloadIfChanged*(S: var DaemonState,
   ## previous daemon, which loaded a snapshot once and then wrote it back
   ## over whatever had changed underneath.
   var
-    now: tuple[ok: bool, f: GeistFile, err: string]
-    parts: tuple[dir, name: string]
+    now: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
+    parts: tuple[dir, name: string] = ("", "")
     changed: seq[int] = @[]
   parts = storeParts(c.path)
   # A writable daemon IS the writer: its own saves move the file, and
@@ -365,18 +371,26 @@ proc runGeistd*(argv: seq[string]): int {.role: metaOrchestrator,
     tag: "entrypoint|lifecycle|orchestrator|server".} =
   ## argv: command line without the executable name.
   var
-    c: DaemonConfig
-    S: DaemonState
-    parts: tuple[dir, name: string]
-    address: tuple[ok: bool, a: GeistDacAddress]
-    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
-    trusted: tuple[ok: bool, peers: seq[TrustedPeer], err: string]
-    written: tuple[ok: bool, err: string]
-    server: tuple[ok: bool, server: GeistServer, err: string]
-    step: tuple[ok: bool, served: bool, err: string]
-    seen: tuple[ok: bool, f: GeistFile, err: string]
+    c: DaemonConfig = default(DaemonConfig)
+    S: DaemonState = default(DaemonState)
+    parts: tuple[dir, name: string] = ("", "")
+    address: tuple[ok: bool, a: GeistDacAddress] =
+      (false, default(GeistDacAddress))
+    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+    trusted: tuple[ok: bool, peers: seq[TrustedPeer], err: string] =
+      (false, @[], "")
+    written: tuple[ok: bool, err: string] = (false, "")
+    server: tuple[ok: bool, server: GeistServer, err: string] =
+      (false, default(GeistServer), "")
+    step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
+    seen: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
   try:
     c = resolveConfig(argv)
+    if c.help:
+      echo usageText
+      return 0
     installSignalHandlers()
     # configs/default.toml carries the library defaults every preset is adjusted by.
     written = initGeistNetworkDefaults()

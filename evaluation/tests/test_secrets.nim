@@ -17,8 +17,9 @@
 import std/[strutils, unittest]
 
 import geist
+import runePragmas
 
-proc cheap(): PasswordParams =
+proc cheap(): PasswordParams {.role: configurator, stage: stDone.} =
   ## The real parameters, divided by enough to keep the suite quick. The
   ## properties under test do not depend on the cost -- only on it being
   ## recorded and honoured.

@@ -40,8 +40,9 @@ proc fill(db: var Session, n: int) =
 suite "a rebuilt row is the row that was stored":
 
   test "every row of a varying schema comes back byte for byte":
-    let root = freshRoot("exact")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("exact")
+      db = openGeist[Note](root, appConfig())
     db.fill(200)
     discard db.save()
     check writeTransposed(transposedPath(root, "main", db.generation),
@@ -56,8 +57,9 @@ suite "a rebuilt row is the row that was stored":
     db.close()
 
   test "a dense schema addresses its columns arithmetically":
-    let root = freshRoot("dense")
-    var db = openGeist[Reading](root, iotConfig(), "sensor password")
+    var
+      root = freshRoot("dense")
+      db = openGeist[Reading](root, iotConfig(), "sensor password")
     for i in 1 .. 100:
       db.put(Reading(deviceId: 1, metric: i mod 4, capturedAt: 1700 + i,
         value: i * 3))
@@ -77,8 +79,9 @@ suite "a rebuilt row is the row that was stored":
     db.close()
 
   test "a collapsing schema keeps its omitted columns omitted":
-    let root = freshRoot("collapse")
-    var c = appConfig()
+    var
+      root = freshRoot("collapse")
+      c = appConfig()
     c.autoCollapse = true
     var db = openGeist[Note](root, c)
     # Half the rows leave `body` and `tag` empty, so the null bitmap is
@@ -103,15 +106,16 @@ suite "a rebuilt row is the row that was stored":
     db.close()
 
   test "a rebuilt row still decodes as the object it was":
-    let root = freshRoot("object")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("object")
+      db = openGeist[Note](root, appConfig())
     db.fill(20)
     discard db.save()
     check writeTransposed(transposedPath(root, "main", db.generation),
       db.entries, db.generation).ok
     var t = openTransposed(transposedPath(root, "main", db.generation))
     check t.ok
-    let back = fromRowBytes[Note](t.t.transposedRow(6'u32).data, t.t.schema)
+    var back = fromRowBytes[Note](t.t.transposedRow(6'u32).data, t.t.schema)
     check back.noteId == 7
     check back.title == "title7"
     check back.tag == "seven"
@@ -120,15 +124,16 @@ suite "a rebuilt row is the row that was stored":
 suite "a search reads one column":
 
   test "the answer matches the row scan, and costs less":
-    let root = freshRoot("find")
-    var c = appConfig()
+    var
+      root = freshRoot("find")
+      c = appConfig()
     c.transpose = tmOnSave
     var db = openGeist[Note](root, c)
     db.fill(500)
     discard db.save()
     var view = db.transposedView()
     check view.ok
-    let hit = view.t.transposedFind("title", "title42")
+    var hit = view.t.transposedFind("title", "title42")
     check hit.ok
     check hit.rows == @[41'u32]
     # What the row scan would have said.
@@ -143,22 +148,24 @@ suite "a search reads one column":
     db.close()
 
   test "a column with many matches finds all of them":
-    let root = freshRoot("many")
-    var c = appConfig()
+    var
+      root = freshRoot("many")
+      c = appConfig()
     c.transpose = tmOnSave
     var db = openGeist[Note](root, c)
     db.fill(700)
     discard db.save()
     var view = db.transposedView()
     check view.ok
-    let hit = view.t.transposedFind("tag", "seven")
+    var hit = view.t.transposedFind("tag", "seven")
     check hit.ok
     check hit.rows.len == 100          # every seventh of 700
     db.close()
 
   test "a limit stops the scan early":
-    let root = freshRoot("limit")
-    var c = appConfig()
+    var
+      root = freshRoot("limit")
+      c = appConfig()
     c.transpose = tmOnSave
     var db = openGeist[Note](root, c)
     db.fill(200)
@@ -169,15 +176,16 @@ suite "a search reads one column":
     db.close()
 
   test "an unknown column is an error, not an empty answer":
-    let root = freshRoot("nocol")
-    var c = appConfig()
+    var
+      root = freshRoot("nocol")
+      c = appConfig()
     c.transpose = tmOnSave
     var db = openGeist[Note](root, c)
     db.fill(5)
     discard db.save()
     var view = db.transposedView()
     check view.ok
-    let hit = view.t.transposedFind("nosuchfield", "x")
+    var hit = view.t.transposedFind("nosuchfield", "x")
     check not hit.ok
     check "no column 'nosuchfield'" in hit.err
     db.close()
@@ -186,13 +194,14 @@ suite "a search reads one column":
     # The property a caller MUST know about: a hit is a log position, and
     # deciding whether it is visible is the session's job. This is the
     # test that would fail if the CLI stopped asking.
-    let root = freshRoot("log")
-    var c = appConfig()
+    var
+      root = freshRoot("log")
+      c = appConfig()
     c.transpose = tmOnSave
     var db = openGeist[Note](root, c)
     db.fill(5)
     discard db.save()
-    let id = db.entries.schema.rowIdOf(db.visibleRow(2'u32).data)
+    var id = db.entries.schema.rowIdOf(db.visibleRow(2'u32).data)
     discard db.set(id, Note(noteId: 3, title: "changed", body: "b", tag: "x"))
     discard db.save()
     var view = db.transposedView()
@@ -200,18 +209,19 @@ suite "a search reads one column":
     # The old value is still in the column copy...
     check view.t.transposedFind("title", "title3").rows.len == 1
     # ...but it is not a visible row any more.
-    let stale = view.t.transposedFind("title", "title3").rows[0]
+    var stale = view.t.transposedFind("title", "title3").rows[0]
     check db.visibleIndexOf(stale) < 0
     # And the new one is.
-    let fresh = view.t.transposedFind("title", "changed").rows[0]
+    var fresh = view.t.transposedFind("title", "changed").rows[0]
     check db.visibleIndexOf(fresh) >= 0
     db.close()
 
 suite "which copy is newer":
 
   test "absent, then current, then stale":
-    let root = freshRoot("state")
-    var c = appConfig()
+    var
+      root = freshRoot("state")
+      c = appConfig()
     c.transpose = tmManual
     var db = openGeist[Note](root, c)
     db.fill(10)
@@ -228,8 +238,9 @@ suite "which copy is newer":
     db.close()
 
   test "a stale copy is refused rather than searched":
-    let root = freshRoot("refuse")
-    var c = appConfig()
+    var
+      root = freshRoot("refuse")
+      c = appConfig()
     c.transpose = tmManual
     var db = openGeist[Note](root, c)
     db.fill(10)
@@ -237,28 +248,30 @@ suite "which copy is newer":
     check db.syncTransposed().ok
     db.put(Note(noteId: 11, title: "later", body: "b", tag: "x"))
     discard db.save()
-    let view = db.transposedView()
+    var view = db.transposedView()
     check not view.ok
     check "STALE" in view.err
     db.close()
 
   test "an unsaved session will not build a copy":
-    let root = freshRoot("dirty")
-    var c = appConfig()
+    var
+      root = freshRoot("dirty")
+      c = appConfig()
     c.transpose = tmManual
     var db = openGeist[Note](root, c)
     db.fill(3)
-    let built = db.syncTransposed()
+    var built = db.syncTransposed()
     check not built.ok
     check "unsaved rows" in built.err
     db.close()
 
   test "tmNone says so instead of building one":
-    let root = freshRoot("none")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("none")
+      db = openGeist[Note](root, appConfig())
     db.fill(3)
     discard db.save()
-    let built = db.syncTransposed()
+    var built = db.syncTransposed()
     check not built.ok
     check "tmNone" in built.err
     check db.transposeState().state == tsAbsent
@@ -267,8 +280,9 @@ suite "which copy is newer":
 suite "when the copy is written":
 
   test "tmOnSave keeps it current and retires the old ones":
-    let root = freshRoot("onsave")
-    var c = appConfig()
+    var
+      root = freshRoot("onsave")
+      c = appConfig()
     c.transpose = tmOnSave
     var db = openGeist[Note](root, c)
     db.fill(5)
@@ -286,8 +300,9 @@ suite "when the copy is written":
     db.close()
 
   test "tmInterval waits for its window":
-    let root = freshRoot("interval")
-    var c = appConfig()
+    var
+      root = freshRoot("interval")
+      c = appConfig()
     c.transpose = tmInterval
     c.transposeEverySeconds = 3600'u32
     var db = openGeist[Note](root, c)
@@ -306,7 +321,7 @@ suite "configuration refuses what it cannot do":
   test "a sealed store may not keep a plaintext column copy":
     var c = secureAppConfig()
     c.transpose = tmOnSave
-    let checked = validateGeistConfig(c)
+    var checked = validateGeistConfig(c)
     check not checked.ok
     check "plaintext column copy" in checked.err
     check "encryption at rest" in checked.err
@@ -315,28 +330,28 @@ suite "configuration refuses what it cannot do":
     var c = appConfig()
     c.transpose = tmInterval
     c.transposeEverySeconds = 0'u32
-    let checked = validateGeistConfig(c)
+    var checked = validateGeistConfig(c)
     check not checked.ok
     check "transposeEverySeconds" in checked.err
 
   test "config.toml names the mode, and a typo is refused":
-    let dir = freshRoot("settings")
+    var dir = freshRoot("settings")
     createDir(dir)
     writeFile(dir / "config.toml", "[runtime.storage]\ntranspose = \"onSave\"\n")
-    let good = loadGeistDefaults(dir / "config.toml")
+    var good = loadGeistDefaults(dir / "config.toml")
     check good.ok
     check good.defaults.transpose == "onSave"
     check applyDefaults(appConfig(), good.defaults).transpose == tmOnSave
     writeFile(dir / "config.toml", "[runtime.storage]\ntranspose = \"onsave\"\n")
-    let bad = loadGeistDefaults(dir / "config.toml")
+    var bad = loadGeistDefaults(dir / "config.toml")
     check not bad.ok
     check "must be none, onSave, interval or manual" in bad.err
 
   test "a file that says nothing leaves the preset alone":
-    let dir = freshRoot("silent")
+    var dir = freshRoot("silent")
     createDir(dir)
     writeFile(dir / "config.toml", "[runtime.storage]\npreset = \"app\"\n")
-    let loaded = loadGeistDefaults(dir / "config.toml")
+    var loaded = loadGeistDefaults(dir / "config.toml")
     check loaded.ok
     var c = appConfig()
     c.transpose = tmManual
@@ -345,23 +360,24 @@ suite "configuration refuses what it cannot do":
 suite "a damaged copy is refused":
 
   test "a truncated file does not decode into nonsense":
-    let root = freshRoot("truncated")
-    var db = openGeist[Note](root, appConfig())
+    var
+      root = freshRoot("truncated")
+      db = openGeist[Note](root, appConfig())
     db.fill(50)
     discard db.save()
-    let path = transposedPath(root, "main", db.generation)
+    var path = transposedPath(root, "main", db.generation)
     check writeTransposed(path, db.entries, db.generation).ok
-    let whole = readFile(path)
+    var whole = readFile(path)
     writeFile(path, whole[0 ..< whole.len div 2])
-    let opened = openTransposed(path)
+    var opened = openTransposed(path)
     check not opened.ok
     check "past its own end" in opened.err or "truncated" in opened.err
     db.close()
 
   test "a file that is not a column copy is named as such":
-    let root = freshRoot("notours")
+    var root = freshRoot("notours")
     createDir(root)
     writeFile(root / "main.getr.g1", "this is not a transposed file at all")
-    let opened = openTransposed(root / "main.getr.g1")
+    var opened = openTransposed(root / "main.getr.g1")
     check not opened.ok
     check "not a transposed file" in opened.err

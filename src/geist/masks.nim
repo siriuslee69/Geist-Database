@@ -190,7 +190,7 @@ proc supportedTierPath*(p: TriggerPolicy): bfx.AmeTierPath {.
   ## or below the start tier are retired, so a peer cannot negotiate the
   ## session down to a weaker suite than the operator configured.
   var
-    L: bfx.AmeSuiteLayout
+    L: bfx.AmeSuiteLayout = default(bfx.AmeSuiteLayout)
     tiers: seq[bfx.AmeMaskTier] = @[]
     t: GeistTier = p.startTier
   L = geistLayout()

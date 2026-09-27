@@ -257,6 +257,8 @@ type
     maxRequests*: int
     oneshot*: bool
     quiet*: bool
+    help*: bool
+      ## --help was asked for: print the usage and stop.
 
 proc parseArgs*(argv: openArray[string]): RouterArgs {.role: parser,
     tag: "entrypoint|parsing|server".} =
@@ -296,9 +298,7 @@ proc parseArgs*(argv: openArray[string]): RouterArgs {.role: parser,
     of "max-requests": result.maxRequests = parseInt(value)
     of "oneshot": result.oneshot = true
     of "quiet": result.quiet = true
-    of "help":
-      echo usageText
-      quit(0)
+    of "help": result.help = true
     else:
       raise newException(ValueError, "unknown option --" & key)
     i = i + 1
@@ -314,7 +314,8 @@ proc routerConfigCandidates*(named: string,
   ## started by hand must read the same file, or the second will appear to
   ## have no routes.
   var
-    h: tuple[ok: bool, home: GeistHome, err: string]
+    h: tuple[ok: bool, home: GeistHome, err: string] =
+      (false, default(GeistHome), "")
   if named.len > 0:
     return @[named]
   result = @[routerConfigName]
@@ -362,7 +363,8 @@ proc collectTrust(c: RouterConfig): tuple[ok: bool, peers: seq[TrustedPeer],
   ## peers they believe are allowed.
   var
     i: int = 0
-    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string]
+    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
   while i < c.trust.len:
     loaded = loadPin(c.trust[i])
     if not loaded.ok:
@@ -397,10 +399,11 @@ proc routeQuery*(S: var RouterState, q: Query, p: PeerContext): Reply {.
   ## like a database with nothing in it, and the difference between "your
   ## address is wrong" and "there is nothing there" is an afternoon.
   var
-    parsed: tuple[ok: bool, a: GeistAddress, err: string]
-    stepped: tuple[ok: bool, err: string]
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      (false, default(GeistAddress), "")
+    stepped: tuple[ok: bool, err: string] = (false, "")
     forward: Query = q
-    answer: AskResult
+    answer: AskResult = default(AskResult)
   parsed = parseAddress(q.collection)
   if not parsed.ok:
     S.refused = S.refused + 1
@@ -451,7 +454,8 @@ proc loadRouterConfig*(named: string, home: string = ""): tuple[ok: bool,
   ## refuse every request while looking healthy.
   var
     path: string = ""
-    loaded: tuple[value: RouterConfig, node: JsonNode, report: DocReport]
+    loaded: tuple[value: RouterConfig, node: JsonNode, report: DocReport] =
+      (default(RouterConfig), default(JsonNode), default(DocReport))
     i: int = 0
     candidates: seq[string] = routerConfigCandidates(named, home)
   while i < candidates.len:
@@ -472,21 +476,30 @@ proc runRouted*(argv: seq[string]): int {.role: metaOrchestrator,
     tag: "entrypoint|lifecycle|networkSurface|orchestrator|server".} =
   ## argv: command line without the executable name.
   var
-    a: RouterArgs
-    c: RouterConfig
-    S: RouterState
-    loaded: tuple[ok: bool, c: RouterConfig, err: string]
-    address: tuple[ok: bool, a: GeistDacAddress]
-    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string]
-    trusted: tuple[ok: bool, peers: seq[TrustedPeer], err: string]
-    written: tuple[ok: bool, err: string]
-    client: tuple[ok: bool, client: GeistClient, err: string]
-    server: tuple[ok: bool, server: GeistServer, err: string]
-    step: tuple[ok: bool, served: bool, err: string]
-    checked: tuple[ok: bool, err: string]
+    a: RouterArgs = default(RouterArgs)
+    c: RouterConfig = default(RouterConfig)
+    S: RouterState = default(RouterState)
+    loaded: tuple[ok: bool, c: RouterConfig, err: string] =
+      (false, default(RouterConfig), "")
+    address: tuple[ok: bool, a: GeistDacAddress] =
+      (false, default(GeistDacAddress))
+    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+    trusted: tuple[ok: bool, peers: seq[TrustedPeer], err: string] =
+      (false, @[], "")
+    written: tuple[ok: bool, err: string] = (false, "")
+    client: tuple[ok: bool, client: GeistClient, err: string] =
+      (false, default(GeistClient), "")
+    server: tuple[ok: bool, server: GeistServer, err: string] =
+      (false, default(GeistServer), "")
+    step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
+    checked: tuple[ok: bool, err: string] = (false, "")
     served: int = 0
   try:
     a = parseArgs(argv)
+    if a.help:
+      echo usageText
+      return 0
     installSignalHandlers()
     if a.writeConfig.len > 0:
       written = writeDoc(a.writeConfig, exampleRouterConfig(), routerNotes())

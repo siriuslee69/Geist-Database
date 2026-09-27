@@ -126,8 +126,8 @@ proc cascadeKeystreamParallel(k: StreamKeys, chachaStart, aesStart: uint64,
       a: ByteSeq = newSeq[uint8](n)
       b: ByteSeq = newSeq[uint8](n)
       keys: StreamKeys = k
-      tA: Thread[KsJob]
-      tB: Thread[KsJob]
+      tA: Thread[KsJob] = default(Thread[KsJob])
+      tB: Thread[KsJob] = default(Thread[KsJob])
       i: int = 0
     createThread(tA, chachaWorker, KsJob(keys: addr keys,
       startBlock: chachaStart, n: n,

@@ -77,9 +77,10 @@ suite "an object becomes a file a person can edit":
     s.noteOn("net.port", "the DAC port; 0 picks one")
     var p = scratch("notes.toml")
     check writeDoc(p, defaults(), s).ok
-    var L = readFile(p).splitLines()
-    var i = 0
-    var seen = false
+    var
+      L = readFile(p).splitLines()
+      i = 0
+      seen = false
     while i < L.len - 1:
       if L[i].strip() == "# the DAC port; 0 picks one":
         check L[i + 1].strip().startsWith("port =")
@@ -224,8 +225,9 @@ suite "nothing raises":
     check r.value.name == "me"
 
   test "ensureDoc leaves a broken file exactly as it found it":
-    var p = scratch("broken2.toml")
-    var before = "name = \nthis is not toml [[[\n"
+    var
+      p = scratch("broken2.toml")
+      before = "name = \nthis is not toml [[[\n"
     writeFile(p, before)
     var r = ensureDoc(p, defaults())
     check not r.written

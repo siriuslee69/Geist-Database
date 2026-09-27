@@ -227,7 +227,7 @@ proc oneLine(body: openArray[uint8]): string {.role: sanitizer,
   ## a newline would otherwise become two records, and the second would
   ## look like it came from nobody.
   var
-    c: char
+    c: char = '\0'
   for b in body:
     c = char(b)
     case c
@@ -309,7 +309,7 @@ proc queue(D: var RelayDesk, m: RelayMessage) {.role: actor,
   ## that dropped silently would let a reader believe it had seen
   ## everything.
   var
-    s: RelayStream
+    s: RelayStream = default(RelayStream)
   if D.held.hasKey(m.stream):
     s = D.held[m.stream]
   s.accepted = m.ordinal
@@ -324,7 +324,7 @@ proc nextOrdinal(D: var RelayDesk, stream: string): uint64 {.
     role: actor, tag: "stream|write".} =
   ## D/stream: the ordinal the next message on this stream will carry.
   var
-    s: RelayStream
+    s: RelayStream = default(RelayStream)
   if D.held.hasKey(stream):
     s = D.held[stream]
   result = s.accepted + 1'u64
@@ -348,7 +348,7 @@ proc drain(D: var RelayDesk, consumer, stream: string,
   ## underneath a slow reader, and a position that meant "the third one
   ## still held" would silently re-deliver.
   var
-    s: RelayStream
+    s: RelayStream = default(RelayStream)
     used: int = 0
     seen: uint64 = 0'u64
   if D.held.hasKey(stream):
@@ -553,11 +553,12 @@ proc answerRelay*(D: var RelayDesk, q: Query, p: PeerContext): Reply {.
   ## thought it was querying a store would be a lie that costs an
   ## afternoon.
   var
-    m: RelayMessage
+    m: RelayMessage = default(RelayMessage)
     stream: string = parseAddress(q.collection).a.forLeaf()
     limit: int = 0
-    sent: tuple[ok: bool, output: ByteSeq, err: string]
-    drained: tuple[msgs: seq[RelayMessage], cursor: uint64]
+    sent: tuple[ok: bool, output: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
+    drained: tuple[msgs: seq[RelayMessage], cursor: uint64] = (@[], 0'u64)
   D.reap()
   limit = if q.limit == 0'u32: 64 else: int(q.limit)
   if stream.len == 0:

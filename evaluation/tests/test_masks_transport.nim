@@ -22,7 +22,7 @@ suite "masks":
     var
       prev = 0
       bits = 0
-      m: bfx.AmeTierMasks
+      m: bfx.AmeTierMasks = default(bfx.AmeTierMasks)
     for t in GeistTier:
       m = tierMasks(t)
       bits = countSetBits(m.kem)

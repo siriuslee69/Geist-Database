@@ -104,7 +104,7 @@ type
     ## One lease this process holds: where it is, and under whose pid.
 
 var
-  leaseRegistryLock: Lock
+  leaseRegistryLock: Lock = default(Lock)
   leaseRegistry {.guard: leaseRegistryLock.}: seq[LeaseClaim] = @[]
 
 initLock(leaseRegistryLock)
@@ -232,8 +232,8 @@ proc acquireLease*(dir: string): tuple[ok: bool, lease: Lease,
   ## because "someone else has it" is a normal answer a caller may want to
   ## handle by opening read-only instead.
   var
-    existing: tuple[ok: bool, info: LeaseInfo]
-    written: tuple[ok: bool, err: string]
+    existing: tuple[ok: bool, info: LeaseInfo] = (false, default(LeaseInfo))
+    written: tuple[ok: bool, err: string] = (false, "")
     root: string = ""
   if not dirExists(dir):
     createDir(dir)

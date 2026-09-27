@@ -63,7 +63,8 @@ proc parseSchemaSpec*(typeName, spec: string): tuple[ok: bool, s: Schema,
   var
     parts: seq[string] = @[]
     bits: seq[string] = @[]
-    kind: tuple[ok: bool, kind: SlotKind, err: string]
+    kind: tuple[ok: bool, kind: SlotKind, err: string] =
+      (false, default(SlotKind), "")
     i: int = 0
     name: string = ""
   result.s.typeName = if typeName.len > 0: typeName else: "Record"
@@ -182,7 +183,7 @@ proc buildRow*(s: Schema, values: Table[string, string],
   ##   is replacing. Zero on an identified schema is refused by `putRow`
   ##   rather than stored, because an unnamed row could never be edited.
   var
-    W: RowWriter
+    W: RowWriter = default(RowWriter)
     i: int = 0
     name: string = ""
     text: string = ""

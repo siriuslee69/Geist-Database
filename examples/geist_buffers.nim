@@ -65,7 +65,7 @@ type
 
 
 var
-  box: Mailbox
+  box: Mailbox = default(Mailbox)
 
 proc answer(q: Query, p: PeerContext): Reply {.gcsafe.} =
   ## q: what the peer asked for.
@@ -134,8 +134,8 @@ proc receiverThread(a: ptr ServeArgs) {.thread.} =
 
 when isMainModule:
   var
-    args: ServeArgs
-    t: Thread[ptr ServeArgs]
+    args: ServeArgs = default(ServeArgs)
+    t: Thread[ptr ServeArgs] = default(Thread[ptr ServeArgs])
     spins: int = 0
     senderKey: AmeIdentityKey = default(AmeIdentityKey)
     receiverKey: AmeIdentityKey = default(AmeIdentityKey)

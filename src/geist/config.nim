@@ -274,7 +274,7 @@ proc validateGeistConfig*(c: GeistConfig): tuple[ok: bool, err: string] {.
     role: sanitizer, tag: "appApi|config|db|read".} =
   ## c: configuration checked at the public API boundary.
   var
-    n: GeistConfig
+    n: GeistConfig = default(GeistConfig)
   n = normalizeGeistConfig(c)
   if n.batchRows == 1'u32 and n.cipher != ckNone:
     return (false, "batchRows = 1 is field-level encryption: it costs about " &
@@ -786,7 +786,7 @@ proc columnGroupsFor*(c: GeistConfig, s: Schema): seq[ColumnGroup] {.
   var
     i: int = 0
     j: int = 0
-    g: ColumnGroup
+    g: ColumnGroup = default(ColumnGroup)
     idx: int = 0
   if c.cipher != ckNone and c.columnGroups.len == 0:
     g = ColumnGroup(groupId: 0'u16, slots: @[])

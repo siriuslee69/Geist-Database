@@ -68,7 +68,7 @@ proc bitGet(A: openArray[uint8], base, slot: int): bool {.role: parser,
   ## A/base/slot: buffer, bitmap start and column index.
   result = (A[base + (slot shr 3)] and (1'u8 shl uint8(slot and 7))) != 0'u8
 
-proc nullBase*(s: Schema): int {.role: helper, inline,
+proc nullBase*(s: Schema): int {.role: helper, stage: stDone, inline,
     tag: "codecBoundary|db|read".} =
   ## s: schema whose null bitmap starts at byte zero when present.
   result = 0
@@ -117,6 +117,10 @@ type
     truncatedIn*: seq[FieldName]
     store*: SidecarStore
     err*: string
+      ## otter:latest -- the FIRST problem with this row. Every write call
+      ## may set it; callers check it once per column, after whichever
+      ## write that column needed, so two writes in a row is one column
+      ## in two case branches, not a lost value.
 
 proc initRowWriter*(s: Schema,
     store: SidecarStore = SidecarStore()): RowWriter {.role: configurator,
@@ -144,10 +148,10 @@ proc writeColumn*(W: var RowWriter, A: openArray[uint8]) {.role: dataWriter,
   ## Every storage decision for the column happens here, once, so the
   ## object mappers above never branch on policy.
   var
-    sl: Slot
+    sl: Slot = default(Slot)
     n: int = 0
     payload: ByteSeq = @[]
-    r: Ref
+    r: Ref = default(Ref)
     encoded: ByteSeq = @[]
     i: int = 0
     allEmpty: bool = false
@@ -223,7 +227,7 @@ proc writeU64*(W: var RowWriter, v: uint64) {.role: dataWriter,
   ## W/v: writer and one integer-shaped value, encoded little-endian to
   ## the column's declared width.
   var
-    sl: Slot
+    sl: Slot = default(Slot)
     buf: ByteSeq = @[]
     i: int = 0
     w: int = 0
@@ -364,7 +368,8 @@ proc resolve*(s: Schema, A: openArray[uint8], offsets: seq[int], slot: int,
   ## when the capped bit is set. Raises when a payload is missing or fails
   ## verification, because returning short data would corrupt the caller.
   var
-    fetched: tuple[ok: bool, data: ByteSeq, err: string]
+    fetched: tuple[ok: bool, data: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
   result = s.rawAt(A, offsets, slot)
   if not s.isExternal(A, slot):
     return
@@ -560,7 +565,7 @@ proc toRowBytes*[T: object](x: T, s: Schema,
   ## row keeps no evidence either way. Callers accumulate these; see
   ## `ClusterBuild.truncated` and `Session.storageStats`.
   var
-    W: RowWriter
+    W: RowWriter = default(RowWriter)
   W = initRowWriter(s, store)
   if s.reservedColumns() == 2:
     W.writeU64(id)
@@ -582,7 +587,7 @@ proc fromRowBytes*[T: object](A: openArray[uint8], s: Schema,
   ## The cursor starts past the reserved columns, so T sees exactly the
   ## fields it declared and identity stays invisible to the object model.
   var
-    R: RowReader
+    R: RowReader = default(RowReader)
     i: int = 0
   R = initRowReader(s, A, store)
   i = s.reservedColumns()
