@@ -66,6 +66,23 @@ Start the daemon on one machine and read it from another:
 
 [1.11 Configuring](#111-configuring) has every key.
 
+### 🧭 What another program uses it for
+
+```text
+  job                        call                                    example
+  -------------------------  --------------------------------------  -----------------
+  write rows to disk         openGeist, put, set, delete, save       geist_quickstart
+  read them back             byId, find, list; observeStore          geist_observe
+  sync with another store    needLocal/offerLocal, needRemote/...    geist_sync
+  a background sync node     serveStore + tick, or geistd            geist_sync
+  convert JSON <-> TOML      convertDoc, convertFile, toDocText      geist_convert
+  encrypt one object         sealObject / openObject                 geist_seal
+```
+
+Every example runs with `nim c -r examples/<name>.nim`.
+[docs/roles.md](docs/roles.md) maps these onto mail, game, cloud,
+password-manager and media servers, including where each one stops.
+
 ---
 
 Stores your Nim objects on disk as packed rows. Can seal them. Can let
@@ -1380,6 +1397,48 @@ programs.geist-client = { enable = true; settings.database.path = "..."; };
 
 See [docs/nix.md](docs/nix.md).
 
+## 1.12 Converting JSON and TOML
+
+```nim
+var toml = convertDoc(jsonText, dfJson, dfToml)      # text -> text
+discard convertFile("settings.json", "settings.toml")   # by extension
+echo toDocText(mySettings, dfToml)                   # object -> text
+var back = fromDocText(text, dfJson, defaults())     # text -> object
+```
+
+```text
+geist convert settings.json settings.toml
+```
+
+Nothing is dropped quietly. TOML has no `null`, no document that is a
+list, and no list that mixes tables with plain values; a conversion that
+meets one refuses and names the place (`server.host is null, and TOML has
+no null`) rather than writing a file that is missing it. A failed
+`convertFile` writes nothing.
+
+## 1.13 Sealing one object
+
+For an object that is not going into a Geist store -- one password entry
+kept by another program, a game save, a record inside a message:
+
+```nim
+var key = newSealKey()                       # keep it in the OS keystore
+var blob = sealObject(entry, key, aad = "vault/alice")
+# ... write blob.data wherever you like ...
+var back = openObject[Entry](blob.data, key, aad = "vault/alice")
+```
+
+```text
+  | "GSK1" | 24 | nonce (24) | t | tag (t) | sealed JSON of the object |
+```
+
+The object travels as JSON inside the seal, so lists and tables are
+fine and a field added later keeps its default when an older blob is
+opened. `aad` is context the blob is bound to: sealed for `vault/alice`,
+it will not open as `vault/bob`. A wrong key, a changed byte and a wrong
+context are one answer, never garbage. `sealObjectWithPassword` does the
+key step per call (Argon2) -- right for one object, wrong for thousands.
+
 ---
 
 # Part 2 — The link
@@ -1802,6 +1861,36 @@ On the server side, one socket carries every peer:
 The local-only ones stay local on purpose: they touch key material and
 file layout, and sending that to a daemon would widen the trust boundary
 for nothing.
+
+## 2.8 A daemon that keeps peers in step by itself
+
+`geistd` has two parts, each switched on by its own options:
+
+```text
+  part      options                        who dials whom
+  --------  -----------------------------  ------------------------------
+  server    --trust, --allow-write         peers dial this daemon
+  client    --pull, --push, --sync         this daemon dials peers, every
+            --sync-every <seconds>         --sync-every seconds
+```
+
+A peer to visit is `<pin file>@dac://host:port`; its name is the pin
+file's name, and how far each direction got is filed under that name:
+
+```text
+geistd --path data/notes --identity keys/node.id \
+       --allow-write peers/laptop.pin \
+       --sync peers/vps.pin@dac://vps.example:47655 --sync-every 30
+```
+
+With only client options it binds no socket and just visits. A daemon
+that pulls holds the write lease, since rows land in its store; one that
+only pushes stays a read-only follower. The same keys live under
+`[daemon]` in `userconfig.toml` (`pull`, `push`, `sync`,
+`syncEverySeconds`).
+
+From code, the same two parts are `serveStore` and `tick`
+(`src/geist/agent.nim`, `examples/geist_sync.nim`).
 
 ---
 

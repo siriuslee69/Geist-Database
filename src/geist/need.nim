@@ -48,6 +48,7 @@ import ./address
 import ./link
 import ./session
 import ./transport
+import ./answer
 
 const
   needCursorFile* = ".geist-cursors"
@@ -328,3 +329,27 @@ proc needVia*(S: var Session, client: var GeistClient, address: string,
       got = dialled[].ask(Query(op: qoSync, collection: address,
         cursor: cursor, limit: lim))
       result = (got.ok, got.reply, got.err))
+
+proc needLocal*(S: var Session, source: var Session, name: string,
+    limit: uint32 = 256'u32,
+    maxRounds: int = needRoundLimit): NeedOutcome {.role: orchestrator,
+    tag: "appApi|db|orchestrator|sync|write".} =
+  ## S: the database the rows land in, open for writing.
+  ## source: another store open in THIS process.
+  ## name: what the position is filed under; one name per source.
+  ## limit/maxRounds: as for `needLoop`.
+  ##
+  ## Same process, no socket. Each round asks `source` the same `qoSync`
+  ## a daemon would be asked, through the same `answerQuery`, so rows,
+  ## identities, cursors and epochs behave exactly as over the network.
+  var
+    src: ptr Session = addr source
+    cursors: SyncCursors = initSyncCursors()
+    kept: ptr SyncCursors = addr cursors
+  result = needLoop(S, name, limit, maxRounds,
+    proc (cursor: uint64, lim: uint32): tuple[ok: bool, reply: Reply,
+        err: string] =
+      var
+        r: Reply = answerQuery(src[], kept[], Query(op: qoSync,
+          cursor: cursor, limit: lim), localPeer())
+      result = (r.ok, r, r.err))

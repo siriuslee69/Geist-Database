@@ -83,13 +83,14 @@ import ./geist/settings
 import ./geist/collection
 import ./geist/seek
 import ./geist/crypto/hashing
+import ./geist/seal
 
 export types, secret, config, backup, session
 export toml_read, settings
 export doc, reconcile, address, route, keystore, layout
 ## The one crypto surface an application needs, so nothing outside Geist
 ## has to import Tyr to hash a password or unlock a store.
-export secrets, users
+export secrets, users, seal
 export mapper
 export rowid
 export durable

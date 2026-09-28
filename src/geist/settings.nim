@@ -73,6 +73,12 @@ type
     identityPasswordFile*: string
     trust*: seq[string]
     allowWrite*: seq[string]
+    pull*: seq[string]
+    push*: seq[string]
+    sync*: seq[string]
+      ## pull/push/sync: peers the daemon visits ITSELF, each written
+      ##   `<pin file>@dac://host:port` (see `parseSyncSpec` in agent.nim).
+    syncEverySeconds*: int
     remote*: string
     peerPin*: string
     limit*: int
@@ -255,6 +261,8 @@ proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
   ##   identity = "keys/geistd.id"
   ##   trust = ["peers/laptop.pin"]
   ##   allowWrite = ["peers/desktop.pin"]
+  ##   sync = ["peers/vps.pin@dac://vps.example:47655"]
+  ##   syncEverySeconds = 30
   ##
   ##   [client]
   ##   remote = "dac://desktop.local:47655"
@@ -277,8 +285,8 @@ proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
   if complaint.len > 0:
     return (false, UserConfig(), complaint)
   complaint = checkKeys(daemon,
-    ["listen", "identity", "identityPasswordFile", "trust", "allowWrite"],
-    "[daemon]")
+    ["listen", "identity", "identityPasswordFile", "trust", "allowWrite",
+     "pull", "push", "sync", "syncEverySeconds"], "[daemon]")
   if complaint.len > 0:
     return (false, UserConfig(), complaint)
   complaint = checkKeys(client, ["remote", "peerPin", "limit"], "[client]")
@@ -292,6 +300,10 @@ proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
   result.user.identityPasswordFile = daemon.setting("identityPasswordFile", "")
   result.user.trust = daemon.setting("trust", newSeq[string]())
   result.user.allowWrite = daemon.setting("allowWrite", newSeq[string]())
+  result.user.pull = daemon.setting("pull", newSeq[string]())
+  result.user.push = daemon.setting("push", newSeq[string]())
+  result.user.sync = daemon.setting("sync", newSeq[string]())
+  result.user.syncEverySeconds = daemon.setting("syncEverySeconds", 0)
   result.user.remote = client.setting("remote", "")
   result.user.peerPin = client.setting("peerPin", "")
   result.user.limit = client.setting("limit", 0)

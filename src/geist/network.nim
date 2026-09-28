@@ -37,9 +37,10 @@ import ./answer
 import ./need
 import ./offer
 import ./registry
+import ./agent
 
 export geist, wire
-export answer, need, offer, registry
+export answer, need, offer, registry, agent
 
 proc initGeistNetworkDefaults*(path: string = libraryConfigName): tuple[
     ok: bool, err: string] {.role: configurator,

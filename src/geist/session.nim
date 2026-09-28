@@ -1538,11 +1538,16 @@ proc applyRows*(S: var Session, R: openArray[Row]): tuple[ok: bool,
     i: int = 0
     one: tuple[ok: bool, id: RowId, err: string] = (false, default(RowId), "")
     written: tuple[ok: bool, err: string] = (false, "")
+    before: uint32 = 0'u32
   while i < R.len:
+    before = S.logCount()
     one = S.applyRow(R[i])
     if not one.ok:
       return (false, result.applied, one.err)
-    result.applied = result.applied + 1
+    # Counted only when the log grew: a row this store already held (an
+    # echo of its own push, a retried batch) is skipped and is not news.
+    if S.logCount() > before:
+      result.applied = result.applied + 1
     i = i + 1
   written = S.maybeFlush()
   if not written.ok:

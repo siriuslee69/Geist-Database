@@ -312,3 +312,54 @@ suite "a key that is not a bare word survives the round trip":
     check writeDoc(p, c).ok
     # Quoting everything would be safe and unreadable. Only what has to be.
     check "[friend.alice]" in readFile(p)
+
+suite "converting":
+  # {.testKind: tkProperty, covers: "convertDoc".}
+  test "JSON to TOML and back gives the same document":
+    var
+      text: string = """{"a": 1, "b": {"c": "x", "d": [1, 2]},""" &
+        """ "e": [[1, 2], [3]], "f": [{"g": true}, {"g": false}], "h": 0.5}"""
+      toml: tuple[ok: bool, text: string, err: string] =
+        convertDoc(text, dfJson, dfToml)
+      back: tuple[ok: bool, text: string, err: string] = (false, "", "")
+    check toml.ok
+    back = convertDoc(toml.text, dfToml, dfJson)
+    check back.ok
+    check parseJson(back.text) == parseJson(text)
+
+  # {.testKind: tkEdgeCase, covers: "convertDoc, tomlProblem".}
+  test "what TOML cannot hold is refused, and named":
+    check convertDoc("""{"a": {"b": null}}""", dfJson,
+      dfToml).err.contains("a.b is null")
+    check convertDoc("""[1, 2]""", dfJson, dfToml).err.contains("table")
+    check convertDoc("""{"a": [{"x": 1}, 2]}""", dfJson,
+      dfToml).err.contains("mixes")
+
+  # {.testKind: tkEdgeCase, covers: "convertDoc".}
+  test "text that is not what it claims says so":
+    check not convertDoc("{not json", dfJson, dfToml).ok
+    check convertDoc("{not json", dfJson, dfToml).err.contains("not valid JSON")
+
+  # {.testKind: tkIntegration, covers: "convertFile".}
+  test "a file converts by its extension, and a refusal writes nothing":
+    var
+      dir: string = scratch("geist_t_doc_convert")
+    createDir(dir)
+    writeFile(dir / "in.json", """{"server": {"port": 993}}""")
+    check convertFile(dir / "in.json", dir / "out.toml").ok
+    check readFile(dir / "out.toml").contains("[server]")
+    writeFile(dir / "bad.json", """{"a": null}""")
+    check not convertFile(dir / "bad.json", dir / "bad.toml").ok
+    check not fileExists(dir / "bad.toml")
+
+  # {.testKind: tkUnit, covers: "toDocText, fromDocText".}
+  test "an object as text and back":
+    var
+      c: Cfg = defaults()
+      read: tuple[value: Cfg, report: DocReport] = (defaults(), DocReport())
+    c.net.port = 4242
+    read = fromDocText(toDocText(c, dfJson), dfJson, defaults())
+    check read.report.ok
+    check read.value.net.port == 4242
+    read = fromDocText(toDocText(c, dfToml), dfToml, defaults())
+    check read.value.net.port == 4242

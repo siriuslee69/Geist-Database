@@ -119,6 +119,8 @@ commands
   restore                 restore from --slot
   rekey                   re-key every batch at its epoch high-water mark
   keygen                  create --identity and --pin-out, then exit
+  convert <in> <out>      JSON <-> TOML by file extension; refuses what
+                          the target format cannot hold, naming where
   presets                 list configuration presets
   help                    this text
 
@@ -1098,6 +1100,19 @@ proc remoteQuery(o: Options): Query {.role: truthBuilder,
 
 ## ------------------------------ entry -------------------------------
 
+proc cmdConvert(o: Options) {.role: orchestrator,
+    tag: "cli|config|storageIo".} =
+  ## o: two file arguments; the format of each comes from its extension.
+  ## Needs no database, no password and no peer.
+  var
+    done: tuple[ok: bool, err: string] = (false, "")
+  if o.args.len != 2:
+    fail("convert needs two files: geist convert in.json out.toml")
+  done = convertFile(o.args[0], o.args[1])
+  if not done.ok:
+    fail(done.err)
+  echo "wrote ", o.args[1]
+
 proc dispatchCli(argv: seq[string]): int {.role: metaOrchestrator,
     tag: "cli|entrypoint|orchestrator".} =
   ## argv: command line without the executable name.
@@ -1113,6 +1128,9 @@ proc dispatchCli(argv: seq[string]): int {.role: metaOrchestrator,
   var defaults = initGeistNetworkDefaults()
   if not defaults.ok:
     fail(defaults.err)
+  if o.command == "convert":
+    cmdConvert(o)
+    return 0
   if o.command == "presets":
     cmdPresets()
     return 0

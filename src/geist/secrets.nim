@@ -346,11 +346,106 @@ proc deriveKey*(password: string, salt: openArray[uint8],
     passwordHashBytes))
 
 ## ---------------------------- sealed blobs --------------------------
+##
+## Two ways to seal bytes that are not a Geist store, one layout for both:
+##
+##   | magic 4 | u8 n | n bytes: salt or nonce | u8 t | t bytes: tag | sealed |
+##
+##   magic   who made it         the n bytes         the key is
+##   ------  ------------------  ------------------  ----------------------
+##   GSB1    sealWithPassword    salt (16)           Argon2(password, salt)
+##   GSK1    sealWithKey         nonce (24)          the caller's key
+##
+## Both then do the same two steps: a keystream derived from (key, salt or
+## nonce) turns the bytes unreadable, and a tag over the result, the salt
+## and the caller's `aad` proves nothing was changed. The salt or nonce is
+## fresh per blob, so the same bytes sealed twice never look alike.
 
 const
   sealMagic = "GSB1"
-    ## Four bytes at the front of a sealed blob, so a file that is not one
-    ## is refused by its shape rather than by a failed tag.
+    ## Four bytes at the front of a password-sealed blob, so a file that
+    ## is not one is refused by its shape rather than by a failed tag.
+  keySealMagic = "GSK1"
+    ## The same for a blob sealed with a key.
+  sealKeyBytes* = 32
+    ## The size `newSealKey` makes. `sealWithKey` refuses anything under 16.
+  sealNonceBytes = 24
+
+proc frameBlob(magic: string, salt, tag, sealed: openArray[uint8]): ByteSeq {.
+    role: dataWriter, tag: "cryptoBoundary|write".} =
+  ## magic/salt/tag/sealed: the four parts, laid out as the section note
+  ## draws them.
+  result = @[]
+  for c in magic:
+    result.add uint8(c)
+  result.add uint8(salt.len)
+  result.add salt
+  result.add uint8(tag.len)
+  result.add tag
+  result.add sealed
+
+proc hasMagic(magic: string, blob: openArray[uint8]): bool {.role: parser,
+    inline, tag: "cryptoBoundary|read".} =
+  ## magic/blob: does the blob start with these four letters?
+  var
+    i: int = 0
+  while i < magic.len:
+    if i >= blob.len or blob[i] != uint8(magic[i]):
+      return false
+    i = i + 1
+  result = true
+
+proc splitBlob(magic: string, blob: openArray[uint8]): tuple[ok: bool,
+    salt: ByteSeq, tag: ByteSeq, sealed: ByteSeq, err: string] {.
+    role: sanitizer, tag: "cryptoBoundary|read".} =
+  ## magic/blob: the parts of a blob made by `frameBlob`, or why it is not
+  ## one. Every length is checked before it is used.
+  var
+    o: int = magic.len
+    n: int = 0
+  if blob.len < magic.len + 2:
+    return (false, @[], @[], @[], "not a sealed blob: too short")
+  if not hasMagic(magic, blob):
+    return (false, @[], @[], @[], "not a sealed blob: wrong magic")
+  n = int(blob[o]); o = o + 1
+  if o + n >= blob.len:
+    return (false, @[], @[], @[], "not a sealed blob: truncated salt")
+  result.salt = @(blob[o ..< o + n]); o = o + n
+  n = int(blob[o]); o = o + 1
+  if o + n > blob.len:
+    return (false, @[], @[], @[], "not a sealed blob: truncated tag")
+  result.tag = @(blob[o ..< o + n]); o = o + n
+  result.sealed = @(blob[o ..< blob.len])
+  result.ok = true
+
+proc sealUnder(key: Secret, salt: openArray[uint8], plain: openArray[uint8],
+    aad: openArray[uint8], magic: string): SealedBlob {.role: encryptor,
+    tag: "cryptoBoundary|write".} =
+  ## key/salt: what the keystream and the tag are derived from.
+  ## plain/aad/magic: the bytes, their context, and which kind of blob.
+  var
+    stream: StreamKeys = deriveStreamKeys(key, salt)
+    sealed: ByteSeq = applyKeystream(ckCascade, stream, 0'u64, plain)
+    tag: ByteSeq = authTag(mkCombined, key, sealed, @salt & @aad)
+  result.data = frameBlob(magic, salt, tag, sealed)
+  result.ok = true
+
+proc openUnder(key: Secret, salt, tag, sealed: openArray[uint8],
+    aad: openArray[uint8], refusal: string): SealedBlob {.role: decryptor,
+    tag: "cryptoBoundary|read".} =
+  ## key/salt/tag/sealed/aad: the reverse of `sealUnder`, checked first.
+  ## refusal: what to say when the tag does not match.
+  ##
+  ## A WRONG KEY AND A TAMPERED BLOB ARE THE SAME ANSWER, and that is
+  ## deliberate: telling them apart tells an attacker which of the two they
+  ## achieved.
+  var
+    stream: StreamKeys = default(StreamKeys)
+  if not verifyTag(mkCombined, key, sealed, @salt & @aad, tag):
+    return SealedBlob(err: refusal)
+  stream = deriveStreamKeys(key, salt)
+  result.data = applyKeystream(ckCascade, stream, 0'u64, sealed)
+  result.ok = true
 
 proc sealWithPassword*(password: string, plain: openArray[uint8],
     aad: openArray[uint8] = [], p: PasswordParams = defaultPasswordParams()):
@@ -371,62 +466,58 @@ proc sealWithPassword*(password: string, plain: openArray[uint8],
   var
     bad: string = checkPassword(password)
     salt: ByteSeq = @[]
-    key: Secret = default(Secret)
-    stream: StreamKeys = default(StreamKeys)
-    sealed: ByteSeq = @[]
-    tag: ByteSeq = @[]
   if bad.len > 0:
     return SealedBlob(err: bad)
   salt = randomSalt()
-  key = deriveKey(password, salt, p)
-  stream = deriveStreamKeys(key, salt)
-  sealed = applyKeystream(ckCascade, stream, 0'u64, plain)
-  tag = authTag(mkCombined, key, sealed, @salt & @aad)
-  result.data = @(cast[ByteSeq](sealMagic))
-  result.data.add uint8(salt.len)
-  result.data.add salt
-  result.data.add uint8(tag.len)
-  result.data.add tag
-  result.data.add sealed
-  result.ok = true
+  result = sealUnder(deriveKey(password, salt, p), salt, plain, aad,
+    sealMagic)
 
 proc openWithPassword*(password: string, blob: openArray[uint8],
     aad: openArray[uint8] = [], p: PasswordParams = defaultPasswordParams()):
     SealedBlob {.role: decryptor,
     tag: "cryptoBoundary|read".} =
   ## password/blob/aad/p: the reverse of `sealWithPassword`.
-  ##
-  ## A WRONG PASSWORD AND A TAMPERED BLOB ARE THE SAME ANSWER, and that is
-  ## deliberate: telling them apart tells an attacker which of the two
-  ## they achieved. The message says both.
   var
-    o: int = 0
-    saltLen: int = 0
-    tagLen: int = 0
-    salt: ByteSeq = @[]
-    tag: ByteSeq = @[]
-    sealed: ByteSeq = @[]
-    key: Secret = default(Secret)
-    stream: StreamKeys = default(StreamKeys)
-  if blob.len < sealMagic.len + 2:
-    return SealedBlob(err: "not a sealed blob: too short")
-  while o < sealMagic.len:
-    if blob[o] != uint8(sealMagic[o]):
-      return SealedBlob(err: "not a sealed blob: wrong magic")
-    o = o + 1
-  saltLen = int(blob[o]); o = o + 1
-  if o + saltLen >= blob.len:
-    return SealedBlob(err: "not a sealed blob: truncated salt")
-  salt = @(blob[o ..< o + saltLen]); o = o + saltLen
-  tagLen = int(blob[o]); o = o + 1
-  if o + tagLen > blob.len:
-    return SealedBlob(err: "not a sealed blob: truncated tag")
-  tag = @(blob[o ..< o + tagLen]); o = o + tagLen
-  sealed = @(blob[o ..< blob.len])
-  key = deriveKey(password, salt, p)
-  if not verifyTag(mkCombined, key, sealed, @salt & @aad, tag):
-    return SealedBlob(
-      err: "wrong password, or the sealed data has been altered")
-  stream = deriveStreamKeys(key, salt)
-  result.data = applyKeystream(ckCascade, stream, 0'u64, sealed)
-  result.ok = true
+    parts: tuple[ok: bool, salt: ByteSeq, tag: ByteSeq, sealed: ByteSeq,
+      err: string] = splitBlob(sealMagic, blob)
+  if not parts.ok:
+    return SealedBlob(err: parts.err)
+  result = openUnder(deriveKey(password, parts.salt, p), parts.salt,
+    parts.tag, parts.sealed, aad,
+    "wrong password, or the sealed data has been altered")
+
+proc newSealKey*(): Secret {.role: configurator,
+    tag: "cryptoBoundary|keyLifecycle".} =
+  ## A fresh random key for `sealWithKey`, `sealBytes` and `sealObject`.
+  ##
+  ## Keep it where keys belong -- the OS keystore (`geist/keystore`) or a
+  ## key file only its owner can read. Lose it and what it sealed is gone:
+  ## there is no password to fall back on.
+  result = initSecret(randomSalt(sealKeyBytes))
+
+proc sealWithKey*(key: Secret, plain: openArray[uint8],
+    aad: openArray[uint8] = []): SealedBlob {.role: encryptor,
+    tag: "cryptoBoundary|write".} =
+  ## key: from `newSealKey`, or `deriveKey` done ONCE for many blobs.
+  ## plain/aad: as for `sealWithPassword`.
+  ##
+  ## The fast path. `sealWithPassword` pays Argon2 on every call, which is
+  ## right for one blob and wrong for ten thousand; here the costly step
+  ## happened once, when the key was made. A fresh 24-byte nonce per blob
+  ## keeps every keystream different.
+  if key.len < 16:
+    return SealedBlob(err: "a sealing key must be at least 16 bytes")
+  result = sealUnder(key, randomSalt(sealNonceBytes), plain, aad,
+    keySealMagic)
+
+proc openWithKey*(key: Secret, blob: openArray[uint8],
+    aad: openArray[uint8] = []): SealedBlob {.role: decryptor,
+    tag: "cryptoBoundary|read".} =
+  ## key/blob/aad: the reverse of `sealWithKey`.
+  var
+    parts: tuple[ok: bool, salt: ByteSeq, tag: ByteSeq, sealed: ByteSeq,
+      err: string] = splitBlob(keySealMagic, blob)
+  if not parts.ok:
+    return SealedBlob(err: parts.err)
+  result = openUnder(key, parts.salt, parts.tag, parts.sealed, aad,
+    "wrong key, or the sealed data has been altered")

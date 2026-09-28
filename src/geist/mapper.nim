@@ -72,8 +72,13 @@ proc schemaOf*[T: object](x: T, S: var Schema, prefix: string = "") {.
       S.slots.add defaultSlot(S.intern(na), skFloat)
     elif va is object:
       schemaOfB(va, S, na)
-    else:
+    elif va is SomeInteger or va is bool or va is char:
       S.slots.add defaultSlot(S.intern(na), skInt)
+    else:
+      {.error: "a Geist row cannot hold a field of type " & $typeof(va) &
+        ". It holds ints, floats, bools, chars, enums, strings, seq[uint8], " &
+        "Ref and nested objects. Store a list as its own rows, or seal the " &
+        "whole object with sealObject, which takes any type toNode does.".}
 
 proc schemaOfB[T: object](x: T, S: var Schema, prefix: string) {.
     role: truthBuilder, tag: "codecBoundary|db|types".} =
@@ -94,8 +99,13 @@ proc schemaOfB[T: object](x: T, S: var Schema, prefix: string) {.
       S.slots.add defaultSlot(S.intern(nb), skFloat)
     elif vb is object:
       schemaOf(vb, S, nb)
-    else:
+    elif vb is SomeInteger or vb is bool or vb is char:
       S.slots.add defaultSlot(S.intern(nb), skInt)
+    else:
+      {.error: "a Geist row cannot hold a field of type " & $typeof(vb) &
+        ". It holds ints, floats, bools, chars, enums, strings, seq[uint8], " &
+        "Ref and nested objects. Store a list as its own rows, or seal the " &
+        "whole object with sealObject, which takes any type toNode does.".}
 
 proc schemaFor*[T: object](typeName: string = ""): Schema {.
     role: truthBuilder, tag: "appApi|codecBoundary|db".} =

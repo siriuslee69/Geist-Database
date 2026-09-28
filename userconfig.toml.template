@@ -45,6 +45,20 @@ trust = ["peers/laptop.pin"]
 # while it runs.
 allowWrite = []
 
+# Peers THIS daemon visits itself, every syncEverySeconds -- the client
+# part of a daemon. Each is "<pin file>@dac://host:port"; the peer's name
+# is the pin file's name ("vps"), and its positions are filed under it.
+#   pull  its rows come here            (this daemon takes the write lease)
+#   push  this store's rows go there   (the peer must list OUR pin under
+#         its allowWrite)
+#   sync  both
+# A daemon with no trust/allowWrite but some of these binds no socket at
+# all: it only visits.
+pull = []
+push = []
+sync = []
+syncEverySeconds = 60
+
 [client]
 # Where `geist --remote` connects, and the pin it checks the daemon
 # against. Pinned trust means both sides must already know each other.

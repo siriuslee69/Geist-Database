@@ -54,6 +54,15 @@ proc initSyncCursors*(): SyncCursors {.role: configurator, stage: stDone,
   ## An empty cursor table.
   result = initTable[string, uint64]()
 
+proc localPeer*(): PeerContext {.role: configurator, stage: stDone,
+    tag: "server|sync".} =
+  ## Who is asking when the asker is THIS process: `needLocal` and
+  ## `offerLocal` hand a Query straight to `answerQuery`, with no
+  ## handshake to prove a name, and a program may always read and write
+  ## the stores it opened itself.
+  result = PeerContext(subject: "this process", address: "local",
+    rights: {prRead, prWrite})
+
 proc commitRemote(S: var Session): tuple[ok: bool, err: string] {.
     role: orchestrator, tag: "db|server|write".} =
   ## S: session whose accepted remote write is made durable.

@@ -438,6 +438,10 @@ proc tomlKey(s: string): string {.role: helper, inline,
   ## s: one key, quoted only when it has to be.
   result = if bareKey(s): s else: quoteToml(s)
 
+proc arrayText(n: JsonNode): string {.role: helper,
+    tag: "config|formatting".}
+  ## Forward-declared: a list may hold lists, and each is written by it.
+
 proc scalarText(n: JsonNode): string {.role: helper,
     tag: "config|formatting".} =
   ## n: one leaf as TOML.
@@ -450,12 +454,13 @@ proc scalarText(n: JsonNode): string {.role: helper,
   of JBool: result = (if n.getBool(): "true" else: "false")
   of JInt: result = $n.getInt()
   of JFloat: result = n.getFloat().formatFloat(ffDecimal, -1)
+  of JArray: result = arrayText(n)
   of JNull: result = "\"\""
   else: result = "\"\""
 
-proc arrayText(n: JsonNode): string {.role: helper,
-    tag: "config|formatting".} =
-  ## n: an array of leaves, inline.
+proc arrayText(n: JsonNode): string =
+  ## n: an array of leaves, inline; a list inside it is written the same
+  ## way, so [[1, 2], [3]] survives.
   var
     t: seq[string] = @[]
   for item in n.items:
@@ -600,6 +605,145 @@ proc parseDoc*(text: string, f: DocFormat): tuple[ok: bool, node: JsonNode,
   except CatchableError as exc:
     result = (false, newJObject(), exc.msg)
 
+## ---------------------------- converting ----------------------------
+##
+##   text --parseDoc--> JsonNode --renderDoc--> text in the other format
+##
+## JSON can say things TOML has no word for. A converter that met one and
+## wrote something anyway would hand back a file that is quietly missing
+## data, so `tomlProblem` walks the document first and names the place:
+##
+##   JSON                              TOML
+##   --------------------------------  ----------------------------------
+##   {"a": null}                       no null: refused, "a is null"
+##   [1, 2] at the top                 a document is a table: refused
+##   {"a": [{"x": 1}, 2]}              tables and values in one list:
+##                                     refused, "a mixes tables with
+##                                     plain values"
+##   {"a": [[1, 2], [3]]}              fine: nested lists of values
+
+proc tomlProblem(n: JsonNode, path: string): string {.role: sanitizer,
+    tag: "config|parsing".}
+  ## Forward-declared: a table's values and a list's items are checked by
+  ## the two helpers below, which call back into it.
+
+proc tomlItemsProblem(n: JsonNode, path: string): string {.role: sanitizer,
+    tag: "config|parsing".} =
+  ## n/path: a list -- all tables or no tables, and every item sound.
+  var
+    tables: int = 0
+    i: int = 0
+  for item in n.items:
+    if item.kind == JObject:
+      tables = tables + 1
+  if tables > 0 and tables < n.len:
+    return path & " mixes tables with plain values"
+  while i < n.len:
+    result = tomlProblem(n[i], path & "[" & $i & "]")
+    if result.len > 0:
+      return
+    i = i + 1
+
+proc tomlFieldsProblem(n: JsonNode, path: string): string {.role: sanitizer,
+    tag: "config|parsing".} =
+  ## n/path: a table -- every value sound.
+  for key, value in n.pairs:
+    result = tomlProblem(value, dottedPath(path, key))
+    if result.len > 0:
+      return
+
+proc tomlProblem(n: JsonNode, path: string): string =
+  ## n: one value of the document; path: where it sits, for the message.
+  ## Returns "" when TOML can hold it exactly, or what it cannot hold.
+  case n.kind
+  of JNull: result = (if path.len > 0: path else: "the document") &
+    " is null, and TOML has no null"
+  of JObject: result = tomlFieldsProblem(n, path)
+  of JArray: result = tomlItemsProblem(n, path)
+  else: result = ""
+
+proc formatName*(f: DocFormat): string {.role: helper, inline, stage: stDone,
+    tag: "config|formatting".} =
+  ## f: the format as people write it.
+  result = if f == dfJson: "JSON" else: "TOML"
+
+proc renderDoc*(n: JsonNode, f: DocFormat,
+    style: DocStyle = defaultDocStyle()): string {.role: dataWriter,
+    tag: "config|formatting".} =
+  ## n/f/style: a parsed document as text in one format. JSON is indented;
+  ## TOML carries the style's header and field notes.
+  if f == dfJson:
+    result = n.pretty() & "\n"
+  else:
+    result = renderDocToml(n, style)
+
+proc convertDoc*(text: string, source, target: DocFormat): tuple[ok: bool,
+    text: string, err: string] {.role: orchestrator,
+    tag: "appApi|config|parsing".} =
+  ## text: a whole document; source/target: what it is and what it should
+  ## become. Returns the new text, or why it cannot be written in that
+  ## format -- never a lossy version of it.
+  var
+    parsed: tuple[ok: bool, node: JsonNode, err: string] = parseDoc(text,
+      source)
+    problem: string = ""
+  if not parsed.ok:
+    return (false, "", "not valid " & formatName(source) & ": " & parsed.err)
+  if target == dfToml and parsed.node.kind != JObject:
+    return (false, "", "a TOML document is a table, and this " &
+      formatName(source) & " document is a list or a single value")
+  if target == dfToml:
+    problem = tomlProblem(parsed.node, "")
+  if problem.len > 0:
+    return (false, "", problem)
+  result = (true, renderDoc(parsed.node, target), "")
+
+proc convertFile*(source, target: string): tuple[ok: bool, err: string] {.
+    role: orchestrator, tag: "appApi|config|storageIo".} =
+  ## source/target: two paths; each one's format comes from its extension
+  ## (`.json`, anything else is TOML). The target is written through a
+  ## temporary file and a rename, so a failure never leaves half a file.
+  var
+    text: string = ""
+    converted: tuple[ok: bool, text: string, err: string] = (false, "", "")
+  try:
+    if getFileSize(source) > maxDocBytes:
+      return (false, source & " is larger than " & $maxDocBytes & " bytes")
+    text = readFile(source)
+  except CatchableError as exc:
+    return (false, "cannot read " & source & ": " & exc.msg)
+  converted = convertDoc(text, formatOf(source), formatOf(target))
+  if not converted.ok:
+    return (false, source & ": " & converted.err)
+  try:
+    writeFile(target & ".new", converted.text)
+    moveFile(target & ".new", target)
+  except CatchableError as exc:
+    return (false, "cannot write " & target & ": " & exc.msg)
+  result = (true, "")
+
+proc toDocText*[T](x: T, f: DocFormat,
+    style: DocStyle = defaultDocStyle()): string {.role: dataWriter,
+    tag: "appApi|config|formatting".} =
+  ## x/f/style: an object as JSON or TOML text, every field present.
+  result = renderDoc(toNode(x), f, style)
+
+proc fromDocText*[T](text: string, f: DocFormat, fallback: T): tuple[
+    value: T, report: DocReport] {.role: parser,
+    tag: "appApi|config|parsing".} =
+  ## text/f: a document; fallback: every default, as an object.
+  ## The same rules as `readDoc`, without a file: what the text does not
+  ## mention keeps its default, and what it gets wrong is reported.
+  var
+    parsed: tuple[ok: bool, node: JsonNode, err: string] = parseDoc(text, f)
+  result.value = fallback
+  result.report.ok = parsed.ok
+  result.report.err = parsed.err
+  if not parsed.ok:
+    return
+  fromNode(parsed.node, result.value, "", result.report)
+  collectUnknown(parsed.node, toNode(fallback), "", result.report)
+
 proc sectionKeys*(n: JsonNode, path: string): seq[string] {.role: parser,
     tag: "config|parsing|read".} =
   ## n: a parsed document, or nil.
@@ -714,10 +858,7 @@ proc writeDoc*[T](path: string, x: T, style: DocStyle = defaultDocStyle(),
     tmp: string = path & ".new"
   if style.keepUnknown and keep != nil:
     mergeUnknown(keep, n)
-  if formatOf(path) == dfJson:
-    text = n.pretty() & "\n"
-  else:
-    text = renderDocToml(n, style)
+  text = renderDoc(n, formatOf(path), style)
   try:
     if path.parentDir().len > 0:
       createDir(path.parentDir())

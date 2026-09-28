@@ -94,6 +94,11 @@ type
     epoch*: uint64
     cursor*: uint64
 
+  OfferRound* {.role: truthBuilder, tag: "sync|types".} = proc (
+      R: seq[Row]): tuple[ok: bool, reply: Reply, err: string]
+    ## Delivers ONE batch and says how the other side answered. See
+    ## `offerLoop` for why it is the only part that varies.
+
   OfferOutcome* {.role: truthState, tag: "status|sync|types".} = tuple
     ## What one push did. `rewound` says this node's own log had been
     ## rewritten and the position was discarded -- which explains a run
@@ -191,60 +196,45 @@ proc noteOffer*(C: var seq[OfferCursor], c: OfferCursor) {.
   else:
     C[at] = c
 
-proc offerVia*(S: var Session, client: var GeistClient, address: string,
-    limit: int = 256, maxRounds: int = offerRoundLimit): OfferOutcome {.
-    role: orchestrator, tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
+proc offerLoop(S: var Session, name: string, limit: int, maxRounds: int,
+    round: OfferRound): OfferOutcome {.role: orchestrator,
+    tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
   ## S: the LOCAL database whose rows are being sent. Opened read-only is
   ##   fine and normal -- offering reads here and writes there.
-  ## client: a routed client, which picks the hop and fails over.
-  ## address: where the rows go -- `geist://fjord/mail/alice/inbox`.
+  ## name: what the other side's position is filed under.
   ## limit: rows per batch, bounded by `replyRowBudget` -- the same figure
   ##   an answer stops at, taken from `answer.nim` rather than restated
   ##   here, so an ordinary batch is one datagram in both directions.
   ## maxRounds: cap on batches, so a busy log cannot hold this open.
+  ## round: how ONE batch is delivered -- the only thing that differs
+  ##   between a routed client, a direct link and a store in this process.
   ##
-  ## Requires `prWrite` at the far end. A refusal comes back in `err`
-  ## without moving the cursor, so nothing is recorded as delivered that
-  ## was not -- and the next call retries the same rows.
-  ##
-  ## The cursor advances only after the peer's reply says `ok`. That order
-  ## is the whole durability argument: a crash between sending and
+  ## The cursor advances only after the other side's reply says `ok`. That
+  ## order is the whole durability argument: a crash between sending and
   ## recording re-sends a batch the peer already applied, and `applyRow`
   ## skips a version it already has.
   var
-    table: seq[OfferCursor] = @[]
-    here: OfferCursor = default(OfferCursor)
-    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
-      (false, default(GeistAddress), "")
+    table: seq[OfferCursor] = loadOffers(S.baseDir)
+    here: OfferCursor = offerFor(table, name)
     batch: seq[Row] = @[]
-    got: AskResult = default(AskResult)
+    got: tuple[ok: bool, reply: Reply, err: string] = (false, Reply(), "")
     saved: tuple[ok: bool, err: string] = (false, "")
-    epoch: uint64 = 0'u64
-  parsed = parseAddress(address)
-  if not parsed.ok:
-    return (false, 0, 0, 0'u64, false, "address " & address & ": " & parsed.err)
-  epoch = S.logEpoch
-  table = loadOffers(S.baseDir)
-  here = offerFor(table, parsed.a.destinationKey())
   # A local compaction makes every recorded position count rows that no
   # longer exist. Checked BEFORE the first batch, unlike `need`, because
   # the epoch in question is this node's own and is already known.
-  if here.cursor > 0'u64 and here.epoch != epoch:
+  if here.cursor > 0'u64 and here.epoch != S.logEpoch:
     here.cursor = 0'u64
     result.rewound = true
-  here.epoch = epoch
+  here.remote = name
+  here.epoch = S.logEpoch
   while result.rounds < maxRounds:
     batch = S.rowsSince(here.cursor, limit, replyRowBudget)
     if batch.len == 0:
       break
-    got = client.ask(Query(op: qoPut, collection: address,
-      payload: encodeRows(batch)))
-    if not got.ok:
+    got = round(batch)
+    if not got.ok or not got.reply.ok:
       return (false, result.sent, result.rounds, here.cursor,
-        result.rewound, got.err)
-    if not got.reply.ok:
-      return (false, result.sent, result.rounds, here.cursor,
-        result.rewound, got.reply.err)
+        result.rewound, got.err & got.reply.err)
     result.sent = result.sent + batch.len
     here.cursor = here.cursor + uint64(batch.len)
     result.rounds = result.rounds + 1
@@ -261,6 +251,69 @@ proc offerVia*(S: var Session, client: var GeistClient, address: string,
       result.rewound, saved.err)
   result.cursor = here.cursor
   result.ok = true
+
+proc offerVia*(S: var Session, client: var GeistClient, address: string,
+    limit: int = 256, maxRounds: int = offerRoundLimit): OfferOutcome {.
+    role: orchestrator, tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
+  ## S: the local database whose rows are sent.
+  ## client: a routed client, which picks the hop and fails over.
+  ## address: where the rows go -- `geist://fjord/mail/alice/inbox`.
+  ##   The position is filed under its destination, not the hop, so a
+  ##   fallback daemon continues it instead of receiving the whole log.
+  ## limit/maxRounds: as for `offerLoop`.
+  ##
+  ## Requires `prWrite` at the far end. A refusal comes back in `err`
+  ## without moving the cursor, so nothing is recorded as delivered that
+  ## was not -- and the next call retries the same rows.
+  var
+    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
+      parseAddress(address)
+    dialled: ptr GeistClient = addr client
+  if not parsed.ok:
+    return (false, 0, 0, 0'u64, false, "address " & address & ": " & parsed.err)
+  result = offerLoop(S, parsed.a.destinationKey(), limit, maxRounds,
+    proc (R: seq[Row]): tuple[ok: bool, reply: Reply, err: string] =
+      var
+        got: AskResult = dialled[].ask(Query(op: qoPut, collection: address,
+          payload: encodeRows(R)))
+      result = (got.ok, got.reply, got.err))
+
+proc offerRemote*(S: var Session, link: var GeistLink, remote: string,
+    limit: int = 256, maxRounds: int = offerRoundLimit): OfferOutcome {.
+    role: orchestrator, tag: "appApi|db|networkSurface|orchestrator|sync|write".} =
+  ## S: the local database whose rows are sent.
+  ## link: an OPEN link to the peer, dialled directly.
+  ## remote: the name the position is filed under -- normally the peer's
+  ##   `dac://host:port`, the same name `needRemote` files ITS position
+  ##   under for the other direction.
+  ## limit/maxRounds: as for `offerLoop`.
+  var
+    dialled: ptr GeistLink = addr link
+  result = offerLoop(S, remote, limit, maxRounds,
+    proc (R: seq[Row]): tuple[ok: bool, reply: Reply, err: string] =
+      dialled[].pushRemote(R))
+
+proc offerLocal*(S: var Session, target: var Session, name: string,
+    limit: int = 256, maxRounds: int = offerRoundLimit): OfferOutcome {.
+    role: orchestrator, tag: "appApi|db|orchestrator|sync|write".} =
+  ## S: the database whose rows are sent.
+  ## target: another store open in THIS process, open for writing.
+  ## name: what the position is filed under; one name per target.
+  ## limit/maxRounds: as for `offerLoop`.
+  ##
+  ## No socket and no bytes on a wire: each batch is handed to the same
+  ## `answerQuery` a daemon runs, so the rows land exactly as a network
+  ## push would land them.
+  var
+    into: ptr Session = addr target
+    cursors: SyncCursors = initSyncCursors()
+    kept: ptr SyncCursors = addr cursors
+  result = offerLoop(S, name, limit, maxRounds,
+    proc (R: seq[Row]): tuple[ok: bool, reply: Reply, err: string] =
+      var
+        r: Reply = answerQuery(into[], kept[], Query(op: qoPut,
+          payload: encodeRows(R)), localPeer())
+      result = (r.ok, r, ""))
 
 proc pending*(S: Session, baseDir: string, address: string): uint64 {.
     role: parser, tag: "status|sync".} =
