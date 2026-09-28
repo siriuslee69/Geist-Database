@@ -204,3 +204,21 @@ proc checkReplyBytes*(A: openArray[uint8]): string {.role: sanitizer,
   if o != A.len:
     return "answer: " & $(A.len - o) & " trailing bytes"
   result = ""
+
+## ---------------------------- from a file ---------------------------
+
+proc schemaFrom*(A: openArray[uint8], o: var int, where: string): Schema {.
+    role: sanitizer, tag: "codecBoundary|read|storageIo".} =
+  ## A/o: a schema block read from a FILE, starting at o; o ends past it.
+  ## where: the file, for the message.
+  ##
+  ## The same walk a peer's bytes get, for the same reason: a damaged file
+  ## is as untrusted as a hostile peer. A bad block raises IOError -- which
+  ## the reader of a file already has to expect -- rather than reading past
+  ## the end of the buffer.
+  var
+    probe: int = o
+    complaint: string = checkSchemaBytes(A, probe)
+  if complaint.len > 0:
+    raise newException(IOError, where & ": " & complaint)
+  result = decodeSchema(A, o)

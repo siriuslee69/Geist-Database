@@ -59,6 +59,7 @@ import ./row
 import ./store
 import ./keys
 import ./dynamic
+import ./bytecheck
 
 const
   transposedMagic* = "GETR1"
@@ -280,10 +281,11 @@ proc writeTransposed*(path: string, C: ClusterBuild,
 
 ## ----------------------------- reading ------------------------------
 
-proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
+proc readTransposed(path: string): tuple[ok: bool, t: TransposedFile,
     err: string] {.role: parser,
     tag: "db|read|storageIo".} =
   ## path: a transposed file whose DIRECTORY is read -- not its data.
+  ## May raise IOError; `openTransposed` turns that into an answer.
   ##
   ## Every length is checked against the file that is actually there. This
   ## is a derived artifact that may have been truncated by a full disk, and
@@ -297,16 +299,17 @@ proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
     j: int = 0
     size: int64 = 0
     e: ColumnRegion = default(ColumnRegion)
+    so: int = 0
   if not fileExists(path):
     return (false, TransposedFile(), "no transposed file at " & path)
   try:
     size = getFileSize(path)
   except CatchableError as exc:
     return (false, TransposedFile(), exc.msg)
-  head = readAt(path, 0'u64, 31)
-  if head.len < 31:
+  if size < 31:
     return (false, TransposedFile(), path & " is too short to be a " &
       "transposed file")
+  head = readAt(path, 0'u64, 31)
   while o < transposedMagic.len:
     if head[o] != uint8(transposedMagic[o]):
       return (false, TransposedFile(), path & " is not a transposed file")
@@ -330,8 +333,7 @@ proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
   if schemaLen <= 0 or int64(o) + 4 + int64(schemaLen) > size:
     return (false, TransposedFile(), path & " has a truncated schema")
   head = readAt(path, uint64(o + 4), schemaLen)
-  var so: int = 0
-  result.t.schema = decodeSchema(head, so)
+  result.t.schema = schemaFrom(head, so, path)
   o = o + 4 + schemaLen
   head = readAt(path, uint64(o), (n + 1) * directoryEntryBytes)
   if head.len < (n + 1) * directoryEntryBytes:
@@ -356,6 +358,20 @@ proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
       path & " has " & $n & " columns and a schema of " &
       $result.t.schema.slots.len)
   result.ok = true
+
+proc openTransposed*(path: string): tuple[ok: bool, t: TransposedFile,
+    err: string] {.role: parser, tag: "db|read|storageIo".} =
+  ## path: a transposed file whose DIRECTORY is read -- not its data.
+  ##
+  ## Every length is checked against the file that is actually there. This
+  ## is a derived artifact that may have been truncated by a full disk, so
+  ## a short or damaged file is an answer (ok = false, and why), never a
+  ## crash: `readAt` and `schemaFrom` raise IOError on what does not fit,
+  ## and it is caught here.
+  try:
+    result = readTransposed(path)
+  except IOError as exc:
+    result = (false, TransposedFile(), exc.msg)
 
 proc valueSpan*(t: TransposedFile, slot: int,
     i: uint32): tuple[at: uint64, len: int] {.role: parser,

@@ -57,7 +57,11 @@ proc openSeek*(path: string,
   at = idx.f.findIndex(role)
   if at < 0:
     return (false, SeekHandle(), "no " & $role & " cluster in " & path)
-  sch = readSchemaOf(path, idx.f.index[at])
+  try:
+    sch = readSchemaOf(path, idx.f.index[at])
+  except IOError as exc:
+    # A damaged schema block is an answer, like a missing cluster is.
+    return (false, SeekHandle(), exc.msg)
   result.h.path = path
   result.h.entry = idx.f.index[at]
   result.h.schema = sch.s

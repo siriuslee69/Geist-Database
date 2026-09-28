@@ -10,7 +10,7 @@
 ## a happy-path test cannot tell a durable write from a lucky one.
 
 import runePragmas
-import std/[os, strutils, unittest]
+import std/[os, osproc, strutils, unittest]
 import geist
 
 type
@@ -265,3 +265,31 @@ suite "following a moving generation":
     check step.ok
     check step.changed.len > 0
     check step.path != seen.path
+
+suite "leases at the edges":
+  # {.testKind: tkRegression, pins: "exit handler read a torn-down global".}
+  test "a program that ends with its session open leaves no lock behind":
+    var
+      root: string = freshRoot("geist_t_lease_exit")
+      fixture: string = currentSourcePath().parentDir() / "fixtures" /
+        "exit_open_session.nim"
+      run: tuple[output: string, exitCode: int] = ("", 0)
+    run = execCmdEx("nim c -r --hints:off --warnings:off -o:" &
+      quoteShell(getTempDir() / "geist_exit_open_session") & " " &
+      quoteShell(fixture) & " " & quoteShell(root))
+    check run.exitCode == 0
+    check not fileExists(root / ".geist-lock")
+
+  # {.testKind: tkRegression, pins: "a failed open kept the write lease".}
+  test "a wrong password, then the right one, opens for writing":
+    var
+      root: string = freshRoot("geist_t_lease_retry")
+      db: Session = openGeist[Note](root, secureAppConfig(), "right password")
+    discard db.put(Note(noteId: 1, title: "sealed"))
+    check db.save().ok
+    db.close()
+    expect IOError:
+      db = openGeist[Note](root, secureAppConfig(), "wrong password")
+    db = openGeist[Note](root, secureAppConfig(), "right password")
+    check not db.readOnly
+    db.close()

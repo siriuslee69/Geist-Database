@@ -103,20 +103,27 @@ type
   LeaseClaim = tuple[root, path: string, pid: int]
     ## One lease this process holds: where it is, and under whose pid.
 
-var
-  leaseRegistryLock: Lock = default(Lock)
-  leaseRegistry {.guard: leaseRegistryLock.}: seq[LeaseClaim] = @[]
+  LeaseRegistry {.role: memory, expectedCount: 1, lifeCycle: lcForever.} = object
+    ## Every lease this process holds, and the lock around them.
+    lock: Lock
+    claims: seq[LeaseClaim]
 
-initLock(leaseRegistryLock)
+var
+  leases: ptr LeaseRegistry = createShared(LeaseRegistry)
+    ## Allocated once and NEVER freed, on purpose. The exit handler below
+    ## reads it at the very end of the program -- after the runtime has
+    ## already torn down ordinary globals. An ordinary global here was
+    ## read after it was gone: every program that ended with a writable
+    ## session still open crashed on the way out and left its lock file.
+
+initLock(leases.lock)
 
 proc indexOfRoot(A: openArray[LeaseClaim], root: string): int {.role: parser,
     tag: "db|lifecycle".} =
   ## A/root: the claim list and the store path looked up in it, or -1.
   ##
-  ## Takes the list as a PARAMETER rather than reading the global: the
-  ## `guard` pragma is only satisfied by an access written inside the
-  ## `withLock`, so passing it in is what keeps the check honest instead of
-  ## casting it away.
+  ## Takes the list as a PARAMETER rather than reading the registry, so it
+  ## is only ever called with the lock already held.
   var
     i: int = 0
   result = -1
@@ -130,11 +137,11 @@ proc claimLocally(root, path: string, pid: int): bool {.role: actor,
   ## root/path/pid: the claim being recorded.
   ## Returns false when this process already holds it, in which case
   ## nothing is registered and the caller must not proceed.
-  withLock leaseRegistryLock:
+  withLock leases.lock:
     {.gcsafe.}:
-      if leaseRegistry.indexOfRoot(root) >= 0:
+      if leases.claims.indexOfRoot(root) >= 0:
         return false
-      leaseRegistry.add (root: root, path: path, pid: pid)
+      leases.claims.add (root: root, path: path, pid: pid)
       result = true
 
 proc releaseLocally(root: string) {.role: actor,
@@ -142,11 +149,11 @@ proc releaseLocally(root: string) {.role: actor,
   ## root: normalised store path dropped from the registry.
   var
     i: int = 0
-  withLock leaseRegistryLock:
+  withLock leases.lock:
     {.gcsafe.}:
-      i = leaseRegistry.indexOfRoot(root)
+      i = leases.claims.indexOfRoot(root)
       if i >= 0:
-        leaseRegistry.delete(i)
+        leases.claims.delete(i)
 
 proc dropLockFile(path: string, pid: int) {.role: dataWriter,
     tag: "db|lifecycle|storageIo".} =
@@ -174,11 +181,11 @@ proc releaseHeldLeases() {.role: actor, noconv.} =
   ## Without this the lock file outlives the process and the next writer
   ## waits out the staleness window for a program that is already gone --
   ## a self-inflicted outage after a typo.
-  withLock leaseRegistryLock:
+  withLock leases.lock:
     {.gcsafe.}:
-      for held in leaseRegistry:
+      for held in leases.claims:
         dropLockFile(held.path, held.pid)
-      leaseRegistry = @[]
+      leases.claims = @[]
 
 addExitProc(releaseHeldLeases)
 

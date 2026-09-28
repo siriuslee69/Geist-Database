@@ -373,6 +373,148 @@ proc resolveGeneration*(baseDir, baseName: string,
     n = n - 1'u64
   result = (live, false)
 
+proc loadStore(S: var Session, baseDir, baseName: string, schemaIn: Schema,
+    password: string) {.role: orchestrator,
+    tag: "db|orchestrator|storageIo".} =
+  ## S: a session whose lease question is already settled.
+  ## baseDir/baseName/schemaIn/password: as for `openSessionWithSchema`.
+  ##
+  ## Everything an open reads: the live generation, the key file, the
+  ## ledgers and the clusters. Raises when any of them will not read --
+  ## a wrong password, a damaged file -- and `openSessionWithSchema` then
+  ## gives the lease back.
+  var
+    resolved: tuple[n: uint64, repaired: bool] = (0'u64, false)
+    schema: Schema = default(Schema)
+    loadedKeys: tuple[ok: bool, keys: KeySet, err: string] =
+      (false, default(KeySet), "")
+    loadedLedger: tuple[ok: bool, ledgers: seq[Ledger], err: string] =
+      (false, @[], "")
+    recordSchema: Schema = default(Schema)
+    index: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
+    applied: tuple[ok: bool, s: Schema, err: string] =
+      (false, default(Schema), "")
+    at: int = -1
+  # The manifest names the live generation; `resolveGeneration` is what
+  # happens when that generation will not read back.
+  resolved = resolveGeneration(baseDir, baseName, S.encrypted)
+  S.generation = resolved.n
+  S.recoveredFrom = if resolved.repaired: liveGeneration(baseDir) else: 0'u64
+  # Generations ABOVE the live one are the debris of a save that was
+  # interrupted before it published. Only the writer clears them, and only
+  # because it holds the lease: nobody else can be building one right now.
+  if S.writeLease.held:
+    discard sweepUncommitted(baseDir, baseName, S.generation)
+  S.sidecarStore = initSidecarStore(baseDir / ".geist-sidecar",
+    S.config.sidecarThreshold, S.config.contentHash)
+  # Column policy is applied ONCE, here, so the schema written to disk is
+  # already the one the policy asked for. A later reader needs no
+  # configuration to interpret the file.
+  # Identity FIRST, then the column policy: the policy names the caller's
+  # own fields, and prepending afterwards would renumber every slot the
+  # policy had already resolved.
+  #
+  # An EMPTY schema means "whatever the file says" -- the path a daemon, an
+  # inspector or a sweep takes. There is nothing for a policy to name yet,
+  # and the stored schema already carries the policy it was written with,
+  # so applying one here would fail on every field it mentions.
+  if schemaIn.slots.len == 0:
+    schema = schemaIn
+  else:
+    applied = applyColumnPolicy(S.config,
+      if S.config.rowIdentity: withIdentity(schemaIn) else: schemaIn)
+    if not applied.ok:
+      raise newException(ValueError, applied.err)
+    schema = applied.s
+  S.live = initLiveIndex()
+  S.entries = initClusterBuild(crEntry, cmAppend, schema,
+    S.sidecarStore, 0'u16,
+    S.config.chainHash, S.config.treeHash)
+  recordSchema = schemaFor[Record]()
+  recordSchema.autoCollapse = S.config.autoCollapse
+  S.meta = initClusterBuild(crMeta, cmMutable, recordSchema,
+    S.sidecarStore, 0'u16,
+    S.config.chainHash, S.config.treeHash)
+  S.journal = initClusterBuild(crJournal, cmChained, recordSchema,
+    S.sidecarStore, 0'u16,
+    S.config.chainHash, S.config.treeHash)
+  S.ledger.databaseId = baseName
+  S.ledger.batchRows = S.config.batchRows
+  S.ledger.groups = columnGroupsFor(S.config, schema)
+  # Meta and journal carry Record, not T, so their groups resolve against
+  # that schema. Each cluster gets its OWN ledger: batch coordinates are
+  # (batchIndex, groupId) and would collide across clusters otherwise.
+  S.metaLedger.databaseId = baseName & ":meta"
+  S.metaLedger.batchRows = S.config.batchRows
+  S.journalLedger.databaseId = baseName & ":journal"
+  S.journalLedger.batchRows = S.config.batchRows
+  if S.config.sealMeta:
+    S.metaLedger.groups = columnGroupsFor(S.config, recordSchema)
+  if S.config.sealJournal:
+    S.journalLedger.groups = columnGroupsFor(S.config, recordSchema)
+  if S.encrypted:
+    if fileExists(S.keyPath()):
+      # An EXISTING key file that will not open is a wrong password or a
+      # tampered file. Minting a fresh key set here would silently orphan
+      # every row already written, so it must fail loudly instead.
+      loadedKeys = readKeyFile(S.keyPath(), password)
+      if not loadedKeys.ok:
+        raise newException(IOError, loadedKeys.err)
+      S.keySet = loadedKeys.keys
+    else:
+      S.keySet = newKeySet()
+      discard S.keySet.allocKeyRef("initial")
+    loadedLedger = readLedgerFile(S.ledgerPath())
+    if loadedLedger.ok:
+      if loadedLedger.ledgers.len > 0:
+        S.ledger = loadedLedger.ledgers[0]
+      if loadedLedger.ledgers.len > 1:
+        S.metaLedger = loadedLedger.ledgers[1]
+      if loadedLedger.ledgers.len > 2:
+        S.journalLedger = loadedLedger.ledgers[2]
+    elif fileExists(S.ledgerPath()):
+      raise newException(IOError, loadedLedger.err)
+  if fileExists(S.dataPath()):
+    index = readIndex(S.dataPath())
+    if not index.ok:
+      raise newException(IOError, index.err)
+    at = index.f.findIndex(crMeta)
+    if at >= 0:
+      S.meta = readCluster(S.dataPath(), index.f.index[at],
+        S.sidecarStore, S.config.chainHash, S.config.treeHash)
+      if S.encrypted and S.metaLedger.groups.len > 0:
+        openPacked(S.keySet.master, S.metaLedger,
+          S.meta.rows, S.meta.rowOffsets, S.meta.rowCount,
+          S.metaLedger.databaseId, geistFormatVersion)
+    at = index.f.findIndex(crJournal)
+    if at >= 0:
+      S.journal = readCluster(S.dataPath(), index.f.index[at],
+        S.sidecarStore, S.config.chainHash, S.config.treeHash)
+      if S.encrypted and S.journalLedger.groups.len > 0:
+        openPacked(S.keySet.master, S.journalLedger,
+          S.journal.rows, S.journal.rowOffsets,
+          S.journal.rowCount,
+          S.journalLedger.databaseId, geistFormatVersion)
+    at = index.f.findIndex(crEntry)
+    if at >= 0:
+      S.entries = readCluster(S.dataPath(), index.f.index[at],
+        S.sidecarStore, S.config.chainHash, S.config.treeHash)
+      if S.encrypted and S.entries.varyingRows():
+        openPacked(S.keySet.master, S.ledger, S.entries.rows,
+          S.entries.rowOffsets, S.entries.rowCount,
+          S.baseName, geistFormatVersion)
+      elif S.encrypted and S.ledger.groups.len > 0:
+        openCluster(S.keySet.master, S.ledger,
+          S.entries.schema, S.entries.rows,
+          S.entries.rowCount,
+          S.baseName, geistFormatVersion)
+  # One pass over the decrypted rows rebuilds the live view. It reads two
+  # fixed columns per row and no payload, and it is the same pass the load
+  # above already paid for in cache terms.
+  S.indexLive()
+
+
 proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
     c: GeistConfig = appConfig(), password: string = "",
     readOnly: bool = false): Session {.
@@ -394,20 +536,8 @@ proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
   ## behaviour is to show the data and refuse the writes.
   var
     validated: tuple[ok: bool, err: string] = (false, "")
-    resolved: tuple[n: uint64, repaired: bool] = (0'u64, false)
     claimed: tuple[ok: bool, lease: Lease, err: string] =
       (false, default(Lease), "")
-    schema: Schema = default(Schema)
-    loadedKeys: tuple[ok: bool, keys: KeySet, err: string] =
-      (false, default(KeySet), "")
-    loadedLedger: tuple[ok: bool, ledgers: seq[Ledger], err: string] =
-      (false, @[], "")
-    recordSchema: Schema = default(Schema)
-    index: tuple[ok: bool, f: GeistFile, err: string] =
-      (false, default(GeistFile), "")
-    applied: tuple[ok: bool, s: Schema, err: string] =
-      (false, default(Schema), "")
-    at: int = -1
   result.config = normalizeGeistConfig(c)
   validated = validateGeistConfig(result.config)
   if not validated.ok:
@@ -434,123 +564,15 @@ proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
     else:
       result.readOnly = true
       result.leaseHolder = claimed.err
-  # The manifest names the live generation; `resolveGeneration` is what
-  # happens when that generation will not read back.
-  resolved = resolveGeneration(baseDir, baseName, result.encrypted)
-  result.generation = resolved.n
-  result.recoveredFrom = if resolved.repaired: liveGeneration(baseDir) else: 0'u64
-  # Generations ABOVE the live one are the debris of a save that was
-  # interrupted before it published. Only the writer clears them, and only
-  # because it holds the lease: nobody else can be building one right now.
-  if result.writeLease.held:
-    discard sweepUncommitted(baseDir, baseName, result.generation)
-  result.sidecarStore = initSidecarStore(baseDir / ".geist-sidecar",
-    result.config.sidecarThreshold, result.config.contentHash)
-  # Column policy is applied ONCE, here, so the schema written to disk is
-  # already the one the policy asked for. A later reader needs no
-  # configuration to interpret the file.
-  # Identity FIRST, then the column policy: the policy names the caller's
-  # own fields, and prepending afterwards would renumber every slot the
-  # policy had already resolved.
-  #
-  # An EMPTY schema means "whatever the file says" -- the path a daemon, an
-  # inspector or a sweep takes. There is nothing for a policy to name yet,
-  # and the stored schema already carries the policy it was written with,
-  # so applying one here would fail on every field it mentions.
-  if schemaIn.slots.len == 0:
-    schema = schemaIn
-  else:
-    applied = applyColumnPolicy(result.config,
-      if result.config.rowIdentity: withIdentity(schemaIn) else: schemaIn)
-    if not applied.ok:
-      raise newException(ValueError, applied.err)
-    schema = applied.s
-  result.live = initLiveIndex()
-  result.entries = initClusterBuild(crEntry, cmAppend, schema,
-    result.sidecarStore, 0'u16,
-    result.config.chainHash, result.config.treeHash)
-  recordSchema = schemaFor[Record]()
-  recordSchema.autoCollapse = result.config.autoCollapse
-  result.meta = initClusterBuild(crMeta, cmMutable, recordSchema,
-    result.sidecarStore, 0'u16,
-    result.config.chainHash, result.config.treeHash)
-  result.journal = initClusterBuild(crJournal, cmChained, recordSchema,
-    result.sidecarStore, 0'u16,
-    result.config.chainHash, result.config.treeHash)
-  result.ledger.databaseId = baseName
-  result.ledger.batchRows = result.config.batchRows
-  result.ledger.groups = columnGroupsFor(result.config, schema)
-  # Meta and journal carry Record, not T, so their groups resolve against
-  # that schema. Each cluster gets its OWN ledger: batch coordinates are
-  # (batchIndex, groupId) and would collide across clusters otherwise.
-  result.metaLedger.databaseId = baseName & ":meta"
-  result.metaLedger.batchRows = result.config.batchRows
-  result.journalLedger.databaseId = baseName & ":journal"
-  result.journalLedger.batchRows = result.config.batchRows
-  if result.config.sealMeta:
-    result.metaLedger.groups = columnGroupsFor(result.config, recordSchema)
-  if result.config.sealJournal:
-    result.journalLedger.groups = columnGroupsFor(result.config, recordSchema)
-  if result.encrypted:
-    if fileExists(result.keyPath()):
-      # An EXISTING key file that will not open is a wrong password or a
-      # tampered file. Minting a fresh key set here would silently orphan
-      # every row already written, so it must fail loudly instead.
-      loadedKeys = readKeyFile(result.keyPath(), password)
-      if not loadedKeys.ok:
-        raise newException(IOError, loadedKeys.err)
-      result.keySet = loadedKeys.keys
-    else:
-      result.keySet = newKeySet()
-      discard result.keySet.allocKeyRef("initial")
-    loadedLedger = readLedgerFile(result.ledgerPath())
-    if loadedLedger.ok:
-      if loadedLedger.ledgers.len > 0:
-        result.ledger = loadedLedger.ledgers[0]
-      if loadedLedger.ledgers.len > 1:
-        result.metaLedger = loadedLedger.ledgers[1]
-      if loadedLedger.ledgers.len > 2:
-        result.journalLedger = loadedLedger.ledgers[2]
-    elif fileExists(result.ledgerPath()):
-      raise newException(IOError, loadedLedger.err)
-  if fileExists(result.dataPath()):
-    index = readIndex(result.dataPath())
-    if not index.ok:
-      raise newException(IOError, index.err)
-    at = index.f.findIndex(crMeta)
-    if at >= 0:
-      result.meta = readCluster(result.dataPath(), index.f.index[at],
-        result.sidecarStore, result.config.chainHash, result.config.treeHash)
-      if result.encrypted and result.metaLedger.groups.len > 0:
-        openPacked(result.keySet.master, result.metaLedger,
-          result.meta.rows, result.meta.rowOffsets, result.meta.rowCount,
-          result.metaLedger.databaseId, geistFormatVersion)
-    at = index.f.findIndex(crJournal)
-    if at >= 0:
-      result.journal = readCluster(result.dataPath(), index.f.index[at],
-        result.sidecarStore, result.config.chainHash, result.config.treeHash)
-      if result.encrypted and result.journalLedger.groups.len > 0:
-        openPacked(result.keySet.master, result.journalLedger,
-          result.journal.rows, result.journal.rowOffsets,
-          result.journal.rowCount,
-          result.journalLedger.databaseId, geistFormatVersion)
-    at = index.f.findIndex(crEntry)
-    if at >= 0:
-      result.entries = readCluster(result.dataPath(), index.f.index[at],
-        result.sidecarStore, result.config.chainHash, result.config.treeHash)
-      if result.encrypted and result.entries.varyingRows():
-        openPacked(result.keySet.master, result.ledger, result.entries.rows,
-          result.entries.rowOffsets, result.entries.rowCount,
-          result.baseName, geistFormatVersion)
-      elif result.encrypted and result.ledger.groups.len > 0:
-        openCluster(result.keySet.master, result.ledger,
-          result.entries.schema, result.entries.rows,
-          result.entries.rowCount,
-          result.baseName, geistFormatVersion)
-  # One pass over the decrypted rows rebuilds the live view. It reads two
-  # fixed columns per row and no payload, and it is the same pass the load
-  # above already paid for in cache terms.
-  result.indexLive()
+  try:
+    loadStore(result, baseDir, baseName, schemaIn, password)
+  except CatchableError:
+    # A failed open must hand the lease back. Kept, it would stay registered
+    # to this process, and the retry -- the right password this time --
+    # would find it "already held" and quietly open read-only.
+    if result.writeLease.held:
+      result.writeLease.releaseLease()
+    raise
 
 proc openSession*[T: object](baseDir, baseName: string,
     c: GeistConfig = appConfig(), password: string = "",

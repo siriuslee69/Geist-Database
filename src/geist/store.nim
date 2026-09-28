@@ -21,6 +21,7 @@ import ./format
 import ./sidecar
 import ./row
 import ./crypto/hashing
+import ./bytecheck
 
 type
   ClusterBuild* {.role: truthState, tag: "db|storageIo|types".} = object
@@ -355,19 +356,44 @@ proc stampGeneration*(path: string, n: uint64): tuple[ok: bool,
 proc readAt*(path: string, at: uint64, n: int): ByteSeq {.role: dataFetcher,
     tag: "db|storageIo|read".} =
   ## path/at/n: file, absolute offset and byte count read in isolation.
+  ##
+  ## Every offset and length here came out of the file itself -- a header,
+  ## an index entry -- so a damaged file can ask for anything. Two rules:
+  ##
+  ##   the range must lie inside the file   checked BEFORE allocating, so a
+  ##                                        corrupt length of 4 GB costs
+  ##                                        nothing but this error
+  ##   every byte asked for must arrive     a short read used to leave
+  ##                                        zeros where the data was, which
+  ##                                        decoded as a quieter corruption
+  ##
+  ## Both raise IOError, which a caller can catch; reading past the end is
+  ## a defect, which it cannot.
   var
     fs: FileStream = nil
-  result = newSeq[uint8](n)
+    size: int64 = 0'i64
+    got: int = 0
+  if n < 0:
+    raise newException(IOError, path & ": a negative length was asked for")
   if n == 0:
-    return
+    return @[]
+  size = getFileSize(path)
+  if at > uint64(size) or uint64(n) > uint64(size) - at:
+    raise newException(IOError, path & ": bytes " & $at & "..+" & $n &
+      " lie past the end of a " & $size & "-byte file; it is truncated or " &
+      "corrupt")
+  result = newSeq[uint8](n)
   fs = newFileStream(path, fmRead)
   if fs == nil:
     raise newException(IOError, "cannot open for reading: " & path)
   try:
     fs.setPosition(int(at))
-    discard fs.readData(addr result[0], n)
+    got = fs.readData(addr result[0], n)
   finally:
     fs.close()
+  if got != n:
+    raise newException(IOError, path & ": read " & $got & " of " & $n &
+      " bytes at " & $at)
 
 proc readIndex*(path: string): tuple[ok: bool, f: GeistFile, err: string] {.
     role: dataFetcher, tag: "appApi|db|storageIo|read".} =
@@ -382,15 +408,20 @@ proc readIndex*(path: string): tuple[ok: bool, f: GeistFile, err: string] {.
     i: int = 0
   if not fileExists(path):
     return (false, GeistFile(), "no such Geist file: " & path)
-  head = readAt(path, 0'u64, headerBytes)
-  decoded = decodeHeader(head)
-  if not decoded.ok:
-    return (false, GeistFile(), decoded.err)
+  try:
+    head = readAt(path, 0'u64, headerBytes)
+    decoded = decodeHeader(head)
+    if not decoded.ok:
+      return (false, GeistFile(), decoded.err)
+    # The index length comes from the header; readAt refuses it when the
+    # file is not that long, instead of allocating what a bad count says.
+    raw = readAt(path, uint64(headerBytes),
+      int(decoded.h.clusterCount) * indexEntryBytes)
+  except IOError as exc:
+    return (false, GeistFile(), exc.msg)
   result.f.header = decoded.h
   result.f.indexBytes = headerBytes +
     int(decoded.h.clusterCount) * indexEntryBytes
-  raw = readAt(path, uint64(headerBytes),
-    int(decoded.h.clusterCount) * indexEntryBytes)
   while i < int(decoded.h.clusterCount):
     result.f.index.add decodeIndexEntry(raw, i * indexEntryBytes)
     i = i + 1
@@ -417,7 +448,7 @@ proc readSchemaOf*(path: string, e: IndexEntry): tuple[s: Schema,
   else:
     n = int(e.len) - int(e.rowCount * e.rowBytes)
   raw = readAt(path, e.at, n)
-  result.s = decodeSchema(raw, o)
+  result.s = schemaFrom(raw, o, path)
   result.schemaBytes = o
 
 proc readRowAt*(path: string, e: IndexEntry, schemaBytes: int,
@@ -454,7 +485,7 @@ proc readCluster*(path: string, e: IndexEntry,
   result.role = e.role
   result.mode = e.mode
   result.schemaId = e.schemaId
-  result.schema = decodeSchema(raw, o)
+  result.schema = schemaFrom(raw, o, path)
   result.rowCount = e.rowCount
   result.rows = raw[o .. ^1]
   result.store = store
