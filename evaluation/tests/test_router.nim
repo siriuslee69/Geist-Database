@@ -43,6 +43,7 @@ proc asker(): PeerContext {.role: configurator.} =
 
 suite "the config file lists every option":
 
+  # {.testKind: tkUnit.}
   test "the example writes and reads back":
     var p = scratch("router.toml")
     removeFile(p)
@@ -56,6 +57,7 @@ suite "the config file lists every option":
     check back.value.routing.route[0].hops.len == 2
     check back.value.routing.route[0].hops[1].priority == 1'u8
 
+  # {.testKind: tkUnit.}
   test "and the file names the things an operator has to set":
     var p = scratch("router2.toml")
     check writeDoc(p, exampleRouterConfig(), routerNotes()).ok
@@ -68,6 +70,7 @@ suite "the config file lists every option":
     check "# this router's own name" in text
     check text.startsWith("# geist-routed:")
 
+  # {.testKind: tkUnit.}
   test "a hand-trimmed file still loads, with the defaults filled in":
     var p = scratch("router3.toml")
     writeFile(p, """
@@ -93,20 +96,24 @@ instance = "*"
     check r.c.routing.probeSuccesses == defaultProbeSuccesses
     check r.c.routing.validate().ok
 
+  # {.testKind: tkEdgeCase.}
   test "a config that will not parse is fatal, not a shrug":
     var p = scratch("broken.toml")
     writeFile(p, "listen = \n[[[\n")
     check not loadRouterConfig(p).ok
 
+  # {.testKind: tkEdgeCase.}
   test "a named config that does not exist is fatal":
     check not loadRouterConfig(scratch("absent.toml")).ok
 
+  # {.testKind: tkEdgeCase.}
   test "but no config at all is the built-in defaults":
     var r = loadRouterConfig("")
     check r.ok
 
 suite "what an option on the command line does":
 
+  # {.testKind: tkUnit.}
   test "it wins over the file":
     var
       c = exampleRouterConfig()
@@ -117,6 +124,7 @@ suite "what an option on the command line does":
     check t.routing.node == "edge"
     check t.timeoutMs == 50
 
+  # {.testKind: tkEdgeCase.}
   test "and what was not typed is left alone":
     var
       c = exampleRouterConfig()
@@ -125,16 +133,19 @@ suite "what an option on the command line does":
     check t.routing.node == c.routing.node
     check t.quiet
 
+  # {.testKind: tkEdgeCase.}
   test "an unknown option is refused by name":
     expect ValueError:
       discard parseArgs(@["--nonsense", "1"])
 
+  # {.testKind: tkEdgeCase.}
   test "an option with no value is refused":
     expect ValueError:
       discard parseArgs(@["--listen"])
 
 suite "what the router refuses, and why":
 
+  # {.testKind: tkEdgeCase.}
   test "an address that is not one":
     var
       S = stateFor(gatewayTable())
@@ -143,6 +154,7 @@ suite "what the router refuses, and why":
     check not r.ok
     check "'..'" in r.err
 
+  # {.testKind: tkEdgeCase.}
   test "a bare name, when there is no catch-all":
     var
       S = stateFor(gatewayTable())
@@ -151,6 +163,7 @@ suite "what the router refuses, and why":
     check "names no app" in r.err
     check "geist://<app>/<target>" in r.err
 
+  # {.testKind: tkUnit.}
   test "a bare name IS routed once there is a catch-all":
     var t = gatewayTable()
     t.route.add Route(app: "*", instance: "*", hops: @[
@@ -163,6 +176,7 @@ suite "what the router refuses, and why":
     # refused for being unaddressed.
     check "names no app" notin r.err
 
+  # {.testKind: tkEdgeCase.}
   test "an app nothing serves, by name":
     var
       S = stateFor(gatewayTable())
@@ -171,6 +185,7 @@ suite "what the router refuses, and why":
     check not r.ok
     check "no route for snotra" in r.err
 
+  # {.testKind: tkUnit.}
   test "a request that has already been here":
     var
       S = stateFor(gatewayTable())
@@ -180,6 +195,7 @@ suite "what the router refuses, and why":
     check "routing loop" in r.err
     check "gateway" in r.err
 
+  # {.testKind: tkUnit.}
   test "a request that has run out of hops":
     var
       S = stateFor(gatewayTable())
@@ -188,6 +204,7 @@ suite "what the router refuses, and why":
     check not r.ok
     check "hop limit" in r.err
 
+  # {.testKind: tkEdgeCase.}
   test "and every refusal is counted":
     var S = stateFor(gatewayTable())
     discard S.routeQuery(Query(op: qoFind, collection: "notes"), asker())
@@ -198,6 +215,7 @@ suite "what the router refuses, and why":
 
 suite "a request on its way out":
 
+  # {.testKind: tkUnit.}
   test "carries this router in via, and the caller in as":
     # The forward is built before the connection is attempted, so the
     # address the upstream WOULD see is observable through the failure.
@@ -208,6 +226,7 @@ suite "a request on its way out":
     a.onBehalfOf = asker().subject
     check $a == "geist://eris/notes?ttl=5&via=gateway&as=phone"
 
+  # {.testKind: tkUnit.}
   test "and a second router appends itself without erasing the first":
     var a = parseAddress("geist://eris/notes?ttl=5&via=gateway&as=phone").a
     check a.hop("vps-1").ok

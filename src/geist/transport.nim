@@ -240,6 +240,25 @@ proc geistDescriptor*(i: bfx.AmeIdentityKey,
 
 ## --------------------------- handshake ------------------------------
 
+proc helloAgain(sock: bfx.DacSocket, remote: bfx.DacAddress,
+    hs: var bfx.AmeClientHandshake, retry: bfx.AmeHelloRetry, sessionId: uint64,
+    L: bfx.AmeSuiteLayout, start: bfx.AmeMaskTier, auth: bfx.AmeAuthentication,
+    timeoutMs: int): bfx.DacFrameBytesResult {.role: orchestrator,
+    tag: "ame|networkSurface".} =
+  ## sock/remote/hs: the link being opened and its half-done handshake.
+  ## retry: the server's cookie challenge.
+  ## sessionId/L/start/auth/timeoutMs: as for the first hello.
+  ##
+  ## The server wants proof this address can receive before it spends a
+  ## post-quantum key exchange on us. A retried hello is a WHOLE new hello
+  ## -- new keys, new transcript -- carrying the cookie it sent. Returns the
+  ## server's next frame.
+  bfx.clearAmeClientHandshake(hs)
+  hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, retry.cookie, auth)
+  bfx.sendDacFrameBytes(sock, remote,
+    bfx.encodeAmeClientHelloFrame(hs.hello, retried = true))
+  result = bfx.recvDacFrameBytes(sock, geistDacFrameMaxBytes, timeoutMs)
+
 proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     peer: bfx.AmePinnedPeerIdentity, policy: TriggerPolicy,
     sessionId: uint64 = 1'u64,
@@ -256,7 +275,6 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     sock: bfx.DacSocket = nil
     got: bfx.DacFrameBytesResult = default(bfx.DacFrameBytesResult)
     frame: bfx.AmeHandshakeFrame = default(bfx.AmeHandshakeFrame)
-    retry: bfx.AmeHelloRetry = default(bfx.AmeHelloRetry)
     serverHello: bfx.AmeServerHello = default(bfx.AmeServerHello)
     finished: bfx.AmeHandshakeResult = default(bfx.AmeHandshakeResult)
     session: bfx.AmeSession = default(bfx.AmeSession)
@@ -281,16 +299,8 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
       return (false, GeistLink(), got.err)
     frame = bfx.decodeAmeHandshakeFrame(got.payload)
     if frame.kind == bfx.ampkHelloRetry:
-      # The server wants proof this address can receive before it spends a
-      # post-quantum key exchange on us. A retried hello is a WHOLE new
-      # hello -- new keys, new transcript -- carrying the cookie it sent.
-      retry = bfx.decodeAmeHelloRetry(frame.record)
-      bfx.clearAmeClientHandshake(hs)
-      hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, retry.cookie,
-        auth)
-      bfx.sendDacFrameBytes(sock, remote,
-        bfx.encodeAmeClientHelloFrame(hs.hello, retried = true))
-      got = bfx.recvDacFrameBytes(sock, geistDacFrameMaxBytes, timeoutMs)
+      got = helloAgain(sock, remote, hs, bfx.decodeAmeHelloRetry(frame.record),
+        sessionId, L, start, auth, timeoutMs)
       if not got.ok:
         bfx.closeDac(sock)
         return (false, GeistLink(), got.err)
@@ -339,6 +349,30 @@ proc replyFrom(payload: ByteSeq): tuple[ok: bool, reply: Reply,
     return (false, Reply(), "malformed answer: " & complaint)
   result = (true, decodeReply(payload), "")
 
+proc awaitReply(S: var GeistLink, timeoutMs: int): tuple[ok: bool,
+    reply: Reply, err: string] {.role: dataFetcher,
+    tag: "ame|networkSurface|read".} =
+  ## S/timeoutMs: frames read until one whole answer has arrived -- one
+  ## frame, or a package of many -- and that answer checked and decoded.
+  var
+    got: bfx.AmeOpenResult = default(bfx.AmeOpenResult)
+    fed: FeedOutcome = (false, false, @[], "")
+    inbox: PackageAssembly = PackageAssembly()
+    frames: int = 0
+  # A package whose chunks never finish arriving must not spin here. The
+  # count is generous: a megabyte at MTU-sized chunks is ~900.
+  while frames <= 65_536:
+    got = bfx.receive(S.client, timeoutMs)
+    if not got.ok:
+      return (false, Reply(), got.err)
+    fed = feedPayload(inbox, got.packet.payload)
+    if not fed.ok:
+      return (false, Reply(), fed.err)
+    if fed.done:
+      return replyFrom(fed.payload)
+    frames = frames + 1
+  result = (false, Reply(), "package never completed")
+
 proc send*(S: var GeistLink, q: Query,
     timeoutMs: int = 4000): tuple[ok: bool, reply: Reply, err: string] {.
     role: orchestrator, tag: "ame|appApi|networkSurface|orchestrator".} =
@@ -350,11 +384,7 @@ proc send*(S: var GeistLink, q: Query,
   ## payload is complete rather than assumed to arrive whole. See the
   ## package note above.
   var
-    got: bfx.AmeOpenResult = default(bfx.AmeOpenResult)
     sent: SendOutcome = (false, 0, "")
-    fed: FeedOutcome = (false, false, @[], "")
-    inbox: PackageAssembly = PackageAssembly()
-    frames: int = 0
   if not S.open:
     return (false, Reply(), "link is closed")
   try:
@@ -363,20 +393,7 @@ proc send*(S: var GeistLink, q: Query,
       encodeQuery(q), S.nextPackage)
     if not sent.ok:
       return (false, Reply(), sent.err)
-    while true:
-      got = bfx.receive(S.client, timeoutMs)
-      if not got.ok:
-        return (false, Reply(), got.err)
-      fed = feedPayload(inbox, got.packet.payload)
-      if not fed.ok:
-        return (false, Reply(), fed.err)
-      if fed.done:
-        return replyFrom(fed.payload)
-      frames = frames + 1
-      # A package whose chunks never finish arriving must not spin here.
-      # The count is generous: a megabyte at MTU-sized chunks is ~900.
-      if frames > 65_536:
-        return (false, Reply(), "package never completed")
+    result = S.awaitReply(timeoutMs)
   except CatchableError as exc:
     result = (false, Reply(), exc.msg)
 

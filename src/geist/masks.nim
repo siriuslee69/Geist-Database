@@ -172,9 +172,10 @@ proc validateTriggerPolicy*(p: TriggerPolicy): tuple[ok: bool, err: string] {.
     t: GeistTier = gtTelemetry
     last: uint64 = 0'u64
   while true:
+    if t > p.startTier and p.rows[t].kind == tkTransferred and
+        p.rows[t].threshold <= last:
+      return (false, "trigger thresholds must increase with tier: " & $t)
     if t > p.startTier and p.rows[t].kind == tkTransferred:
-      if p.rows[t].threshold <= last:
-        return (false, "trigger thresholds must increase with tier: " & $t)
       last = p.rows[t].threshold
     if p.rows[t].kind in {tkTransferred, tkElapsed} and
         p.rows[t].threshold == 0'u64:

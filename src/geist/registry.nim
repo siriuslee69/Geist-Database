@@ -270,8 +270,7 @@ proc evictTo(S: var StoreRegistry, room: int): tuple[ok: bool, err: string] {.
       i = 0
     else:
       # Leave it open and step past it.
-      if stuck.len == 0:
-        stuck = closed.err
+      stuck.keepFirst(closed.err)
       i = i + 1
   result = (true, stuck)
 
@@ -391,8 +390,7 @@ proc saveAll*(S: var StoreRegistry): tuple[ok: bool, saved: int,
       result.saved = result.saved + 1
     else:
       result.ok = false
-      if result.err.len == 0:
-        result.err = "store " & key & ": " & saved.err
+      result.err.keepFirst("store " & key & ": " & saved.err)
 
 proc closeRegistry*(S: var StoreRegistry): tuple[ok: bool, err: string] {.
     role: dataWriter, tag: "db|lifecycle|server|storageIo".} =
@@ -412,8 +410,7 @@ proc closeRegistry*(S: var StoreRegistry): tuple[ok: bool, err: string] {.
     closed = S.closeSlot(keys[i])
     if not closed.ok:
       result.ok = false
-      if result.err.len == 0:
-        result.err = closed.err
+      result.err.keepFirst(closed.err)
     i = i + 1
 
 proc openCount*(S: StoreRegistry): int {.role: parser, inline,

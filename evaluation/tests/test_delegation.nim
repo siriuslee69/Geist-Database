@@ -34,18 +34,22 @@ proc serverWith(peers: openArray[TrustedPeer], port: int): GeistServer {.
 
 suite "the address carries the claim":
 
+  # {.testKind: tkUnit.}
   test "as= parses and renders":
     var r = parseAddress("geist://eris/notes?ttl=4&via=gw&as=phone")
     check r.ok
     check r.a.onBehalfOf == "phone"
     check $r.a == "geist://eris/notes?ttl=4&via=gw&as=phone"
 
+  # {.testKind: tkEdgeCase.}
   test "an empty claim is refused rather than treated as absent":
     check not parseAddress("geist://eris/notes?as=").ok
 
+  # {.testKind: tkEdgeCase.}
   test "a claim with an illegal character is refused":
     check not parseAddress("geist://eris/notes?as=a b").ok
 
+  # {.testKind: tkEdgeCase.}
   test "no claim at all is the ordinary case":
     check parseAddress("geist://eris/notes").a.onBehalfOf == ""
 
@@ -60,9 +64,11 @@ suite "the server intersects":
   teardown:
     s.closeServer()
 
+  # {.testKind: tkEdgeCase.}
   test "a peer this server has never heard of has no rights at all":
     check s.rightsFor("stranger") == {}
 
+  # {.testKind: tkEdgeCase.}
   test "with no claim, the connecting peer's own rights stand":
     var
       p = PeerContext(subject: "router", rights: {prRead, prWrite})
@@ -71,6 +77,7 @@ suite "the server intersects":
     check e.subject == "router"
     check e.rights == {prRead, prWrite}
 
+  # {.testKind: tkUnit.}
   test "a write-capable router forwarding for a reader gets read only":
     var
       p = PeerContext(subject: "router", rights: {prRead, prWrite})
@@ -79,6 +86,7 @@ suite "the server intersects":
     check e.subject == "reader"
     check e.rights == {prRead}
 
+  # {.testKind: tkEdgeCase.}
   test "a read-only router can never hand out write":
     var
       p = PeerContext(subject: "reader", rights: {prRead})
@@ -86,6 +94,7 @@ suite "the server intersects":
       e = s.delegatedContext(p, a)
     check e.rights == {prRead}
 
+  # {.testKind: tkEdgeCase.}
   test "forwarding for someone this server does not know grants nothing":
     var
       p = PeerContext(subject: "router", rights: {prRead, prWrite})
@@ -94,12 +103,14 @@ suite "the server intersects":
     check e.subject == "stranger"
     check e.rights == {}
 
+  # {.testKind: tkEdgeCase.}
   test "a router cannot elevate itself by naming a stronger peer":
     var
       p = PeerContext(subject: "reader", rights: {prRead})
       a = parseAddress("geist://eris/notes?as=router").a
     check s.delegatedContext(p, a).rights == {prRead}
 
+  # {.testKind: tkUnit.}
   test "the claimed subject is what the handler is told, so a row is "&
       "attributed to the person who wrote it":
     var

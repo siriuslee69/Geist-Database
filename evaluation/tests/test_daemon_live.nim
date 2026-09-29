@@ -164,6 +164,7 @@ proc clientFor(port: uint16, identityFile,
     defaultTriggerPolicy(), 1'u64, 4000)
 
 suite "a live daemon answers over a real socket":
+  # {.testKind: tkIntegration.}
   test "connect, read, and keep the session across several requests":
     var
       root = freshRoot("geist_t_live1")
@@ -211,6 +212,7 @@ suite "a live daemon answers over a real socket":
     stopServer(addr args, t)
     check args.err == ""
 
+  # {.testKind: tkIntegration.}
   test "two peers hold sessions at the same time":
     var
       root = freshRoot("geist_t_live2")
@@ -250,6 +252,7 @@ suite "a live daemon answers over a real socket":
     check args.err == ""
 
 suite "syncing between two desktops":
+  # {.testKind: tkIntegration.}
   test "a follower catches up by log position and stops when caught up":
     var
       root = freshRoot("geist_t_live3")
@@ -311,6 +314,7 @@ suite "syncing between two desktops":
     stopServer(addr args, t)
     check args.err == ""
 
+  # {.testKind: tkIntegration.}
   test "a subscription remembers its cursor on the server":
     var
       root = freshRoot("geist_t_live4")
@@ -346,6 +350,7 @@ suite "syncing between two desktops":
     check args.err == ""
 
 suite "payloads bigger than a datagram":
+  # {.testKind: tkIntegration.}
   test "a reply too large for one frame arrives whole":
     var
       root = freshRoot("geist_t_live7")
@@ -401,6 +406,7 @@ suite "payloads bigger than a datagram":
     check args.err == ""
 
 suite "writing across the wire":
+  # {.testKind: tkIntegration.}
   test "a read-only peer is refused, and told why":
     var
       root = freshRoot("geist_t_live5")
@@ -437,6 +443,7 @@ suite "writing across the wire":
     stopServer(addr args, t)
     check args.err == ""
 
+  # {.testKind: tkIntegration.}
   test "a writing peer pushes rows and the receiver stores them":
     var
       root = freshRoot("geist_t_live6")
@@ -498,6 +505,7 @@ suite "writing across the wire":
     check find[Note](re, "title", "from-peer").len == 1
     re.close()
 
+  # {.testKind: tkIntegration.}
   test "a client with no database of its own can still add a row":
     var
       root = freshRoot("geist_t_live8")
@@ -573,6 +581,7 @@ proc chainIdentities(keys: string) {.role: dataWriter.} =
     check savePin(keys / (who & ".pin"), pinOf(k.key)).ok
 
 suite "a chain of three desktops":
+  # {.testKind: tkIntegration.}
   test "a row relayed through the middle keeps the id it was born with":
     var
       rootA = freshRoot("geist_t_chain1_a")
@@ -639,6 +648,7 @@ suite "a chain of three desktops":
     stopServer(addr argsB, tB)
     check argsB.err == ""
 
+  # {.testKind: tkIntegration.}
   test "an update and a delete travel the whole chain":
     var
       rootA = freshRoot("geist_t_chain2_a")

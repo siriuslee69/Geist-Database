@@ -43,6 +43,7 @@ limit = 50
 """)
 
 suite "the geist CLI: an option beats the file":
+  # {.testKind: tkEdgeCase.}
   test "a file fills in only what was not typed":
     var
       cfg = writeConfig(scratch("geist_t_prec1"))
@@ -52,6 +53,7 @@ suite "the geist CLI: an option beats the file":
     check o.limit == 50
     check o.remote == "dac://10.0.0.2:8888"
 
+  # {.testKind: tkUnit.}
   test "typing the default value still counts as typing it":
     # The regression: `app` and `20` ARE the defaults, so a parser that
     # compares values cannot tell these were asked for.
@@ -64,6 +66,7 @@ suite "the geist CLI: an option beats the file":
     # Everything not typed still comes from the file.
     check o.path == "/from/the/file"
 
+  # {.testKind: tkEdgeCase.}
   test "a non-default option beats the file too":
     var
       cfg = writeConfig(scratch("geist_t_prec3"))
@@ -72,6 +75,7 @@ suite "the geist CLI: an option beats the file":
     check o.path == "/typed"
     check o.limit == 5
 
+  # {.testKind: tkUnit.}
   test "the options actually typed are recorded":
     var o = parseOptions(["list", "--preset", "app", "--json"])
     check "preset" in o.given
@@ -79,6 +83,7 @@ suite "the geist CLI: an option beats the file":
     check "limit" notin o.given
 
 suite "geistd: an option beats the file":
+  # {.testKind: tkEdgeCase.}
   test "a file fills in only what was not given":
     var
       cfg = writeConfig(scratch("geist_t_prec4"))
@@ -88,6 +93,7 @@ suite "geistd: an option beats the file":
     check c.listen == "dac://10.0.0.1:9999"
     check c.trust == @["/from/the/file.pin"]
 
+  # {.testKind: tkUnit.}
   test "typing the default listen address still counts":
     # Binding loopback explicitly is a deployment decision, and a file
     # moving the daemon onto a routable address instead is exactly the
@@ -101,6 +107,7 @@ suite "geistd: an option beats the file":
     check c.preset == "app"
     check c.path == "/from/the/file"
 
+  # {.testKind: tkEdgeCase.}
   test "an empty trust list from the command line is not silently refilled":
     var
       cfg = writeConfig(scratch("geist_t_prec6"))

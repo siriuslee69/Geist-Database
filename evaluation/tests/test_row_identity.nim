@@ -24,6 +24,7 @@ proc freshRoot(name: string): string {.role: helper.} =
   removeDir(result)
 
 suite "identity":
+  # {.testKind: tkUnit.}
   test "a stored row gets an id, and the id is what comes back":
     var
       root = freshRoot("geist_t_id1")
@@ -42,6 +43,7 @@ suite "identity":
     check not byId[Note](db, 99'u64).found
     db.close()
 
+  # {.testKind: tkUnit.}
   test "ids survive save and reopen":
     var
       root = freshRoot("geist_t_id2")
@@ -56,6 +58,7 @@ suite "identity":
     check re.put(Note(noteId: 3, title: "c")) == ids[1] + 1'u64
     re.close()
 
+  # {.testKind: tkUnit.}
   test "set replaces the row without moving anyone else":
     var
       root = freshRoot("geist_t_id3")
@@ -75,6 +78,7 @@ suite "identity":
     check db.set(999'u64, Note(noteId: 9, title: "nope")) == false
     db.close()
 
+  # {.testKind: tkUnit.}
   test "delete hides the row and keeps the tombstone in the log":
     var
       root = freshRoot("geist_t_id4")
@@ -95,6 +99,7 @@ suite "identity":
     check db.delete(4242'u64) == false
     db.close()
 
+  # {.testKind: tkUnit.}
   test "updates and deletes survive a reopen":
     var
       root = freshRoot("geist_t_id5")
@@ -112,6 +117,7 @@ suite "identity":
     check not byId[Note](re, ids[2]).found
     re.close()
 
+  # {.testKind: tkUnit.}
   test "a deleted row can be brought back by name":
     var
       root = freshRoot("geist_t_id6")
@@ -125,6 +131,7 @@ suite "identity":
     check db.entryCount() == 1'u32
     db.close()
 
+  # {.testKind: tkUnit.}
   test "find and findIds see current versions only":
     var
       root = freshRoot("geist_t_id7")
@@ -140,6 +147,7 @@ suite "identity":
     db.close()
 
 suite "identity and encryption":
+  # {.testKind: tkUnit.}
   test "the id columns are sealed with the row":
     var
       root = freshRoot("geist_t_idenc")
@@ -156,6 +164,7 @@ suite "identity and encryption":
     re.close()
 
 suite "compaction":
+  # {.testKind: tkUnit.}
   test "compact drops superseded versions and keeps the visible ones":
     var
       root = freshRoot("geist_t_comp1")
@@ -177,6 +186,7 @@ suite "compaction":
     check not byId[Note](db, ids[2]).found
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "compaction never hands a retired id back out":
     var
       root = freshRoot("geist_t_comp2")
@@ -200,6 +210,7 @@ suite "compaction":
     re.close()
 
 suite "databases without identity":
+  # {.testKind: tkEdgeCase.}
   test "a telemetry preset stores no identity and says so":
     var
       root = freshRoot("geist_t_noid")
@@ -215,6 +226,7 @@ suite "databases without identity":
     check db.save().ok
     db.close()
 
+  # {.testKind: tkUnit.}
   test "identity-free rows stay dense":
     var
       root = freshRoot("geist_t_noid2")
@@ -230,6 +242,7 @@ suite "databases without identity":
     removeDir(root)
 
 suite "the schema-driven path":
+  # {.testKind: tkUnit.}
   test "a dynamic row carries the id it was built with":
     var
       root = freshRoot("geist_t_dyn")
@@ -253,11 +266,13 @@ suite "the schema-driven path":
       discard db.putRow(Row(data: anon.data))
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a caller cannot declare a reserved column":
     var spec = parseSchemaSpec("Bad", "__rowId:int,title:text")
     check not spec.ok
     check spec.err.contains("reserved")
 
+  # {.testKind: tkEdgeCase.}
   test "a malformed row is refused, not decoded":
     var
       root = freshRoot("geist_t_badrow")
@@ -267,6 +282,7 @@ suite "the schema-driven path":
     db.close()
 
 suite "the changefeed says what happened":
+  # {.testKind: tkUnit.}
   test "add, update and delete are distinguishable, and name the row":
     var
       root = freshRoot("geist_t_feed")
@@ -298,6 +314,7 @@ suite "the changefeed says what happened":
 import std/[monotimes, times]
 
 suite "appending stays cheap as the log grows":
+  # {.testKind: tkUnit.}
   test "the live view is correct when appends, updates and deletes mix":
     # The O(1) append path may only be taken for a brand new id. This
     # interleaves the three cases so a wrong shortcut shows up as a wrong
@@ -325,6 +342,7 @@ suite "appending stays cheap as the log grows":
     check re.rowIds() == idsNow
     re.close()
 
+  # {.testKind: tkUnit.}
   test "storing four times the rows costs about four times as much":
     # A ratio, not a wall clock, so it means the same on a slow machine.
     # Linear is ~4x; the quadratic version this guards against was ~16x.

@@ -18,17 +18,20 @@ suite "crypto":
       rows.add r
       plain.add r
 
+  # {.testKind: tkUnit.}
   test "whole batch seals and opens":
     var ct = sealBatch(master, e, "db", 1'u16, plain, rows)
     check ct != plain
     check openBatch(master, e, "db", 1'u16, ct) == plain
 
+  # {.testKind: tkUnit.}
   test "a seekable cipher decrypts one row without the batch":
     var ct = sealBatch(master, e, "db", 1'u16, plain, rows)
     check isSeekable(e.cipher)
     check openRow(master, e, "db", 1'u16, uint64(3 * w),
       ct[3 * w ..< 4 * w]) == rows[3]
 
+  # {.testKind: tkEdgeCase.}
   test "epoch increments on every seal so a nonce is never reused":
     var first = e.epoch
     discard sealBatch(master, e, "db", 1'u16, plain, rows)
@@ -37,6 +40,7 @@ suite "crypto":
     check first < second
     check second < e.epoch
 
+  # {.testKind: tkEdgeCase.}
   test "AAD binds position: a relocated batch does not open":
     var
       ct = sealBatch(master, e, "db", 1'u16, plain, rows)
@@ -48,6 +52,7 @@ suite "crypto":
     check openBatch(master, moved, "db", 1'u16, ct) != plain
     check openBatch(master, e, "other-db", 1'u16, ct) != plain
 
+  # {.testKind: tkUnit.}
   test "a row verifies against the root with a log2(N) path":
     discard sealBatch(master, e, "db", 1'u16, plain, rows)
     var
@@ -59,6 +64,7 @@ suite "crypto":
     check verifyRow(master, e, 3'u32, rows[3], proof)
     check not verifyRow(master, e, 3'u32, @[0'u8, 1, 2], proof)
 
+  # {.testKind: tkUnit.}
   test "the combined MAC is a sound PRF combiner and verifies":
     var
       aad = buildAad("db", 2'u16, 5'u32, 1'u64, 1'u16)
@@ -68,6 +74,7 @@ suite "crypto":
     check not verifyTag(mkCombined, master, plain,
       buildAad("db", 2'u16, 6'u32, 1'u64, 1'u16), t)
 
+  # {.testKind: tkEdgeCase.}
   test "batch index is arithmetic, not a search":
     check ledgerRowOf(33'u32, 10'u32) == 3'u32
     check ledgerRowOf(0'u32, 10'u32) == 0'u32

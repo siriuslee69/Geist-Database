@@ -126,6 +126,18 @@ proc generationArtifacts*(baseDir, baseName: string, n: uint64,
     result.add g.keyPath
     result.add g.ledgerPath
 
+proc removeQuietly(path: string): int {.role: dataWriter,
+    tag: "keyLifecycle|storageIo|write".} =
+  ## path: removed when it is there -> 1 if it was, 0 if it was not or
+  ## could not be. Retiring is tidying; a file that will not go is left.
+  if not fileExists(path):
+    return 0
+  try:
+    removeFile(path)
+    result = 1
+  except CatchableError:
+    result = 0
+
 proc retireGeneration*(baseDir, baseName: string, n: uint64): int {.
     role: dataWriter, tag: "keyLifecycle|storageIo|write",
     discardable.} =
@@ -144,12 +156,7 @@ proc retireGeneration*(baseDir, baseName: string, n: uint64): int {.
     return 0
   A = generationArtifacts(baseDir, baseName, n, true)
   while i < A.len:
-    if fileExists(A[i]):
-      try:
-        removeFile(A[i])
-        result = result + 1
-      except CatchableError:
-        discard
+    result = result + removeQuietly(A[i])
     i = i + 1
 
 proc sweepUncommitted*(baseDir, baseName: string, live: uint64): int {.

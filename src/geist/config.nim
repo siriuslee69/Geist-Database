@@ -713,6 +713,27 @@ proc geistConfigPreset*(name: string): GeistConfig {.role: configurator,
     raise newException(ValueError, "unknown Geist config preset '" & name &
       "'; known: " & knownPresetNames())
 
+proc widthOf(p: ColumnPolicy): tuple[ok: bool, width: uint32, err: string] {.
+    role: configurator, tag: "config|db".} =
+  ## p: one column's policy -> the width its slot gets.
+  ##
+  ##   colFixed     the stated width, or the default when none is stated
+  ##   colCapped    the stated width -- refused below minCappedWidth, not
+  ##                quietly widened: a stored schema that disagreed with the
+  ##                policy written down is the failure this guards against
+  ##   colVariable  0; the row holds a length and the bytes
+  case p.column
+  of colFixed:
+    result = (true, (if p.width == 0'u32: defaultFixedWidth else: p.width), "")
+  of colCapped:
+    if p.width < minCappedWidth:
+      return (false, 0'u32, "column '" & p.field & "' is capped at " &
+        $p.width & " B but a reference needs " & $minCappedWidth &
+        " B; widen it or use colVariable")
+    result = (true, p.width, "")
+  of colVariable:
+    result = (true, 0'u32, "")
+
 proc applyColumnPolicy*(c: GeistConfig,
     s: Schema): tuple[ok: bool, s: Schema, err: string] {.role: configurator,
     tag: "appApi|config|db|types".} =
@@ -725,7 +746,7 @@ proc applyColumnPolicy*(c: GeistConfig,
   var
     i: int = 0
     at: int = -1
-    w: uint32 = 0'u32
+    sized: tuple[ok: bool, width: uint32, err: string] = (false, 0'u32, "")
   result.s = s
   result.s.autoCollapse = c.autoCollapse
   while i < c.columnPolicy.len:
@@ -735,27 +756,12 @@ proc applyColumnPolicy*(c: GeistConfig,
         "', which is not a field of " & s.typeName &
         "; check the spelling, because an unmatched policy would " &
         "otherwise apply to nothing and look like it worked")
+    sized = widthOf(c.columnPolicy[i])
+    if not sized.ok:
+      return (false, s, sized.err)
     result.s.slots[at].column = c.columnPolicy[i].column
     result.s.slots[at].onOverflow = c.columnPolicy[i].onOverflow
-    case c.columnPolicy[i].column
-    of colFixed:
-      w = c.columnPolicy[i].width
-      if w == 0'u32:
-        w = defaultFixedWidth
-      result.s.slots[at].width = w
-    of colCapped:
-      # A caller who states a width too small for a reference gets an
-      # error, not a silent widening. Quietly raising it would mean the
-      # stored schema disagreed with the policy that was written down --
-      # the exact failure this proc's error path exists to prevent.
-      if c.columnPolicy[i].width < minCappedWidth:
-        return (false, s, "column '" & c.columnPolicy[i].field &
-          "' is capped at " & $c.columnPolicy[i].width &
-          " B but a reference needs " & $minCappedWidth &
-          " B; widen it or use colVariable")
-      result.s.slots[at].width = c.columnPolicy[i].width
-    of colVariable:
-      result.s.slots[at].width = 0'u32
+    result.s.slots[at].width = sized.width
     i = i + 1
   # A capped column too narrow for a reference cannot honour its contract,
   # so it is rejected here rather than at the first oversized write.
@@ -775,6 +781,26 @@ proc applyColumnPolicy*(c: GeistConfig,
     i = i + 1
   result.ok = true
 
+proc slotsNamed(s: Schema, names: openArray[string]): seq[int] {.
+    role: parser, tag: "batch|config".} =
+  ## s/names: the slot of every name the schema has; the rest skipped.
+  var
+    idx: int = -1
+  for name in names:
+    idx = s.slotIndex(name)
+    if idx >= 0:
+      result.add idx
+
+proc addIdentityColumns(slots: var seq[int]) {.role: truthBuilder, inline,
+    tag: "batch|config|cryptoBoundary".} =
+  ## slots: gains the reserved identity columns it does not already hold.
+  var
+    j: int = 0
+  while j < identityColumnCount:
+    if not (j in slots):
+      slots.add j
+    j = j + 1
+
 proc columnGroupsFor*(c: GeistConfig, s: Schema): seq[ColumnGroup] {.
     role: truthBuilder, tag: "batch|config|cryptoBoundary".} =
   ## c: configuration naming groups by field name.
@@ -785,9 +811,7 @@ proc columnGroupsFor*(c: GeistConfig, s: Schema): seq[ColumnGroup] {.
   ## single group -- "encrypted" must never silently mean "some columns".
   var
     i: int = 0
-    j: int = 0
     g: ColumnGroup = default(ColumnGroup)
-    idx: int = 0
   if c.cipher != ckNone and c.columnGroups.len == 0:
     g = ColumnGroup(groupId: 0'u16, slots: @[])
     while i < s.slots.len:
@@ -797,13 +821,8 @@ proc columnGroupsFor*(c: GeistConfig, s: Schema): seq[ColumnGroup] {.
       result.add g
     return
   while i < c.columnGroups.len:
-    g = ColumnGroup(groupId: uint16(i), slots: @[])
-    j = 0
-    while j < c.columnGroups[i].len:
-      idx = s.slotIndex(c.columnGroups[i][j])
-      if idx >= 0:
-        g.slots.add idx
-      j = j + 1
+    g = ColumnGroup(groupId: uint16(i),
+      slots: s.slotsNamed(c.columnGroups[i]))
     if g.slots.len > 0:
       result.add g
     i = i + 1
@@ -812,8 +831,4 @@ proc columnGroupsFor*(c: GeistConfig, s: Schema): seq[ColumnGroup] {.
   # exactly which rows were edited and which were deleted. They join the
   # first group, so "encrypted" keeps meaning the whole row.
   if c.cipher != ckNone and s.hasIdentityColumns() and result.len > 0:
-    j = 0
-    while j < identityColumnCount:
-      if not (j in result[0].slots):
-        result[0].slots.add j
-      j = j + 1
+    result[0].slots.addIdentityColumns()

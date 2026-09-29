@@ -24,6 +24,7 @@ proc scratch(name: string): string {.role: helper.} =
 
 # {.testKind: tkUnit, covers: "geistConfigPreset".}
 suite "every catalogued preset is usable":
+  # {.testKind: tkUnit.}
   test "each one resolves to a configuration that validates":
     var
       c: GeistConfig = appConfig()
@@ -35,6 +36,7 @@ suite "every catalogued preset is usable":
       if not v.ok:
         echo "preset '", p.name, "' does not validate: ", v.err
 
+  # {.testKind: tkUnit.}
   test "each one keeps its own name, so diagnostics can say which it was":
     var c: GeistConfig = appConfig()
     for p in geistConfigPresets():
@@ -57,11 +59,13 @@ suite "every catalogued preset is usable":
 
 # {.testKind: tkUnit, covers: "geistConfigPreset".}
 suite "the workload presets say what their workload needs":
+  # {.testKind: tkUnit.}
   test "cloud-sync can name rows, because a follower syncs by name":
     var c: GeistConfig = geistConfigPreset("cloud-sync")
     check c.rowIdentity
     check c.keepHistory
 
+  # {.testKind: tkUnit.}
   test "chain keeps history, because peers pull by log position":
     var c: GeistConfig = geistConfigPreset("chain")
     ## Compaction rewrites the log and makes a position mean a different
@@ -71,6 +75,7 @@ suite "the workload presets say what their workload needs":
     check c.chainHash == hkSha3
     check c.contentHash == hkSha3
 
+  # {.testKind: tkUnit.}
   test "host externalises early, so a row is a name and a reference":
     var c: GeistConfig = geistConfigPreset("host")
     check c.sidecarThreshold <= 256'u32
@@ -79,12 +84,14 @@ suite "the workload presets say what their workload needs":
     check c.cipher != ckNone
     check c.transpose == tmNone
 
+  # {.testKind: tkEdgeCase.}
   test "live writes nothing, because an old position is worthless":
     var c: GeistConfig = geistConfigPreset("live")
     check c.writeMode == wmVolatile
     check not c.keepHistory
     check not c.backup.enabled
 
+  # {.testKind: tkUnit.}
   test "bulk pushes almost everything out of the row":
     var c: GeistConfig = geistConfigPreset("bulk")
     check c.sidecarThreshold <= 64'u32
@@ -92,6 +99,7 @@ suite "the workload presets say what their workload needs":
 
 # {.testKind: tkIntegration, covers: "loadGeistDefaults".}
 suite "a preset can be chosen from config.toml":
+  # {.testKind: tkUnit.}
   test "the file names one and the loader resolves it":
     var
       dir: string = scratch("geist_t_preset1")
@@ -113,6 +121,7 @@ suite "a preset can be chosen from config.toml":
     check not got.ok
     check got.err.contains("clowd-sync")
 
+  # {.testKind: tkUnit.}
   test "every catalogued preset is namable from a file":
     var
       dir: string = scratch("geist_t_preset3")

@@ -33,6 +33,7 @@ proc withFriends(names: varargs[string]): OrderedTable[string, FriendRule] {.
 
 suite "a name the roster knows":
 
+  # {.testKind: tkUnit.}
   test "is matched and left alone":
     var t = withFriends("alice", "bob")
     t["alice"].nickname = "Al"
@@ -42,6 +43,7 @@ suite "a name the roster knows":
     check r.orphan.len == 0
     check t["alice"].nickname == "Al"
 
+  # {.testKind: tkUnit.}
   test "keeps the settings the file gave it":
     var t = withFriends("alice")
     t["alice"].notify = false
@@ -52,6 +54,7 @@ suite "a name the roster knows":
 
 suite "a roster name with no entry":
 
+  # {.testKind: tkUnit.}
   test "gets one, with every option at its default":
     var
       t = withFriends("alice")
@@ -62,11 +65,13 @@ suite "a roster name with no entry":
     check not t["bob"].blocked
     check t["bob"].nickname == ""
 
+  # {.testKind: tkUnit.}
   test "is appended, so the file only ever grows downward":
     var t = withFriends("zoe", "alice")
     discard t.reconcile(@["alice", "bob", "zoe"], defaultRule())
     check t.rosterOf() == @["zoe", "alice", "bob"]
 
+  # {.testKind: tkEdgeCase.}
   test "and reconciling twice adds nothing the second time":
     var t = withFriends("alice")
     discard t.reconcile(@["alice", "bob"], defaultRule())
@@ -76,6 +81,7 @@ suite "a roster name with no entry":
 
 suite "a name the roster does not know":
 
+  # {.testKind: tkEdgeCase.}
   test "is an orphan: kept, never deleted":
     var t = withFriends("alice", "alcie")
     t["alcie"].blocked = true
@@ -85,6 +91,7 @@ suite "a name the roster does not know":
     check t.hasKey("alcie")
     check t["alcie"].blocked
 
+  # {.testKind: tkUnit.}
   test "and the name that was meant is added beside it":
     var
       t = withFriends("alcie")
@@ -94,6 +101,7 @@ suite "a name the roster does not know":
     check t.hasKey("alice")
     check t.len == 2
 
+  # {.testKind: tkEdgeCase.}
   test "is never applied":
     var t = withFriends("alice", "alcie")
     t["alcie"].blocked = true
@@ -102,6 +110,7 @@ suite "a name the roster does not know":
     check live.len == 1
     check not live.hasKey("alcie")
 
+  # {.testKind: tkUnit.}
   test "and the report says what was probably meant":
     var
       t = withFriends("alcie")
@@ -109,6 +118,7 @@ suite "a name the roster does not know":
     check r.orphan[0].nearest == "alice"
     check "did you mean alice?" in r.describe("friend")
 
+  # {.testKind: tkEdgeCase.}
   test "with no suggestion when nothing is close":
     var
       t = withFriends("qqqqqqqq")
@@ -116,16 +126,19 @@ suite "a name the roster does not know":
     check r.orphan[0].nearest == ""
     check "did you mean" notin r.describe("friend")
 
+  # {.testKind: tkEdgeCase.}
   test "and none at all for a name too short to guess at":
     check suggest("ab", @["ac", "ad"]) == ""
 
 suite "reading one entry":
 
+  # {.testKind: tkEdgeCase.}
   test "an absent name is the defaults, and inserts nothing":
     var t = withFriends("alice")
     check t.settingsFor("nobody", defaultRule()).notify
     check t.len == 1
 
+  # {.testKind: tkUnit.}
   test "a present name is what the file said":
     var t = withFriends("alice")
     t["alice"].notify = false
@@ -133,12 +146,14 @@ suite "reading one entry":
 
 suite "a roster arriving in a different order every sync":
 
+  # {.testKind: tkUnit.}
   test "is sorted once, so the file stops reshuffling":
     check sortedRoster(@["zoe", "alice", "bob"]) == @["alice", "bob", "zoe"]
     check sortedRoster(@["bob", "alice", "bob"]) == @["alice", "bob"]
 
 suite "the whole path: file, edit, reconcile, save":
 
+  # {.testKind: tkUnit.}
   test "a typo survives a full round trip and is reported":
     var p = getTempDir() / "geist_reconcile_test" / "userconfig.toml"
     createDir(p.parentDir())

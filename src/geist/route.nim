@@ -172,6 +172,27 @@ proc isAny(s: string): bool {.role: parser, inline,
   ## s: does this pattern field match everything?
   result = s.len == 0 or s == anyPattern
 
+proc hopsProblem(key: string, H: openArray[Hop]): string {.role: sanitizer,
+    tag: "config|networkSurface".} =
+  ## key/H: one route's hops -> the first thing wrong with them, or "".
+  ## Every hop is named, is local or has an endpoint, and has a priority
+  ## no other hop in the route shares.
+  var
+    seenPriority: Table[uint8, string] = initTable[uint8, string]()
+  if H.len == 0:
+    return "route " & key & " has no hops"
+  for h in H:
+    if h.name.len == 0:
+      return "route " & key & " has an unnamed hop"
+    if not h.local and h.endpoint.len == 0:
+      return "hop " & h.name & " in route " & key &
+        " is neither local nor has an endpoint"
+    if seenPriority.hasKey(h.priority):
+      return "hops " & seenPriority[h.priority] & " and " & h.name &
+        " in route " & key & " share priority " & $h.priority
+    seenPriority[h.priority] = h.name
+  result = ""
+
 proc validate*(t: RouteTable): tuple[ok: bool, err: string] {.
     role: sanitizer, tag: "config|networkSurface".} =
   ## t: the table as loaded, checked for the things that would make
@@ -182,10 +203,8 @@ proc validate*(t: RouteTable): tuple[ok: bool, err: string] {.
   ## order, and iteration order is not a routing policy.
   var
     i: int = 0
-    j: int = 0
     key: string = ""
     seenRoute: Table[string, bool] = initTable[string, bool]()
-    seenPriority: Table[uint8, string] = default(Table[uint8, string])
   if t.node.len == 0:
     return (false, "routing.node is empty; a router that cannot name " &
       "itself cannot detect a loop through itself")
@@ -199,22 +218,9 @@ proc validate*(t: RouteTable): tuple[ok: bool, err: string] {.
       return (false, "two routes match " & key &
         "; priority would be decided by file order")
     seenRoute[key] = true
-    if t.route[i].hops.len == 0:
-      return (false, "route " & key & " has no hops")
-    seenPriority = initTable[uint8, string]()
-    j = 0
-    while j < t.route[i].hops.len:
-      if t.route[i].hops[j].name.len == 0:
-        return (false, "route " & key & " has an unnamed hop")
-      if not t.route[i].hops[j].local and t.route[i].hops[j].endpoint.len == 0:
-        return (false, "hop " & t.route[i].hops[j].name & " in route " & key &
-          " is neither local nor has an endpoint")
-      if seenPriority.hasKey(t.route[i].hops[j].priority):
-        return (false, "hops " & seenPriority[t.route[i].hops[j].priority] &
-          " and " & t.route[i].hops[j].name & " in route " & key &
-          " share priority " & $t.route[i].hops[j].priority)
-      seenPriority[t.route[i].hops[j].priority] = t.route[i].hops[j].name
-      j = j + 1
+    key = hopsProblem(key, t.route[i].hops)
+    if key.len > 0:
+      return (false, key)
     i = i + 1
   result = (true, "")
 
@@ -408,15 +414,25 @@ proc servesLocally*(V: RouteView, a: GeistAddress): bool {.role: parser,
     i = i + 1
   result = false
 
+proc hopLine(V: RouteView, hop: Hop, now: int64): string {.role: helper,
+    tag: "health|networkSurface|status".} =
+  ## V/hop/now: one hop as a status line -- priority, name, where, state.
+  var
+    h: HopHealth = V.healthOf(hop.keyOf())
+    state: string = "unknown"
+  if h.down:
+    state = "DOWN for " & $(now - h.lastOk) & "s"
+  elif h.lastOk > 0:
+    state = "up"
+  result = "  " & $hop.priority & "  " & hop.name & "  " &
+    (if hop.local: "(local)" else: hop.endpoint) & "  " & state
+
 proc describe*(V: RouteView, now: int64): string {.role: helper,
     tag: "health|networkSurface|status".} =
   ## V/now: the table and its health, one line per hop, for an operator.
   var
     L: seq[string] = @[]
     i: int = 0
-    j: int = 0
-    h: HopHealth = default(HopHealth)
-    state: string = ""
     hops: seq[Hop] = @[]
   L.add "node " & V.table.node & ", takeover after " &
     $V.table.takeoverAfterSeconds & "s, probe every " &
@@ -427,16 +443,7 @@ proc describe*(V: RouteView, now: int64): string {.role: helper,
       "." & (if V.table.route[i].instance.isAny(): anyPattern
              else: V.table.route[i].instance)
     hops = byPriority(V.table.route[i].hops)
-    j = 0
-    while j < hops.len:
-      h = V.healthOf(hops[j].keyOf())
-      state = "unknown"
-      if h.down:
-        state = "DOWN for " & $(now - h.lastOk) & "s"
-      elif h.lastOk > 0:
-        state = "up"
-      L.add "  " & $hops[j].priority & "  " & hops[j].name & "  " &
-        (if hops[j].local: "(local)" else: hops[j].endpoint) & "  " & state
-      j = j + 1
+    for hop in hops:
+      L.add V.hopLine(hop, now)
     i = i + 1
   result = L.join("\n")

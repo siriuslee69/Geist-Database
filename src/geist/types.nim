@@ -464,3 +464,11 @@ proc slotIndex*(s: Schema, n: string): int {.role: parser,
       return i
     i = i + 1
   result = -1
+
+proc keepFirst*(err: var string, msg: string) {.role: helper, inline,
+    tag: "status".} =
+  ## err/msg: remember msg only when nothing went wrong before it. A loop
+  ## that carries on past a failure reports the FIRST one; later ones are
+  ## usually its consequences.
+  if err.len == 0:
+    err = msg

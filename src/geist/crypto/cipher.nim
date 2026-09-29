@@ -149,6 +149,16 @@ proc cascadeKeystreamParallel(k: StreamKeys, chachaStart, aesStart: uint64,
       result[i] = a[i] xor b[i]
       i = i + 1
 
+proc xorBytes(a, b: openArray[uint8]): ByteSeq {.role: math, inline,
+    tag: "cryptoBoundary".} =
+  ## a/b: two keystreams of one length -> their XOR, the cascade.
+  var
+    i: int = 0
+  result = newSeq[uint8](a.len)
+  while i < a.len:
+    result[i] = a[i] xor b[i]
+    i = i + 1
+
 proc keystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,
     n: int): ByteSeq {.role: encryptor, tag: "cryptoBoundary".} =
   ## c: cipher selection.
@@ -163,9 +173,6 @@ proc keystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,
     skew: int = 0
     span: int = 0
     raw: ByteSeq = @[]
-    a: ByteSeq = @[]
-    b: ByteSeq = @[]
-    i: int = 0
   if n <= 0:
     return @[]
   alignedStart = (byteOffset div uint64(chachaBlockBytes)) *
@@ -186,12 +193,9 @@ proc keystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,
         alignedStart div uint64(chachaBlockBytes),
         alignedStart div uint64(aesBlockBytes), span)
     else:
-      a = chachaKeystream(k, alignedStart div uint64(chachaBlockBytes), span)
-      b = aesKeystream(k, alignedStart div uint64(aesBlockBytes), span)
-      raw = newSeq[uint8](span)
-      while i < span:
-        raw[i] = a[i] xor b[i]
-        i = i + 1
+      raw = xorBytes(
+        chachaKeystream(k, alignedStart div uint64(chachaBlockBytes), span),
+        aesKeystream(k, alignedStart div uint64(aesBlockBytes), span))
   result = raw[skew ..< span]
 
 proc applyKeystream*(c: CipherKind, k: StreamKeys, byteOffset: uint64,

@@ -233,13 +233,13 @@ proc buildRow*(s: Schema, values: Table[string, string],
     case s.slots[i].kind
     of skInt, skFloat:
       number = numberBits(s.slots[i].kind, name, text)
-      if number.err.len > 0:
-        return (false, @[], number.err)
       W.writeU64(number.bits)
     of skText, skBytes, skSealed, skRef:
       W.writeColumn(textBytes(text))
     of skNull:
       W.writeColumn(@[])
+    if number.err.len > 0:
+      return (false, @[], number.err)
     if W.err.len > 0:
       return (false, @[], W.err)
     i = i + 1

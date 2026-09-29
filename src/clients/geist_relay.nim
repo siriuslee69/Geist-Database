@@ -26,6 +26,7 @@
 import std/[os, json, strutils]
 
 import runePragmas
+import ../geist/args
 import ../geist/wire
 
 type
@@ -92,7 +93,7 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     i: int = 0
     key: string = ""
     value: string = ""
-    at: int = 0
+    step: OptionStep = ("", "", false, 0)
   result.remote = "dac://127.0.0.1:47656"
   result.subject = "geist-relay-client"
   result.stream = "default"
@@ -118,19 +119,13 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
       "'; expected send, poll or pin")
   i = 1
   while i < argv.len:
-    if not argv[i].startsWith("--"):
-      raise newException(ValueError, "unexpected argument '" & argv[i] & "'")
-    key = argv[i][2 .. ^1]
-    value = ""
-    at = key.find('=')
-    if at > 0:
-      value = key[at + 1 .. ^1]
-      key = key[0 ..< at]
-    elif key notin ["split-lines", "follow", "verbose", "help"]:
-      if i + 1 >= argv.len:
-        raise newException(ValueError, "option --" & key & " needs a value")
-      value = argv[i + 1]
-      i = i + 1
+    step = nextOption(argv, i, ["split-lines", "follow", "verbose", "help"])
+    if step.bare:
+      raise newException(ValueError, "unexpected argument '" & step.value &
+        "'")
+    i = step.last
+    key = step.key
+    value = step.value
     case key
     of "remote": result.remote = value
     of "identity": result.identity = value
@@ -347,40 +342,55 @@ proc showMessage(m: RelayMessage, format: RelayFormat) {.role: helper,
   ## m/format: one collected message, written out.
   stdout.write(render(m, format))
 
+proc parseFormat(s: string): RelayFormat {.role: parser,
+    tag: "cli|parsing|stream".} =
+  ## s: --format, as typed -> the format, or ValueError.
+  case s.toLowerAscii()
+  of "", "raw", "bytes": result = rfRaw
+  of "lines", "line", "plain", "text": result = rfLines
+  of "json", "jsonl", "ndjson": result = rfJson
+  else:
+    raise newException(ValueError,
+      "--format must be lines, json or raw, got '" & s & "'")
+
+proc pollOnce(link: var GeistLink, o: Options, format: RelayFormat): int {.
+    role: orchestrator, tag: "cli|read|stream".} =
+  ## link/o/format: one poll; every message it returned written out.
+  ## Returns how many there were.
+  var
+    got: tuple[ok: bool, reply: Reply, err: string] = link.send(Query(
+      op: qoPoll, collection: o.stream, subscriptionId: o.consumer,
+      limit: uint32(o.limit)), o.timeoutMs)
+  if not got.ok:
+    raise newException(IOError, got.err)
+  if not got.reply.ok:
+    raise newException(IOError, got.reply.err)
+  for row in got.reply.rows:
+    showMessage(decodeMessage(row.data), format)
+  result = got.reply.rows.len
+
+proc pollUntilDone(link: var GeistLink, o: Options,
+    format: RelayFormat): int {.role: orchestrator, tag: "cli|read|stream".} =
+  ## link/o/format: poll once, or -- with --follow -- every --interval-ms
+  ## until stopped. Returns how many messages were written out.
+  while true:
+    result = result + pollOnce(link, o, format)
+    stdout.flushFile()
+    if not o.follow:
+      return
+    sleep(o.intervalMs)
+
 proc cmdPoll(o: Options): int {.role: metaOrchestrator,
     tag: "cli|entrypoint|read|stream".} =
   ## o: collect what the relay is holding for this reader, once or forever.
   var
     link: GeistLink = default(GeistLink)
-    got: tuple[ok: bool, reply: Reply, err: string] =
-      (false, default(Reply), "")
     format: RelayFormat = rfRaw
     seen: int = 0
-    m: RelayMessage = default(RelayMessage)
-  case o.format.toLowerAscii()
-  of "", "raw", "bytes": format = rfRaw
-  of "lines", "line", "plain", "text": format = rfLines
-  of "json", "jsonl", "ndjson": format = rfJson
-  else:
-    raise newException(ValueError,
-      "--format must be lines, json or raw, got '" & o.format & "'")
+  format = parseFormat(o.format)
   link = connectRelay(o)
   try:
-    while true:
-      got = link.send(Query(op: qoPoll, collection: o.stream,
-        subscriptionId: o.consumer, limit: uint32(o.limit)), o.timeoutMs)
-      if not got.ok:
-        raise newException(IOError, got.err)
-      if not got.reply.ok:
-        raise newException(IOError, got.reply.err)
-      for row in got.reply.rows:
-        m = decodeMessage(row.data)
-        showMessage(m, format)
-        seen = seen + 1
-      stdout.flushFile()
-      if not o.follow:
-        break
-      sleep(o.intervalMs)
+    seen = pollUntilDone(link, o, format)
   finally:
     link.close()
   if o.verbose:

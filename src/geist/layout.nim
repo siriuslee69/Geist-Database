@@ -295,10 +295,9 @@ proc appNames*(h: GeistHome): seq[string] {.role: parser,
   if not dirExists(h.dbDir()):
     return
   for kind, path in walkDir(h.dbDir()):
-    if kind == pcDir:
-      t = path.extractFilename()
-      if t.len > 0 and not t.startsWith("."):
-        result.add t
+    t = path.extractFilename()
+    if kind == pcDir and t.len > 0 and not t.startsWith("."):
+      result.add t
 
 proc describeHome*(h: GeistHome): string {.role: helper,
     tag: "docs|status".} =

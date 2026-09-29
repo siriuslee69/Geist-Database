@@ -28,6 +28,7 @@ proc scratch(name: string): GeistHome {.role: helper.} =
 
 suite "accounts":
 
+  # {.testKind: tkUnit.}
   test "one is created and found":
     var
       h = scratch("create")
@@ -39,6 +40,7 @@ suite "accounts":
     check users.userNames() == @["alice"]
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "it lands under db/<app>/users, in the one folder":
     var
       h = scratch("path")
@@ -47,6 +49,7 @@ suite "accounts":
     check users.root == h.base / "db" / "fjord" / "users"
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "a staging instance is a different table":
     var
       h = scratch("instance")
@@ -59,6 +62,7 @@ suite "accounts":
     discard main.closeUsers()
     discard staging.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "the name is lower-cased, so one person is not two":
     var
       h = scratch("case")
@@ -70,6 +74,7 @@ suite "accounts":
     check users.userNames() == @["alice"]
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "a duplicate is refused rather than replacing":
     var
       h = scratch("dup")
@@ -83,6 +88,7 @@ suite "accounts":
     check verifyPassword("hunter2", users.getUser("alice").value.password)
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "a name that could not be logged safely is refused":
     var
       h = scratch("badname")
@@ -95,6 +101,7 @@ suite "accounts":
       "hunter2").ok
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "an empty password cannot make an account":
     var
       h = scratch("nopw")
@@ -106,6 +113,7 @@ suite "accounts":
     check not users.userExists("alice")
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "the password is not in the record":
     var
       h = scratch("nostore")
@@ -120,6 +128,7 @@ suite "accounts":
 
 suite "signing in":
 
+  # {.testKind: tkUnit.}
   test "the right password works":
     var
       h = scratch("signin")
@@ -131,6 +140,7 @@ suite "signing in":
     check got.user.name == "alice"
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "an unknown user and a wrong password give ONE answer":
     var
       h = scratch("sameanswer")
@@ -147,6 +157,7 @@ suite "signing in":
     check wrongPw.reason == noUser.reason
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "and take a comparable amount of time":
     var
       h = scratch("timing")
@@ -171,6 +182,7 @@ suite "signing in":
     check unknownNs < knownNs * 4
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "a malformed request is still charged a derivation":
     var
       h = scratch("malformed")
@@ -182,6 +194,7 @@ suite "signing in":
     check got.result == arWrong
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "a disabled account is told apart, but only after the password":
     var
       h = scratch("disabled")
@@ -198,6 +211,7 @@ suite "signing in":
     check users.authenticate("alice", "hunter3").result == arWrong
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "an account can be restored":
     var
       h = scratch("restore")
@@ -209,11 +223,13 @@ suite "signing in":
     check users.authenticate("alice", "hunter2").result == arOk
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "a closed store refuses rather than crashing":
     var
       users: UserStore = default(UserStore)
     check users.authenticate("alice", "hunter2").result == arRefused
 
+  # {.testKind: tkUnit.}
   test "signing in records when they were last seen":
     var
       h = scratch("lastseen")
@@ -226,6 +242,7 @@ suite "signing in":
     check users.getUser("alice").value.lastSeenAt > 0
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "a failed sign-in records nothing":
     var
       h = scratch("nofail")
@@ -238,6 +255,7 @@ suite "signing in":
 
 suite "changing a password":
 
+  # {.testKind: tkEdgeCase.}
   test "the new one works and the old one does not":
     var
       h = scratch("setpw")
@@ -249,6 +267,7 @@ suite "changing a password":
     check users.authenticate("alice", "hunter2").result == arWrong
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "the storage salt is NOT rotated":
     var
       h = scratch("saltkept")
@@ -262,6 +281,7 @@ suite "changing a password":
     check users.getUser("alice").value.salt == before
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "an unknown account cannot have its password set":
     var
       h = scratch("setpw-ghost")
@@ -270,6 +290,7 @@ suite "changing a password":
     check not users.setPassword("ghost", "anything").ok
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "an empty new password is refused":
     var
       h = scratch("setpw-empty")
@@ -282,6 +303,7 @@ suite "changing a password":
 
 suite "raising the cost later":
 
+  # {.testKind: tkUnit.}
   test "a weak hash verifies, and is reported for upgrade":
     var
       h = scratch("rehash")
@@ -302,6 +324,7 @@ suite "raising the cost later":
     check got.rehash
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "signing in upgrades it, since that is when the password exists":
     var
       h = scratch("rehash-signin")
@@ -323,6 +346,7 @@ suite "raising the cost later":
 
 suite "the key a user's own stores are unlocked with":
 
+  # {.testKind: tkEdgeCase.}
   test "it is derived from their salt, and is not what the server holds":
     var
       h = scratch("storagekey")
@@ -337,6 +361,7 @@ suite "the key a user's own stores are unlocked with":
     check cast[string](key.use()) notin r.password
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "the same password gives the same key every time":
     var
       h = scratch("storagekey-stable")
@@ -350,6 +375,7 @@ suite "the key a user's own stores are unlocked with":
     check a.use() == b.use()
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "two users with one password get different keys":
     var
       h = scratch("storagekey-users")
@@ -366,6 +392,7 @@ suite "the key a user's own stores are unlocked with":
 
 suite "removing an account":
 
+  # {.testKind: tkUnit.}
   test "it is a tombstone, so the removal can reach a mirror":
     var
       h = scratch("delete")
@@ -378,6 +405,7 @@ suite "removing an account":
     check users.userNames().len == 0
     discard users.closeUsers()
 
+  # {.testKind: tkEdgeCase.}
   test "deleting what is not there succeeds":
     var
       h = scratch("delete-ghost")
@@ -386,6 +414,7 @@ suite "removing an account":
     check users.deleteUser("ghost").ok
     discard users.closeUsers()
 
+  # {.testKind: tkUnit.}
   test "an account survives being reopened":
     var
       h = scratch("reopen")
@@ -402,6 +431,7 @@ suite "removing an account":
 
 suite "what a log is told":
 
+  # {.testKind: tkEdgeCase.}
   test "it says nothing that would enumerate accounts":
     var
       h = scratch("logline")

@@ -22,6 +22,7 @@ proc scratch(name: string): string {.role: helper.} =
 
 suite "collection: objects in, objects out":
 
+  # {.testKind: tkUnit.}
   test "a collection reads like a seq of the user's own type":
     var
       root = scratch("geist_t_coll")
@@ -35,6 +36,7 @@ suite "collection: objects in, objects out":
     notes.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "items and pairs iterate in stored order":
     var
       root = scratch("geist_t_iter")
@@ -50,6 +52,7 @@ suite "collection: objects in, objects out":
     notes.close()
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "a bulk add saves once, not once per element":
     var
       root = scratch("geist_t_bulk")
@@ -64,6 +67,7 @@ suite "collection: objects in, objects out":
     notes.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "the same API works sealed; only the constructor differs":
     var
       root = scratch("geist_t_collenc")
@@ -80,6 +84,7 @@ suite "collection: objects in, objects out":
     re.close()
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "an encrypted collection refuses a cipherless configuration":
     var root = scratch("geist_t_collbad")
     expect ValueError:
@@ -88,6 +93,7 @@ suite "collection: objects in, objects out":
       discard openEncryptedCollection[Note](root, "n", "")
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "out-of-range access reports the range instead of reading garbage":
     var
       root = scratch("geist_t_range")
@@ -100,6 +106,7 @@ suite "collection: objects in, objects out":
     notes.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "find matches on a named field":
     var
       root = scratch("geist_t_find")
@@ -113,6 +120,7 @@ suite "collection: objects in, objects out":
 
 suite "seek: partial reads without loading the cluster":
 
+  # {.testKind: tkUnit.}
   test "one row is addressable without reading the rest":
     var
       root = scratch("geist_t_seek")
@@ -130,6 +138,7 @@ suite "seek: partial reads without loading the cluster":
     check h.h.seekText(7'u32, h.h.schema.slotIndex("title")) == "t7"
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "the index cost does not grow with the row count":
     var
       small = scratch("geist_t_ix_s")
@@ -150,6 +159,7 @@ suite "seek: partial reads without loading the cluster":
     removeDir(small)
     removeDir(big)
 
+  # {.testKind: tkEdgeCase.}
   test "a fixed column is read by striding, not by unpacking rows":
     var
       root = scratch("geist_t_col")
@@ -174,6 +184,7 @@ suite "seek: partial reads without loading the cluster":
     check capped.len == 5
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "a variable column comes back as slices, two bulk reads":
     var
       root = scratch("geist_t_vcol")
@@ -192,6 +203,7 @@ suite "seek: partial reads without loading the cluster":
     check cast[string](col[29]) == "title-29"
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "a row window is one contiguous read":
     var
       root = scratch("geist_t_win")
@@ -218,6 +230,7 @@ suite "seek: partial reads without loading the cluster":
     check h.h.seekRange(9999'u32, 10'u32).len == 0
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "seeking past the end reports the range":
     var
       root = scratch("geist_t_oob")
@@ -232,6 +245,7 @@ suite "seek: partial reads without loading the cluster":
       discard h.h.seekRow(5'u32)
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "a handle notices the file moved on underneath it":
     var
       root = scratch("geist_t_stale")
@@ -246,6 +260,7 @@ suite "seek: partial reads without loading the cluster":
     rs.close()
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "openSeek on a missing or wrong file fails rather than guessing":
     check not openSeek(getTempDir() / "geist_t_nope.ge1st.g1").ok
     var bogus = getTempDir() / "geist_t_bogus.ge1st.g1"

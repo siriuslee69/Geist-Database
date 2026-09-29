@@ -17,6 +17,7 @@ proc scratch(name: string): string {.role: helper.} =
   createDir(result)
 
 suite "library defaults":
+  # {.testKind: tkEdgeCase.}
   test "an absent file leaves the built-in defaults alone":
     var
       dir = scratch("geist_t_cfg1")
@@ -27,6 +28,7 @@ suite "library defaults":
     check got.defaults.rowIdentity
     check got.defaults.loadedFrom == ""
 
+  # {.testKind: tkUnit.}
   test "the file replaces exactly what it names":
     var
       dir = scratch("geist_t_cfg2")
@@ -50,6 +52,7 @@ copies = 3
     check got.defaults.backupEverySeconds == 0'u32
     check got.defaults.loadedFrom == path
 
+  # {.testKind: tkEdgeCase.}
   test "a misspelled setting is refused, not ignored":
     var
       dir = scratch("geist_t_cfg3")
@@ -60,6 +63,7 @@ copies = 3
     check got.err.contains("sidecarTreshold")
     check got.err.contains("known:")
 
+  # {.testKind: tkEdgeCase.}
   test "a preset that does not exist fails at the file, not at the open":
     var
       dir = scratch("geist_t_cfg4")
@@ -69,6 +73,7 @@ copies = 3
     check not got.ok
     check got.err.contains("turbo")
 
+  # {.testKind: tkUnit.}
   test "defaults apply over a preset without replacing it":
     var d = builtinDefaults()
     d.sidecarThreshold = 512'u32
@@ -82,6 +87,7 @@ copies = 3
     check c.mac == secureAppConfig().mac
     check c.batchRows == secureAppConfig().batchRows
 
+  # {.testKind: tkUnit.}
   test "a database opened with those defaults stores by them":
     var dir = scratch("geist_t_cfg5")
     type Note = object
@@ -95,6 +101,7 @@ copies = 3
     check not db.hasIdentity()
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "defaults do not overrule a preset that was not asked about":
     # `iotConfig` turns rowIdentity OFF on purpose. The built-in default is
     # ON, and a bool has no "absent" value, so this used to silently double
@@ -109,6 +116,7 @@ copies = 3
     # A preset that wants identity still gets it.
     check applyDefaults(appConfig(), builtinDefaults()).rowIdentity
 
+  # {.testKind: tkUnit.}
   test "a file that names rowIdentity still wins over the preset":
     # The override has to keep working, or turning identity ON for a
     # telemetry store would become impossible.
@@ -128,6 +136,7 @@ copies = 3
     check not applyDefaults(appConfig(), got.defaults).rowIdentity
 
 suite "user configuration":
+  # {.testKind: tkEdgeCase.}
   test "sections are read and an absent file is not an error":
     var
       dir = scratch("geist_t_ucfg1")
@@ -161,6 +170,7 @@ limit = 50
     check got.user.remote == "dac://desk:47655"
     check got.user.limit == 50
 
+  # {.testKind: tkUnit.}
   test "one pin may be written without a list around it":
     var
       dir = scratch("geist_t_ucfg2")
@@ -170,6 +180,7 @@ limit = 50
     check got.ok
     check got.user.trust == @["peers/only.pin"]
 
+  # {.testKind: tkEdgeCase.}
   test "an unknown key in any section is refused":
     var
       dir = scratch("geist_t_ucfg3")
@@ -179,6 +190,7 @@ limit = 50
     check not got.ok
     check got.err.contains("remoteHost")
 
+  # {.testKind: tkEdgeCase.}
   test "a file that is not TOML fails rather than being skipped":
     var
       dir = scratch("geist_t_ucfg4")
@@ -189,6 +201,7 @@ limit = 50
     check got.err.contains(path)
 
 suite "transport settings":
+  # {.testKind: tkUnit.}
   test "the tier policy comes from the file and still validates":
     var
       dir = scratch("geist_t_cfg6")
@@ -210,6 +223,7 @@ archiveAtMiB = 256
     # will accept, or the failure surfaces at connect time instead.
     check validateTriggerPolicy(policy).ok
 
+  # {.testKind: tkEdgeCase.}
   test "an unknown tier name is refused":
     var
       dir = scratch("geist_t_cfg7")
@@ -219,6 +233,7 @@ archiveAtMiB = 256
     check not got.ok
     check got.err.contains("paranoid")
 
+  # {.testKind: tkUnit.}
   test "the shipped configs/default.toml parses and validates":
     # The file in configs/ is what a new user reads first. If it drifts
     # from the parser, every one of them starts with an error.

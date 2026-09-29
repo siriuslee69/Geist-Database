@@ -29,6 +29,7 @@ proc cheap(): PasswordParams {.role: configurator, stage: stDone.} =
 
 suite "a password becomes a line a database can hold":
 
+  # {.testKind: tkUnit.}
   test "the encoding says what made it":
     var got = hashPassword("hunter2", cheap())
     check got.ok
@@ -37,12 +38,14 @@ suite "a password becomes a line a database can hold":
     # Six fields: geist, argon2id, v=1, params, salt, hash.
     check got.encoded.split('$').len == 6
 
+  # {.testKind: tkUnit.}
   test "it verifies":
     var got = hashPassword("hunter2", cheap())
     check verifyPassword("hunter2", got.encoded)
     check not verifyPassword("hunter3", got.encoded)
     check not verifyPassword("", got.encoded)
 
+  # {.testKind: tkEdgeCase.}
   test "two users with the same password do not share a hash":
     var
       a = hashPassword("hunter2", cheap())
@@ -54,17 +57,20 @@ suite "a password becomes a line a database can hold":
     check verifyPassword("hunter2", a.encoded)
     check verifyPassword("hunter2", b.encoded)
 
+  # {.testKind: tkEdgeCase.}
   test "an empty password is refused rather than hashed":
     var got = hashPassword("", cheap())
     check not got.ok
     check "must not be empty" in got.err
     check got.encoded.len == 0
 
+  # {.testKind: tkEdgeCase.}
   test "an absurdly long password is refused before the KDF runs":
     var got = hashPassword(repeat("x", maxPasswordBytes + 1), cheap())
     check not got.ok
     check "refused" in got.err
 
+  # {.testKind: tkUnit.}
   test "a long-but-allowed password works":
     var
       long = repeat("correct horse ", 60)
@@ -74,6 +80,7 @@ suite "a password becomes a line a database can hold":
 
 suite "a stored hash carries its own cost":
 
+  # {.testKind: tkUnit.}
   test "it is parsed back out":
     var
       made = hashPassword("hunter2", cheap())
@@ -85,6 +92,7 @@ suite "a stored hash carries its own cost":
     check back.salt == made.salt
     check back.hash == made.hash
 
+  # {.testKind: tkUnit.}
   test "a hash made cheaply still verifies when policy is dearer":
     var made = hashPassword("hunter2", cheap())
     # The cost comes from the record, not from today's constants. Reading
@@ -92,17 +100,20 @@ suite "a stored hash carries its own cost":
     check verifyPassword("hunter2", made.encoded)
     check needsRehash(made.encoded)
 
+  # {.testKind: tkEdgeCase.}
   test "a hash at current policy does not need rehashing":
     var made = hashPassword("hunter2")
     check not needsRehash(made.encoded)
     check verifyPassword("hunter2", made.encoded)
 
+  # {.testKind: tkUnit.}
   test "an unreadable record needs rehashing":
     check needsRehash("")
     check needsRehash("not-a-hash")
 
 suite "nothing here raises on a bad row":
 
+  # {.testKind: tkEdgeCase.}
   test "a malformed record verifies as false":
     check not verifyPassword("hunter2", "")
     check not verifyPassword("hunter2", "nonsense")
@@ -110,11 +121,13 @@ suite "nothing here raises on a bad row":
     check not verifyPassword("hunter2",
       "geist$argon2id$v=9$m=256,t=1,p=1$AAAA$AAAA")
 
+  # {.testKind: tkEdgeCase.}
   test "a truncated record is refused with a reason":
     var got = parsePasswordHash("geist$argon2id$v=1$m=256,t=1,p=1")
     check not got.ok
     check "not a Geist password hash" in got.err
 
+  # {.testKind: tkEdgeCase.}
   test "a zero cost is refused, not treated as a cheap hash":
     # This is the one corrupted shape that must not verify: zeroes would
     # make the derivation instant.
@@ -122,17 +135,20 @@ suite "nothing here raises on a bad row":
     check not got.ok
     check "unreadable cost" in got.err
 
+  # {.testKind: tkEdgeCase.}
   test "a foreign scheme is named rather than guessed at":
     var got = parsePasswordHash("argon2$argon2id$v=1$m=256,t=1,p=1$AA$AA")
     check not got.ok
     check "unknown password scheme" in got.err
 
+  # {.testKind: tkEdgeCase.}
   test "salt or hash that is not base64 is refused":
     var got = parsePasswordHash("geist$argon2id$v=1$m=256,t=1,p=1$!!!$!!!")
     check not got.ok
 
 suite "authentication and encryption are not the same derivation":
 
+  # {.testKind: tkEdgeCase.}
   test "the storage key is not the stored hash":
     var
       salt = randomSalt()
@@ -142,6 +158,7 @@ suite "authentication and encryption are not the same derivation":
     check key.use() != auth.hash
     check key.len == passwordHashBytes
 
+  # {.testKind: tkUnit.}
   test "the same password and salt still derive one key":
     var
       salt = randomSalt()
@@ -149,6 +166,7 @@ suite "authentication and encryption are not the same derivation":
       b = deriveKey("hunter2", salt, cheap())
     check a.use() == b.use()
 
+  # {.testKind: tkUnit.}
   test "a different salt is a different key":
     var
       a = deriveKey("hunter2", randomSalt(), cheap())
@@ -157,6 +175,7 @@ suite "authentication and encryption are not the same derivation":
 
 suite "sealing something that is not a store":
 
+  # {.testKind: tkUnit.}
   test "it round-trips":
     var
       sealed = sealWithPassword("hunter2", cast[seq[uint8]]("a secret"),
@@ -166,12 +185,14 @@ suite "sealing something that is not a store":
     check opened.ok
     check cast[string](opened.data) == "a secret"
 
+  # {.testKind: tkEdgeCase.}
   test "the plaintext is not in the blob":
     var sealed = sealWithPassword("hunter2",
       cast[seq[uint8]]("MARKER-DO-NOT-FIND"), [], cheap())
     check sealed.ok
     check "MARKER" notin cast[string](sealed.data)
 
+  # {.testKind: tkEdgeCase.}
   test "the salt travels with it, so nothing has to be kept beside it":
     var
       first = sealWithPassword("hunter2", cast[seq[uint8]]("x"), [], cheap())
@@ -182,6 +203,7 @@ suite "sealing something that is not a store":
     check openWithPassword("hunter2", first.data, [], cheap()).ok
     check openWithPassword("hunter2", second.data, [], cheap()).ok
 
+  # {.testKind: tkEdgeCase.}
   test "a wrong password and a tampered blob give the same answer":
     var
       sealed = sealWithPassword("hunter2", cast[seq[uint8]]("a secret"),
@@ -196,6 +218,7 @@ suite "sealing something that is not a store":
     # achieved.
     check wrongPw.err == tampered.err
 
+  # {.testKind: tkEdgeCase.}
   test "context is bound in, so a blob cannot be moved":
     var
       sealed = sealWithPassword("hunter2", cast[seq[uint8]]("alice's"),
@@ -207,6 +230,7 @@ suite "sealing something that is not a store":
     check not openWithPassword("hunter2", sealed.data,
       cast[seq[uint8]]("bob"), cheap()).ok
 
+  # {.testKind: tkEdgeCase.}
   test "something that is not a blob is refused by its shape":
     check not openWithPassword("hunter2", cast[seq[uint8]]("nope"), [],
       cheap()).ok
@@ -214,10 +238,12 @@ suite "sealing something that is not a store":
       openWithPassword("hunter2", cast[seq[uint8]]("nope"), [], cheap()).err
     check not openWithPassword("hunter2", @[], [], cheap()).ok
 
+  # {.testKind: tkEdgeCase.}
   test "an empty password cannot seal":
     var got = sealWithPassword("", cast[seq[uint8]]("x"), [], cheap())
     check not got.ok
 
+  # {.testKind: tkEdgeCase.}
   test "empty plaintext round-trips":
     var sealed = sealWithPassword("hunter2", @[], [], cheap())
     check sealed.ok

@@ -25,6 +25,7 @@ proc freshRoot(name: string): string {.role: helper.} =
   removeDir(result)
 
 suite "generation swap":
+  # {.testKind: tkUnit.}
   test "every save publishes the next generation and the manifest follows":
     var
       root = freshRoot("geist_t_gen")
@@ -39,6 +40,7 @@ suite "generation swap":
     check liveDataPath(root) == db.dataPath()
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "the previous generation is retained and the one before it is not":
     var
       root = freshRoot("geist_t_retain")
@@ -57,6 +59,7 @@ suite "generation swap":
     check fileExists(root / ("main.ge1st" & generationSuffix(live - 1'u64)))
     check not fileExists(root / ("main.ge1st" & generationSuffix(live - 2'u64)))
 
+  # {.testKind: tkEdgeCase.}
   test "a live generation that will not read back falls back to the retained one":
     var
       root = freshRoot("geist_t_fallback")
@@ -77,6 +80,7 @@ suite "generation swap":
     check get[Note](db2, 0'u32).title == "old"
     db2.close()
 
+  # {.testKind: tkUnit.}
   test "an interrupted save leaves debris, and the next writer sweeps it":
     var
       root = freshRoot("geist_t_sweep")
@@ -96,6 +100,7 @@ suite "generation swap":
     check not fileExists(orphan)
     db2.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a failed save leaves the live generation exactly as it was":
     var
       root = freshRoot("geist_t_intact")
@@ -115,6 +120,7 @@ suite "generation swap":
     check readFile(live) == before
 
 suite "backup and restore across generations":
+  # {.testKind: tkUnit.}
   test "slots rotate as the live file moves on":
     var
       root = freshRoot("geist_t_bakgen")
@@ -138,6 +144,7 @@ suite "backup and restore across generations":
     check fileExists(stem & ".b2")
     check fileExists(stem & ".b3")
 
+  # {.testKind: tkUnit.}
   test "a restore publishes the backup as a new generation":
     var
       root = freshRoot("geist_t_restore")
@@ -164,6 +171,7 @@ suite "backup and restore across generations":
     check get[Note](re, 0'u32).title == "original"
     re.close()
 
+  # {.testKind: tkEdgeCase.}
   test "restoring a slot that is not there changes nothing":
     var
       root = freshRoot("geist_t_restore2")
@@ -180,6 +188,7 @@ suite "backup and restore across generations":
     db.close()
 
 suite "write lease":
+  # {.testKind: tkUnit.}
   test "a second writable open downgrades itself and names the holder":
     var
       root = freshRoot("geist_t_lease")
@@ -194,6 +203,7 @@ suite "write lease":
     b.close()
     a.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a read-only session refuses writes and says why":
     var
       root = freshRoot("geist_t_refuse")
@@ -214,6 +224,7 @@ suite "write lease":
     b.close()
     a.close()
 
+  # {.testKind: tkUnit.}
   test "closing releases the lease, so the next writer gets it":
     var
       root = freshRoot("geist_t_release")
@@ -227,6 +238,7 @@ suite "write lease":
     check b.save().ok
     b.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a deliberate follower takes no lease at all":
     var
       root = freshRoot("geist_t_follow")
@@ -247,6 +259,7 @@ suite "write lease":
     reader.close()
 
 suite "following a moving generation":
+  # {.testKind: tkUnit.}
   test "observeStore and followStore track the file across saves":
     var
       root = freshRoot("geist_t_observe")

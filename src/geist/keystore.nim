@@ -320,6 +320,25 @@ proc put*(S: var Keystore, name: string,
     else:
       result = (false, "this build has no Android Keystore")
 
+proc getAndroid(name: string): KeyResult {.role: dataFetcher,
+    tag: "cryptoBoundary|read".} =
+  ## name: one key from the Android Keystore, or why not.
+  when defined(android):
+    var
+      buf: seq[uint8] = newSeq[uint8](maxSecretBytes)
+      n: cint = geistAndroidGet(name.cstring, addr buf[0], cint(buf.len))
+    if n < 0:
+      result.status = KeyStatus(-n)
+      result.err = describeStatus(result.status)
+      return
+    buf.setLen(int(n))
+    result.ok = true
+    result.status = ksPresent
+    result.value = initSecret(buf)
+  else:
+    result.status = ksUnavailable
+    result.err = "this build has no Android Keystore"
+
 proc get*(s: Keystore, name: string): KeyResult {.role: dataFetcher,
     tag: "appApi|cryptoBoundary|read".} =
   ## s/name: the secret, or why not.
@@ -328,8 +347,6 @@ proc get*(s: Keystore, name: string): KeyResult {.role: dataFetcher,
   ## `ksInvalidated` is not a mistake they can correct by trying again.
   var
     err: string = checkName(name)
-    buf: seq[uint8] = @[]
-    n: cint = 0
   if err.len > 0:
     result.err = err
     return
@@ -345,20 +362,7 @@ proc get*(s: Keystore, name: string): KeyResult {.role: dataFetcher,
   of kpFile:
     result = s.getFile(name)
   of kpAndroid:
-    when defined(android):
-      buf = newSeq[uint8](maxSecretBytes)
-      n = geistAndroidGet(name.cstring, addr buf[0], cint(buf.len))
-      if n < 0:
-        result.status = KeyStatus(-n)
-        result.err = describeStatus(result.status)
-        return
-      buf.setLen(int(n))
-      result.ok = true
-      result.status = ksPresent
-      result.value = initSecret(buf)
-    else:
-      result.status = ksUnavailable
-      result.err = "this build has no Android Keystore"
+    result = getAndroid(name)
 
 proc drop*(S: var Keystore, name: string): tuple[ok: bool, err: string] {.
     role: actor, tag: "appApi|cryptoBoundary|delete".} =
@@ -410,6 +414,18 @@ proc status*(s: Keystore, name: string): KeyStatus {.role: parser,
     else:
       result = ksUnavailable
 
+proc fileKeyNames(dir: string): seq[string] {.role: parser,
+    tag: "cryptoBoundary|read|storageIo".} =
+  ## dir: a file keystore -> the names of the keys in it.
+  var
+    t: string = ""
+  if not dirExists(dir):
+    return @[]
+  for kind, path in walkDir(dir):
+    t = path.extractFilename()
+    if t.endsWith(keystoreSuffix):
+      result.add t[0 ..< t.len - keystoreSuffix.len]
+
 proc names*(s: Keystore): seq[string] {.role: parser,
     tag: "appApi|cryptoBoundary|read".} =
   ## s: every name this keystore holds.
@@ -417,20 +433,13 @@ proc names*(s: Keystore): seq[string] {.role: parser,
   ## The Android provider does not answer this: its entries are enumerable
   ## only through the platform's own alias list, and an app that needs the
   ## list should keep it beside the keys rather than ask the hardware.
-  var
-    t: string = ""
   result = @[]
   case s.provider
   of kpMemory:
     for key in s.held.keys:
       result.add key
   of kpFile:
-    if not dirExists(s.dir):
-      return
-    for kind, path in walkDir(s.dir):
-      t = path.extractFilename()
-      if t.endsWith(keystoreSuffix):
-        result.add t[0 ..< t.len - keystoreSuffix.len]
+    result = fileKeyNames(s.dir)
   of kpAndroid:
     discard
 

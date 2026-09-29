@@ -7,7 +7,7 @@
 ## pass a visual check and still make `echo db` unusable.
 
 import runePragmas
-import std/[os, strutils, unittest]
+import std/[json, os, strutils, unittest]
 
 import geist
 
@@ -26,6 +26,7 @@ proc freshRoot(name: string): string {.role: helper.} =
 
 suite "a small table prints whole":
 
+  # {.testKind: tkUnit.}
   test "every row and column is there, with the @ column":
     var db = openGeist[Note](freshRoot("small"), appConfig())
     for i in 1 .. 3:
@@ -39,6 +40,7 @@ suite "a small table prints whole":
     check "showing" notin text            # nothing was left out
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "an empty database still prints its columns":
     var
       db = openGeist[Note](freshRoot("empty"), appConfig())
@@ -49,6 +51,7 @@ suite "a small table prints whole":
 
 suite "a big table is elided like a matrix":
 
+  # {.testKind: tkUnit.}
   test "the corners are kept and the middle is marked":
     var db = openGeist[Note](freshRoot("rows"), appConfig())
     for i in 1 .. 100:
@@ -63,6 +66,7 @@ suite "a big table is elided like a matrix":
     check text.count('\n') == 2 + 20 + 1 + 2
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "the head keeps the odd row when the limit is odd":
     var db = openGeist[Note](freshRoot("odd"), appConfig())
     for i in 1 .. 50:
@@ -76,6 +80,7 @@ suite "a big table is elided like a matrix":
     check " t4 " notin text
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "columns elide too, in the same shape":
     var db = openGeist[Wide](freshRoot("wide"), appConfig())
     for i in 1 .. 3:
@@ -88,6 +93,7 @@ suite "a big table is elided like a matrix":
     check "3 rows x 14 columns (showing 3 x 10)" in text
     db.close()
 
+  # {.testKind: tkUnit.}
   test "everything() turns eliding off":
     var db = openGeist[Note](freshRoot("all"), appConfig())
     for i in 1 .. 40:
@@ -98,6 +104,7 @@ suite "a big table is elided like a matrix":
     check text.count('\n') == 2 + 40
     db.close()
 
+  # {.testKind: tkUnit.}
   test "a long cell is cut, and says it was":
     var db = openGeist[Note](freshRoot("long"), appConfig())
     db.put(Note(noteId: 1, title: "x".repeat(200), body: "b"))
@@ -110,6 +117,7 @@ suite "a big table is elided like a matrix":
 
 suite "transposed printing":
 
+  # {.testKind: tkUnit.}
   test "fields go down the side and rows across the top":
     var db = openGeist[Note](freshRoot("t"), appConfig())
     for i in 1 .. 3:
@@ -126,6 +134,7 @@ suite "transposed printing":
     check "t1" in lines[5] and "t3" in lines[5]
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "the axes swap which limit governs which":
     var db = openGeist[Note](freshRoot("tbig"), appConfig())
     for i in 1 .. 100:
@@ -140,6 +149,7 @@ suite "transposed printing":
 
 suite "machine output is never elided":
 
+  # {.testKind: tkEdgeCase.}
   test "json carries every row, dots or no dots":
     var db = openGeist[Note](freshRoot("json"), appConfig())
     for i in 1 .. 30:
@@ -153,10 +163,22 @@ suite "machine output is never elided":
     check "..." notin text
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a quote in a value does not break the json":
     var db = openGeist[Note](freshRoot("quote"), appConfig())
     db.put(Note(noteId: 1, title: "say \"hi\"", body: "back\\slash"))
     var text = showJson(db.entries.schema, @[db.visibleRow(0'u32)])
     check "\\\"hi\\\"" in text
     check "back\\\\slash" in text
+    db.close()
+
+  # {.testKind: tkRegression, pins: "a newline in a value made invalid json".}
+  test "a newline or a tab in a value still gives json a reader accepts":
+    var
+      db: Session = openGeist[Note](freshRoot("newline"), appConfig())
+      parsed: JsonNode = newJNull()
+    db.put(Note(noteId: 1, title: "two\nlines", body: "a\ttab"))
+    parsed = parseJson(showJson(db.entries.schema, @[db.visibleRow(0'u32)]))
+    check parsed[0]["title"].getStr() == "two\nlines"
+    check parsed[0]["body"].getStr() == "a\ttab"
     db.close()

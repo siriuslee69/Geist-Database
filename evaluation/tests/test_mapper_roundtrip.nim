@@ -41,6 +41,7 @@ type
 
 suite "schema derivation":
 
+  # {.testKind: tkUnit.}
   test "columns take defaults from their Nim type":
     var s = schemaFor[Note]()
     check s.slots.len == 4
@@ -53,6 +54,7 @@ suite "schema derivation":
     # Truncation is never an implicit default.
     check s.slots[0].onOverflow == opError
 
+  # {.testKind: tkUnit.}
   test "an all-fixed schema is dense and has a row width":
     var s = schemaFor[Flat]()
     check s.isDense()
@@ -60,12 +62,14 @@ suite "schema derivation":
     check s.slotAt(2) == 16'u32
     check s.nameOf(s.slots[1].nameId) == "b"
 
+  # {.testKind: tkUnit.}
   test "one variable column is enough to make rows vary":
     var s = schemaFor[Note]()
     check not s.isDense()
     # Zero is how a reader is told to consult the offset table.
     check s.rowBytes() == 0'u32
 
+  # {.testKind: tkUnit.}
   test "collapsing makes even an all-fixed schema vary":
     var s = schemaFor[Flat]()
     check s.isDense()
@@ -73,6 +77,7 @@ suite "schema derivation":
     check not s.isDense()
     check s.rowBytes() == 0'u32
 
+  # {.testKind: tkEdgeCase.}
   test "a Ref is one atomic column, not six flattened fields":
     var s = schemaFor[Nested]()
     check s.slotIndex("payload") >= 0
@@ -82,6 +87,7 @@ suite "schema derivation":
 
 suite "row codec":
 
+  # {.testKind: tkUnit.}
   test "a full row round-trips":
     var
       s = schemaFor[Note]()
@@ -90,6 +96,7 @@ suite "row codec":
     check built.err == ""
     check fromRowBytes[Note](built.data, s) == x
 
+  # {.testKind: tkUnit.}
   test "negative integers survive":
     var s = schemaFor[Signed]()
     for x in [Signed(neg: -99999, pos: 7, flag: true),
@@ -97,6 +104,7 @@ suite "row codec":
               Signed(neg: low(int) + 1, pos: high(int), flag: true)]:
       check fromRowBytes[Signed](toRowBytes(x, s).data, s) == x
 
+  # {.testKind: tkUnit.}
   test "nested objects flatten and round-trip":
     var
       s = schemaFor[Nested]()
@@ -109,6 +117,7 @@ suite "row codec":
     check back.label == "deep"
     check back.payload.hash == r.hash
 
+  # {.testKind: tkUnit.}
   test "a dense row is exactly its declared width":
     var
       s = schemaFor[Flat]()
@@ -118,6 +127,7 @@ suite "row codec":
 
 suite "column kinds":
 
+  # {.testKind: tkEdgeCase.}
   test "colFixed refuses an oversized value by default":
     var
       s = schemaFor[Note]()
@@ -129,6 +139,7 @@ suite "column kinds":
     check built.err.contains("title")
     check built.data.len == 0
 
+  # {.testKind: tkEdgeCase.}
   test "colFixed truncates when told to, and only then":
     var
       s = schemaFor[Note]()
@@ -142,6 +153,7 @@ suite "column kinds":
     check back.title.len == 8
     check back.title == "far too "
 
+  # {.testKind: tkEdgeCase.}
   test "colCapped keeps a short value inline":
     var
       s = schemaFor[Note]()
@@ -153,6 +165,7 @@ suite "column kinds":
     check not s.isExternal(built.data, at)
     check fromRowBytes[Note](built.data, s).title == "short"
 
+  # {.testKind: tkUnit.}
   test "colCapped externalises a long value into the same space":
     var root = getTempDir() / "geist_t_capped"
     removeDir(root)
@@ -174,6 +187,7 @@ suite "column kinds":
     check fromRowBytes[Note](built.data, s, store).body == big
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "a capped column narrower than a reference is rejected":
     var c = appConfig()
     c.columnPolicy = @[ColumnPolicy(field: "title", column: colCapped,
@@ -182,6 +196,7 @@ suite "column kinds":
     check not applied.ok
     check applied.err.contains("reference needs")
 
+  # {.testKind: tkEdgeCase.}
   test "a policy naming a field that does not exist is an error":
     var c = appConfig()
     c.columnPolicy = @[fixedColumn("nosuchfield", 8'u32)]
@@ -189,11 +204,13 @@ suite "column kinds":
     check not applied.ok
     check applied.err.contains("nosuchfield")
 
+  # {.testKind: tkEdgeCase.}
   test "cappedColumn raises a too-small width rather than accepting it":
     check cappedColumn("x", 4'u32).width == minCappedWidth
 
 suite "collapsing":
 
+  # {.testKind: tkUnit.}
   test "omitting zeros is lossless":
     var s = schemaFor[Note]()
     s.autoCollapse = true
@@ -205,6 +222,7 @@ suite "collapsing":
     check back.id == 0
     check back.title == ""
 
+  # {.testKind: tkEdgeCase.}
   test "an empty object collapses to nothing but its bitmap":
     var s = schemaFor[Note]()
     s.autoCollapse = true
@@ -212,6 +230,7 @@ suite "collapsing":
     check built.data.len == nullBitmapBytes(s.slots.len)
     check fromRowBytes[Note](built.data, s) == Note()
 
+  # {.testKind: tkUnit.}
   test "a sparse row is much smaller than a dense one":
     var s = schemaFor[Wide]()
     s.autoCollapse = true
@@ -222,6 +241,7 @@ suite "collapsing":
     check sparse.data.len == nullBitmapBytes(8) + 8
     check fromRowBytes[Wide](sparse.data, s) == Wide(e: 5)
 
+  # {.testKind: tkUnit.}
   test "row statistics report what the bitmaps did":
     var s = schemaFor[Wide]()
     s.autoCollapse = true
@@ -232,6 +252,7 @@ suite "collapsing":
     check st.omitted == 6
     check st.external == 0
 
+  # {.testKind: tkEdgeCase.}
   test "collapsing works on an all-fixed schema too":
     var s = schemaFor[Flat]()
     s.autoCollapse = true

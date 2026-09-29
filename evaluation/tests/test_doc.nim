@@ -46,6 +46,7 @@ proc scratch(name: string): string {.role: helper.} =
 
 suite "an object becomes a file a person can edit":
 
+  # {.testKind: tkUnit.}
   test "every field is written, even the ones left at their default":
     var p = scratch("all.toml")
     removeFile(p)
@@ -58,12 +59,14 @@ suite "an object becomes a file a person can edit":
     check "port = 47655" in text
     check "tiers = [\"standard\"]" in text
 
+  # {.testKind: tkUnit.}
   test "a float keeps its point, so it reads back as a float":
     var p = scratch("float.toml")
     check writeDoc(p, defaults()).ok
     check "ratio = 1.5" in readFile(p)
     check readDoc(p, defaults()).report.mistyped.len == 0
 
+  # {.testKind: tkEdgeCase.}
   test "an enum is written by name, never by number":
     var c = defaults()
     c.mode = mLoud
@@ -72,6 +75,7 @@ suite "an object becomes a file a person can edit":
     check "mode = \"mLoud\"" in readFile(p)
     check readDoc(p, defaults()).value.mode == mLoud
 
+  # {.testKind: tkUnit.}
   test "comments land above the field they explain":
     var s = defaultDocStyle()
     s.header = @["Written by the test."]
@@ -90,6 +94,7 @@ suite "an object becomes a file a person can edit":
     check seen
     check readFile(p).startsWith("# Written by the test.")
 
+  # {.testKind: tkUnit.}
   test "a named table becomes one section per name":
     var c = defaults()
     c.friend["alice"] = Friend(notify: true, nickname: "Al")
@@ -101,6 +106,7 @@ suite "an object becomes a file a person can edit":
     check "[friend.bob]" in text
     check "nickname = \"Al\"" in text
 
+  # {.testKind: tkUnit.}
   test "the round trip is faithful":
     var c = defaults()
     c.name = "someone"
@@ -121,6 +127,7 @@ suite "an object becomes a file a person can edit":
 
 suite "a missing key is the default":
 
+  # {.testKind: tkEdgeCase.}
   test "an absent file is every default, and not an error":
     var p = scratch("gone.toml")
     removeFile(p)
@@ -129,6 +136,7 @@ suite "a missing key is the default":
     check r.value.name == "me"
     check r.value.net.port == 47655
 
+  # {.testKind: tkEdgeCase.}
   test "a trimmed file keeps the defaults it does not mention":
     var p = scratch("trimmed.toml")
     writeFile(p, "name = \"you\"\n")
@@ -138,6 +146,7 @@ suite "a missing key is the default":
     check r.value.net.host == "127.0.0.1"
     check r.value.ratio == 1.5
 
+  # {.testKind: tkEdgeCase.}
   test "a missing key is reported but is not a problem":
     var p = scratch("trimmed2.toml")
     writeFile(p, "name = \"you\"\n")
@@ -147,6 +156,7 @@ suite "a missing key is the default":
 
 suite "a key the object does not have is kept":
 
+  # {.testKind: tkUnit.}
   test "it is reported rather than applied":
     var p = scratch("stray.toml")
     writeFile(p, "name = \"you\"\nweird = 1\n")
@@ -155,6 +165,7 @@ suite "a key the object does not have is kept":
     check "weird" in r.report.unknown
     check r.report.hasProblems()
 
+  # {.testKind: tkUnit.}
   test "and it survives being written back":
     var p = scratch("stray2.toml")
     writeFile(p, "name = \"you\"\nweird = 1\n\n[nobody]\nhere = true\n")
@@ -165,18 +176,21 @@ suite "a key the object does not have is kept":
     check "[nobody]" in text
     check "name = \"you\"" in text
 
+  # {.testKind: tkEdgeCase.}
   test "an unknown section is reported once, not once per key":
     var p = scratch("stray3.toml")
     writeFile(p, "[nobody]\na = 1\nb = 2\nc = 3\n")
     var r = readDoc(p, defaults())
     check r.report.unknown == @["nobody"]
 
+  # {.testKind: tkUnit.}
   test "but a stray inside a known section is named in full":
     var p = scratch("stray4.toml")
     writeFile(p, "[net]\nhost = \"h\"\nprotocol = \"udp\"\n")
     var r = readDoc(p, defaults())
     check r.report.unknown == @["net.protocol"]
 
+  # {.testKind: tkUnit.}
   test "dropping it is a choice the caller can make":
     var p = scratch("stray5.toml")
     writeFile(p, "weird = 1\n")
@@ -186,6 +200,7 @@ suite "a key the object does not have is kept":
 
 suite "a value of the wrong kind is the default":
 
+  # {.testKind: tkUnit.}
   test "a string where a number belongs":
     var p = scratch("bad1.toml")
     writeFile(p, "[net]\nport = \"eighty\"\n")
@@ -194,6 +209,7 @@ suite "a value of the wrong kind is the default":
     check r.value.net.port == 47655
     check "net.port" in r.report.mistyped
 
+  # {.testKind: tkEdgeCase.}
   test "an enum case that does not exist":
     var p = scratch("bad2.toml")
     writeFile(p, "mode = \"mSideways\"\n")
@@ -201,6 +217,7 @@ suite "a value of the wrong kind is the default":
     check r.value.mode == mQuiet
     check "mode" in r.report.mistyped
 
+  # {.testKind: tkUnit.}
   test "an integer is accepted for a float":
     var p = scratch("bad3.toml")
     writeFile(p, "ratio = 2\n")
@@ -208,6 +225,7 @@ suite "a value of the wrong kind is the default":
     check r.value.ratio == 2.0
     check r.report.mistyped.len == 0
 
+  # {.testKind: tkUnit.}
   test "a scalar where a table belongs":
     var p = scratch("bad4.toml")
     writeFile(p, "net = 3\n")
@@ -217,6 +235,7 @@ suite "a value of the wrong kind is the default":
 
 suite "nothing raises":
 
+  # {.testKind: tkEdgeCase.}
   test "a syntax error comes back as a report":
     var p = scratch("broken.toml")
     writeFile(p, "name = \nthis is not toml [[[\n")
@@ -225,6 +244,7 @@ suite "nothing raises":
     check r.report.err.len > 0
     check r.value.name == "me"
 
+  # {.testKind: tkUnit.}
   test "ensureDoc leaves a broken file exactly as it found it":
     var
       p = scratch("broken2.toml")
@@ -234,6 +254,7 @@ suite "nothing raises":
     check not r.written
     check readFile(p) == before
 
+  # {.testKind: tkUnit.}
   test "ensureDoc fills a partial file out to every option":
     var p = scratch("partial.toml")
     writeFile(p, "name = \"you\"\n")
@@ -246,6 +267,7 @@ suite "nothing raises":
 
 suite "json is the same object, a different file":
 
+  # {.testKind: tkUnit.}
   test "written and read back":
     var c = defaults()
     c.name = "json"
@@ -258,6 +280,7 @@ suite "json is the same object, a different file":
     check back.value.name == "json"
     check back.value.friend["alice"].notify
 
+  # {.testKind: tkUnit.}
   test "the format follows the extension":
     check formatOf("a/b/config.toml") == dfToml
     check formatOf("a/b/config.JSON") == dfJson
@@ -270,6 +293,7 @@ suite "a key that is not a bare word survives the round trip":
   ## plausible and only breaks when it is READ BACK, by which point the
   ## settings have moved into a table nobody looks in.
 
+  # {.testKind: tkUnit.}
   test "an address key is quoted in its table header":
     var p = scratch("dotted.toml")
     removeFile(p)
@@ -281,6 +305,7 @@ suite "a key that is not a bare word survives the round trip":
     check "[friend.\"alice@example.com\"]" in text
     check "[friend.alice@example.com]" notin text
 
+  # {.testKind: tkUnit.}
   test "and it reads back as the one key it was written from":
     var p = scratch("dotted2.toml")
     removeFile(p)
@@ -293,6 +318,7 @@ suite "a key that is not a bare word survives the round trip":
     check back.value.friend.hasKey("alice@example.com")
     check back.value.friend["alice@example.com"].nickname == "Al"
 
+  # {.testKind: tkEdgeCase.}
   test "a key with a space is quoted too":
     var p = scratch("space.toml")
     removeFile(p)
@@ -304,6 +330,7 @@ suite "a key that is not a bare word survives the round trip":
     check back.report.ok
     check back.value.friend.hasKey("the boss")
 
+  # {.testKind: tkUnit.}
   test "an ordinary key is still written bare":
     var p = scratch("bare.toml")
     removeFile(p)

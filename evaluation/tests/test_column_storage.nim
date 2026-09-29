@@ -28,6 +28,7 @@ proc scratch(name: string): string {.role: helper.} =
 
 suite "packed storage":
 
+  # {.testKind: tkUnit.}
   test "packed rows survive save and reopen":
     var
       root = scratch("geist_t_pk1")
@@ -48,6 +49,7 @@ suite "packed storage":
     re.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "the index declares varying rows with rowBytes = 0":
     var
       root = scratch("geist_t_pk2")
@@ -65,6 +67,7 @@ suite "packed storage":
     check idx.f.index[at].rowBytes == 0'u32
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "a packed file is smaller than a fixed one for sparse data":
     var
       packedRoot = scratch("geist_t_pk3a")
@@ -90,6 +93,7 @@ suite "packed storage":
     removeDir(packedRoot)
     removeDir(fixedRoot)
 
+  # {.testKind: tkEdgeCase.}
   test "collapsing costs one bitmap byte per row when nothing is empty":
     # The bitmap can only ADD bytes when every column is set. It pays for
     # itself on sparse data and nowhere else, which is why it is a choice
@@ -131,6 +135,7 @@ suite "packed storage":
     removeDir(onRoot)
     removeDir(offRoot)
 
+  # {.testKind: tkUnit.}
   test "collapsing pays for itself as soon as columns go unset":
     type AllSet = object
       a*, b*, c*, d*, e*, f*, g*, h*: int
@@ -157,6 +162,7 @@ suite "packed storage":
     removeDir(onRoot)
     removeDir(offRoot)
 
+  # {.testKind: tkUnit.}
   test "find works on a packed cluster":
     var
       root = scratch("geist_t_pk4")
@@ -169,6 +175,7 @@ suite "packed storage":
     c.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "iteration and indexing agree with what was written":
     var
       root = scratch("geist_t_pk5")
@@ -192,6 +199,7 @@ suite "packed storage":
     re.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "an encrypted packed database seals whole rows and reopens":
     var
       root = scratch("geist_t_pk6")
@@ -214,6 +222,7 @@ suite "packed storage":
     re.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "a sealed packed database needs its ledger":
     var
       root = scratch("geist_t_pk7")
@@ -232,6 +241,7 @@ suite "packed storage":
       discard dead[0]
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "putRow takes a complete row, and only a complete one":
     var
       root = scratch("geist_t_pk8")
@@ -252,6 +262,7 @@ suite "packed storage":
     s.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "checkpoint still chains on a packed cluster":
     var
       root = scratch("geist_t_pk9")
@@ -264,6 +275,7 @@ suite "packed storage":
     c.close()
     removeDir(root)
 
+  # {.testKind: tkEdgeCase.}
   test "an empty packed collection saves and reopens":
     var
       root = scratch("geist_t_pk10")
@@ -275,6 +287,7 @@ suite "packed storage":
     re.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "the preset catalog exposes both packed profiles":
     check geistConfigPreset("collapsed").autoCollapse
     check geistConfigPreset("secure-collapsed").autoCollapse
@@ -285,6 +298,7 @@ suite "packed storage":
     check "collapsed" in names
     check "secure-collapsed" in names
 
+  # {.testKind: tkUnit.}
   test "gimli is the default authenticator":
     check appConfig().mac == mkGimli
     check collapsedConfig().mac == mkGimli

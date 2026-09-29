@@ -519,19 +519,12 @@ proc changedClusters*(before, after: GeistFile): seq[int] {.role: parser,
   ## can follow a file it does not own without loading any rows.
   var
     i: int = 0
-    j: int = 0
-    differs: bool = false
   while i < after.index.len:
     if i >= before.index.len:
       result.add i
       i = i + 1
       continue
-    differs = before.index[i].rowCount != after.index[i].rowCount
-    j = 0
-    while j < after.index[i].hash.len and not differs:
-      if before.index[i].hash[j] != after.index[i].hash[j]:
-        differs = true
-      j = j + 1
-    if differs:
+    if before.index[i].rowCount != after.index[i].rowCount or
+        before.index[i].hash != after.index[i].hash:
       result.add i
     i = i + 1

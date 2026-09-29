@@ -54,22 +54,26 @@ proc addressOf(s: string): GeistAddress {.role: parser.} =
 
 suite "what a registry will answer for":
 
+  # {.testKind: tkEdgeCase.}
   test "a registry with no apps is refused at startup, not at request time":
     var
       r = initRegistry(homeAt("empty-allow"), plainOpener(), [])
     check not r.ok
     check "refuse every request" in r.err
 
+  # {.testKind: tkEdgeCase.}
   test "a registry with no opener is refused":
     var
       r = initRegistry(homeAt("no-opener"), nil, ["fjord"])
     check not r.ok
 
+  # {.testKind: tkEdgeCase.}
   test "a limit below one is refused":
     var
       r = initRegistry(homeAt("zero-limit"), plainOpener(), ["fjord"], 0)
     check not r.ok
 
+  # {.testKind: tkEdgeCase.}
   test "an app that was not named is refused, and no folder appears":
     var
       home = homeAt("boundary")
@@ -84,6 +88,7 @@ suite "what a registry will answer for":
     check not dirExists(home.base / "db" / "eris")
     check r.registry.report.refused == 1'u64
 
+  # {.testKind: tkUnit.}
   test "the app named is served":
     var
       r = initRegistry(homeAt("served"), plainOpener(), ["fjord"])
@@ -94,6 +99,7 @@ suite "what a registry will answer for":
     check got.slot != nil
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "the allow list is case-insensitive, because an address is":
     var
       r = initRegistry(homeAt("case"), plainOpener(), ["FJORD"])
@@ -101,6 +107,7 @@ suite "what a registry will answer for":
     check r.registry.serves("fjord")
     check r.registry.serves("Fjord")
 
+  # {.testKind: tkEdgeCase.}
   test "an address with no app cannot choose a store":
     var
       r = initRegistry(homeAt("bare"), plainOpener(), ["fjord"])
@@ -110,6 +117,7 @@ suite "what a registry will answer for":
     check not got.ok
     check "names no app" in got.err
 
+  # {.testKind: tkEdgeCase.}
   test "an opener that refuses is a refusal, not an empty database":
     var
       home = homeAt("picky")
@@ -122,6 +130,7 @@ suite "what a registry will answer for":
 
 suite "the path is still the address":
 
+  # {.testKind: tkUnit.}
   test "a store lands under db/<app>/<target>":
     var
       home = homeAt("paths")
@@ -134,6 +143,7 @@ suite "the path is still the address":
       "inbox"
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkEdgeCase.}
   test "an instance is a sibling directory, not a level":
     var
       home = homeAt("instance")
@@ -145,6 +155,7 @@ suite "the path is still the address":
     check got.slot.path == home.base / "db" / "fjord.staging" / "accounts"
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkEdgeCase.}
   test "an address that would escape the home is refused":
     var
       r = initRegistry(homeAt("escape"), plainOpener(), ["fjord"])
@@ -156,6 +167,7 @@ suite "the path is still the address":
 
 suite "one open session per destination":
 
+  # {.testKind: tkEdgeCase.}
   test "asking twice opens once":
     var
       r = initRegistry(homeAt("twice"), plainOpener(), ["fjord"])
@@ -167,6 +179,7 @@ suite "one open session per destination":
     check r.registry.openCount() == 1
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "two routes to one store are one store":
     var
       r = initRegistry(homeAt("routes"), plainOpener(), ["fjord"])
@@ -181,6 +194,7 @@ suite "one open session per destination":
     check r.registry.report.opened == 1'u64
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "two mailboxes are two stores":
     var
       r = initRegistry(homeAt("two"), plainOpener(), ["fjord"])
@@ -190,6 +204,7 @@ suite "one open session per destination":
     check r.registry.openCount() == 2
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "a slot key ignores the journey and keeps the destination":
     check addressOf("geist://fjord/mail/alice/inbox?ttl=3").slotKey() ==
       "fjord/mail/alice/inbox"
@@ -198,6 +213,7 @@ suite "one open session per destination":
 
 suite "the bound is real":
 
+  # {.testKind: tkUnit.}
   test "a third store evicts the first":
     var
       r = initRegistry(homeAt("evict"), plainOpener(), ["fjord"], 2)
@@ -212,6 +228,7 @@ suite "the bound is real":
     check "fjord/mail/c/inbox" in r.registry.openKeys()
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkEdgeCase.}
   test "using a store keeps it alive past a newer one":
     var
       r = initRegistry(homeAt("lru"), plainOpener(), ["fjord"], 2)
@@ -225,6 +242,7 @@ suite "the bound is real":
     check "fjord/mail/b/inbox" notin r.registry.openKeys()
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkEdgeCase.}
   test "the open set never exceeds the limit, over many stores":
     var
       r = initRegistry(homeAt("many"), plainOpener(), ["fjord"], 3)
@@ -239,6 +257,7 @@ suite "the bound is real":
     check r.registry.report.evicted == 17'u64
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkEdgeCase.}
   test "room is made BEFORE the new store opens, not after":
     # A registry that opened first would peak at limit + 1 handles, which
     # is the exact moment a daemon at its ceiling falls over. Checked by
@@ -255,6 +274,7 @@ suite "the bound is real":
 
 suite "eviction does not lose rows":
 
+  # {.testKind: tkUnit.}
   test "an evicted store was saved, and reopens with its rows":
     var
       home = homeAt("saved")
@@ -274,6 +294,7 @@ suite "eviction does not lose rows":
     check again.slot.session.entryCount() == 1
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "closing the registry saves every writable store":
     var
       home = homeAt("closeall")
@@ -296,6 +317,7 @@ suite "eviction does not lose rows":
     check back.slot.session.entryCount() == 1
     discard r2.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "saveAll flushes without closing":
     var
       r = initRegistry(homeAt("saveall"), plainOpener(), ["fjord"], 4)
@@ -313,6 +335,7 @@ suite "eviction does not lose rows":
 
 suite "answering a query by address":
 
+  # {.testKind: tkUnit.}
   test "a query is answered against the store its address names":
     var
       r = initRegistry(homeAt("answer"), plainOpener(), ["fjord"], 4)
@@ -334,6 +357,7 @@ suite "answering a query by address":
     check reply.rows.len == 1
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkEdgeCase.}
   test "an unservable address is a refusal, not a transport failure":
     var
       r = initRegistry(homeAt("refusal"), plainOpener(), ["fjord"], 4)
@@ -347,6 +371,7 @@ suite "answering a query by address":
     check not reply.ok
     check "does not serve 'eris'" in reply.err
 
+  # {.testKind: tkEdgeCase.}
   test "an unparseable address is refused before any store is touched":
     var
       r = initRegistry(homeAt("badaddr"), plainOpener(), ["fjord"], 4)
@@ -358,6 +383,7 @@ suite "answering a query by address":
     check not reply.ok
     check r.registry.openCount() == 0
 
+  # {.testKind: tkEdgeCase.}
   test "rights are enforced by answerQuery, not re-decided here":
     var
       r = initRegistry(homeAt("rights"), plainOpener(), ["fjord"], 4)
@@ -370,6 +396,7 @@ suite "answering a query by address":
     check not reply.ok
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "subscription cursors are per store":
     var
       r = initRegistry(homeAt("cursors"), plainOpener(), ["fjord"], 4)
@@ -389,6 +416,7 @@ suite "answering a query by address":
 
 suite "what an operator can see":
 
+  # {.testKind: tkUnit.}
   test "the description counts what happened":
     var
       r = initRegistry(homeAt("describe"), plainOpener(), ["fjord"], 2)
@@ -404,6 +432,7 @@ suite "what an operator can see":
     check "1 refused" in line
     discard r.registry.closeRegistry()
 
+  # {.testKind: tkUnit.}
   test "the open list reads oldest first, so it says what goes next":
     var
       r = initRegistry(homeAt("order"), plainOpener(), ["fjord"], 3)

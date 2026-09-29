@@ -32,7 +32,7 @@
 ##
 ## `everything()` turns elision off for a caller who means it.
 
-import std/[strutils]
+import std/[strutils, json]
 
 import runePragmas
 import ./types
@@ -128,6 +128,18 @@ proc gapRow(n: int): seq[string] {.role: helper,
   for i in 0 ..< n:
     result.add ellipsis
 
+proc lineOf(rendered: seq[string], cols: seq[int], width: int): seq[string] {.
+    role: parser, tag: "formatting".} =
+  ## rendered/cols/width: one row's cells, as the columns ask for them --
+  ## an elided column (-1) as the ellipsis, a long cell clipped.
+  for j in cols:
+    if j < 0:
+      result.add ellipsis
+    elif j < rendered.len:
+      result.add clip(rendered[j], width)
+    else:
+      result.add ""
+
 proc cellsOf(s: Schema, R: openArray[Row], cols: seq[int],
     gapAfter: int, width: int): seq[seq[string]] {.role: parser,
     tag: "formatting|read".} =
@@ -136,20 +148,9 @@ proc cellsOf(s: Schema, R: openArray[Row], cols: seq[int],
   ## cols: column indexes to show, -1 marking an elided column.
   ## gapAfter: index in R after which the elided-rows line goes, or -1.
   var
-    line: seq[string] = @[]
-    rendered: seq[string] = @[]
     i: int = 0
   while i < R.len:
-    rendered = renderRow(s, R[i].data)
-    line = @[]
-    for j in cols:
-      if j < 0:
-        line.add ellipsis
-      elif j < rendered.len:
-        line.add clip(rendered[j], width)
-      else:
-        line.add ""
-    result.add line
+    result.add lineOf(renderRow(s, R[i].data), cols, width)
     if i == gapAfter:
       result.add gapRow(cols.len)
     i = i + 1
@@ -352,6 +353,21 @@ proc showTransposed*(s: Schema, R: openArray[Row],
   result = showSelection(s, keptRows, keptAt, R.len,
     (if k.elided: k.head - 1 else: -1), swapped, transposed = true)
 
+proc jsonObjectOf(s: Schema, cells: seq[string]): string {.role: helper,
+    tag: "formatting".} =
+  ## s/cells: one row as `{"field": "value", ...}`, every value a string.
+  ## `escapeJson` escapes what JSON requires -- quotes, backslashes AND
+  ## control characters; a cell holding a newline used to produce output
+  ## no JSON reader would accept.
+  var
+    j: int = 0
+  result = "{"
+  while j < cells.len and j < s.slots.len:
+    result.add (if j > 0: ", " else: "") &
+      escapeJson(s.nameOf(s.slots[j].nameId)) & ": " & escapeJson(cells[j])
+    j = j + 1
+  result.add "}"
+
 proc showJson*(s: Schema, R: openArray[Row]): string {.role: helper,
     tag: "appApi|cli|formatting|write".} =
   ## s/R: the same rows as machine-readable output.
@@ -360,21 +376,10 @@ proc showJson*(s: Schema, R: openArray[Row]): string {.role: helper,
   ## would be read by a program, and a program cannot see the dots.
   var
     i: int = 0
-    j: int = 0
-    cells: seq[string] = @[]
     line: string = ""
   result = "[\n"
   while i < R.len:
-    cells = renderRow(s, R[i].data)
-    line = "  {"
-    j = 0
-    while j < cells.len and j < s.slots.len:
-      if j > 0:
-        line.add ", "
-      line.add "\"" & s.nameOf(s.slots[j].nameId) & "\": \"" &
-        cells[j].multiReplace(("\\", "\\\\"), ("\"", "\\\"")) & "\""
-      j = j + 1
-    line.add "}"
+    line = "  " & jsonObjectOf(s, renderRow(s, R[i].data))
     if i < R.len - 1:
       line.add ","
     result.add line & "\n"

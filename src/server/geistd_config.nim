@@ -23,6 +23,7 @@
 import std/[os, strutils]
 
 import runePragmas
+import ../geist/args
 import ../geist/network
 
 type
@@ -104,7 +105,7 @@ proc parseArgs*(argv: openArray[string]): DaemonConfig {.role: parser,
     i: int = 0
     key: string = ""
     value: string = ""
-    at: int = 0
+    step: OptionStep = ("", "", false, 0)
   result.listen = "dac://127.0.0.1:47655"
   result.preset = "app"
   result.subject = "geistd"
@@ -115,19 +116,13 @@ proc parseArgs*(argv: openArray[string]): DaemonConfig {.role: parser,
   result.idleSeconds = 900
   result.syncEvery = 60
   while i < argv.len:
-    if not argv[i].startsWith("--"):
-      raise newException(ValueError, "unexpected argument '" & argv[i] & "'")
-    key = argv[i][2 .. ^1]
-    value = ""
-    at = key.find('=')
-    if at > 0:
-      value = key[at + 1 .. ^1]
-      key = key[0 ..< at]
-    elif key notin ["oneshot", "quiet", "help", "print-pin"]:
-      if i + 1 >= argv.len:
-        raise newException(ValueError, "option --" & key & " needs a value")
-      value = argv[i + 1]
-      i = i + 1
+    step = nextOption(argv, i, ["oneshot", "quiet", "help", "print-pin"])
+    if step.bare:
+      raise newException(ValueError, "unexpected argument '" & step.value &
+        "'")
+    i = step.last
+    key = step.key
+    value = step.value
     case key
     of "path": result.path = value
     of "listen": result.listen = value
@@ -270,45 +265,6 @@ proc storeParts*(path: string): tuple[dir, name: string] {.role: parser,
   if path.splitFile().ext.len > 0:
     result.dir = path.parentDir()
     result.name = path.splitFile().name
-
-proc peerAt(P: openArray[TrustedPeer], subject: string): int {.role: parser,
-    tag: "cryptoBoundary|server".} =
-  ## P/subject: where that pin already sits in the list, or -1.
-  var
-    j: int = 0
-  while j < P.len:
-    if P[j].pin.subject == subject:
-      return j
-    j = j + 1
-  result = -1
-
-proc collectTrust*(c: DaemonConfig): tuple[ok: bool, peers: seq[TrustedPeer],
-    err: string] {.role: configurator,
-    tag: "cryptoBoundary|server".} =
-  ## c: daemon config whose pin files become the trust list.
-  ##
-  ## The FLAG grants the right, not the peer: `--trust` may read,
-  ## `--allow-write` may also send rows. A pin listed under both gets the
-  ## union, because the operator clearly meant to allow the wider one.
-  var
-    i: int = 0
-    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
-      (false, default(AmePinnedPeerIdentity), "")
-    at: int = -1
-  while i < c.trust.len + c.allowWrite.len:
-    loaded = loadPin(if i < c.trust.len: c.trust[i]
-                     else: c.allowWrite[i - c.trust.len])
-    if not loaded.ok:
-      return (false, @[], loaded.err)
-    at = peerAt(result.peers, loaded.pin.subject)
-    if at >= 0:
-      if i >= c.trust.len:
-        result.peers[at].rights.incl prWrite
-    else:
-      result.peers.add TrustedPeer(pin: loaded.pin,
-        rights: if i < c.trust.len: {prRead} else: {prRead, prWrite})
-    i = i + 1
-  result.ok = true
 
 proc daemonConfigFor*(c: DaemonConfig): GeistConfig {.role: configurator,
     tag: "config|server".} =

@@ -373,6 +373,104 @@ proc resolveGeneration*(baseDir, baseName: string,
     n = n - 1'u64
   result = (live, false)
 
+proc adoptLedgers(S: var Session, L: openArray[Ledger]) {.role: truthBuilder,
+    tag: "cryptoBoundary|db|read".} =
+  ## S/L: the ledgers the ledger file held, in their fixed order:
+  ##
+  ##   L[0] entries     L[1] meta     L[2] journal
+  ##
+  ## Fewer than three is a store written before that cluster was sealed;
+  ## the ones missing keep the fresh ledger `loadStore` already made.
+  if L.len > 0:
+    S.ledger = L[0]
+  if L.len > 1:
+    S.metaLedger = L[1]
+  if L.len > 2:
+    S.journalLedger = L[2]
+
+proc loadKeys(S: var Session, password: string) {.role: decryptor,
+    tag: "cryptoBoundary|db|keyLifecycle|read".} =
+  ## S/password: the key set and the ledgers of a sealed store.
+  ##
+  ## An EXISTING key file that will not open is a wrong password or a
+  ## tampered file. Minting a fresh key set then would silently orphan every
+  ## row already written, so it raises instead. No key file yet is a new
+  ## store, and gets a fresh set.
+  var
+    loadedKeys: tuple[ok: bool, keys: KeySet, err: string] =
+      (false, default(KeySet), "")
+    loadedLedger: tuple[ok: bool, ledgers: seq[Ledger], err: string] =
+      readLedgerFile(S.ledgerPath())
+  if fileExists(S.keyPath()):
+    loadedKeys = readKeyFile(S.keyPath(), password)
+    if not loadedKeys.ok:
+      raise newException(IOError, loadedKeys.err)
+    S.keySet = loadedKeys.keys
+  else:
+    S.keySet = newKeySet()
+    discard S.keySet.allocKeyRef("initial")
+  if loadedLedger.ok:
+    S.adoptLedgers(loadedLedger.ledgers)
+  elif fileExists(S.ledgerPath()):
+    raise newException(IOError, loadedLedger.err)
+
+proc readRole(S: Session, f: GeistFile, role: ClusterRole): tuple[
+    found: bool, c: ClusterBuild] {.role: dataFetcher,
+    tag: "db|read|storageIo".} =
+  ## S/f/role: that role's cluster from the live file, still sealed, or
+  ## found = false when the file has none.
+  var
+    at: int = f.findIndex(role)
+  if at < 0:
+    return (false, default(ClusterBuild))
+  result = (true, readCluster(S.dataPath(), f.index[at], S.sidecarStore,
+    S.config.chainHash, S.config.treeHash))
+
+proc openRecords(S: Session, C: var ClusterBuild, L: Ledger) {.
+    role: decryptor, tag: "cryptoBoundary|db|read".} =
+  ## S/C/L: a meta or journal cluster opened in place, when it was sealed.
+  if S.encrypted and L.groups.len > 0:
+    openPacked(S.keySet.master, L, C.rows, C.rowOffsets, C.rowCount,
+      L.databaseId, geistFormatVersion)
+
+proc openEntries(S: var Session) {.role: decryptor,
+    tag: "cryptoBoundary|db|read".} =
+  ## S: the entry cluster opened in place. Varying rows are sealed row by
+  ## row (packed); fixed rows are sealed by column group.
+  if S.encrypted and S.entries.varyingRows():
+    openPacked(S.keySet.master, S.ledger, S.entries.rows,
+      S.entries.rowOffsets, S.entries.rowCount, S.baseName,
+      geistFormatVersion)
+  elif S.encrypted and S.ledger.groups.len > 0:
+    openCluster(S.keySet.master, S.ledger, S.entries.schema,
+      S.entries.rows, S.entries.rowCount, S.baseName, geistFormatVersion)
+
+proc loadClusters(S: var Session) {.role: orchestrator,
+    tag: "db|read|storageIo".} =
+  ## S: meta, journal and entries from the live file, opened. A store with
+  ## no file yet keeps the empty clusters `loadStore` made.
+  var
+    index: tuple[ok: bool, f: GeistFile, err: string] =
+      (false, default(GeistFile), "")
+    got: tuple[found: bool, c: ClusterBuild] = (false, default(ClusterBuild))
+  if not fileExists(S.dataPath()):
+    return
+  index = readIndex(S.dataPath())
+  if not index.ok:
+    raise newException(IOError, index.err)
+  got = S.readRole(index.f, crMeta)
+  if got.found:
+    S.meta = got.c
+    S.openRecords(S.meta, S.metaLedger)
+  got = S.readRole(index.f, crJournal)
+  if got.found:
+    S.journal = got.c
+    S.openRecords(S.journal, S.journalLedger)
+  got = S.readRole(index.f, crEntry)
+  if got.found:
+    S.entries = got.c
+    S.openEntries()
+
 proc loadStore(S: var Session, baseDir, baseName: string, schemaIn: Schema,
     password: string) {.role: orchestrator,
     tag: "db|orchestrator|storageIo".} =
@@ -386,16 +484,9 @@ proc loadStore(S: var Session, baseDir, baseName: string, schemaIn: Schema,
   var
     resolved: tuple[n: uint64, repaired: bool] = (0'u64, false)
     schema: Schema = default(Schema)
-    loadedKeys: tuple[ok: bool, keys: KeySet, err: string] =
-      (false, default(KeySet), "")
-    loadedLedger: tuple[ok: bool, ledgers: seq[Ledger], err: string] =
-      (false, @[], "")
     recordSchema: Schema = default(Schema)
-    index: tuple[ok: bool, f: GeistFile, err: string] =
-      (false, default(GeistFile), "")
     applied: tuple[ok: bool, s: Schema, err: string] =
       (false, default(Schema), "")
-    at: int = -1
   # The manifest names the live generation; `resolveGeneration` is what
   # happens when that generation will not read back.
   resolved = resolveGeneration(baseDir, baseName, S.encrypted)
@@ -454,61 +545,8 @@ proc loadStore(S: var Session, baseDir, baseName: string, schemaIn: Schema,
   if S.config.sealJournal:
     S.journalLedger.groups = columnGroupsFor(S.config, recordSchema)
   if S.encrypted:
-    if fileExists(S.keyPath()):
-      # An EXISTING key file that will not open is a wrong password or a
-      # tampered file. Minting a fresh key set here would silently orphan
-      # every row already written, so it must fail loudly instead.
-      loadedKeys = readKeyFile(S.keyPath(), password)
-      if not loadedKeys.ok:
-        raise newException(IOError, loadedKeys.err)
-      S.keySet = loadedKeys.keys
-    else:
-      S.keySet = newKeySet()
-      discard S.keySet.allocKeyRef("initial")
-    loadedLedger = readLedgerFile(S.ledgerPath())
-    if loadedLedger.ok:
-      if loadedLedger.ledgers.len > 0:
-        S.ledger = loadedLedger.ledgers[0]
-      if loadedLedger.ledgers.len > 1:
-        S.metaLedger = loadedLedger.ledgers[1]
-      if loadedLedger.ledgers.len > 2:
-        S.journalLedger = loadedLedger.ledgers[2]
-    elif fileExists(S.ledgerPath()):
-      raise newException(IOError, loadedLedger.err)
-  if fileExists(S.dataPath()):
-    index = readIndex(S.dataPath())
-    if not index.ok:
-      raise newException(IOError, index.err)
-    at = index.f.findIndex(crMeta)
-    if at >= 0:
-      S.meta = readCluster(S.dataPath(), index.f.index[at],
-        S.sidecarStore, S.config.chainHash, S.config.treeHash)
-      if S.encrypted and S.metaLedger.groups.len > 0:
-        openPacked(S.keySet.master, S.metaLedger,
-          S.meta.rows, S.meta.rowOffsets, S.meta.rowCount,
-          S.metaLedger.databaseId, geistFormatVersion)
-    at = index.f.findIndex(crJournal)
-    if at >= 0:
-      S.journal = readCluster(S.dataPath(), index.f.index[at],
-        S.sidecarStore, S.config.chainHash, S.config.treeHash)
-      if S.encrypted and S.journalLedger.groups.len > 0:
-        openPacked(S.keySet.master, S.journalLedger,
-          S.journal.rows, S.journal.rowOffsets,
-          S.journal.rowCount,
-          S.journalLedger.databaseId, geistFormatVersion)
-    at = index.f.findIndex(crEntry)
-    if at >= 0:
-      S.entries = readCluster(S.dataPath(), index.f.index[at],
-        S.sidecarStore, S.config.chainHash, S.config.treeHash)
-      if S.encrypted and S.entries.varyingRows():
-        openPacked(S.keySet.master, S.ledger, S.entries.rows,
-          S.entries.rowOffsets, S.entries.rowCount,
-          S.baseName, geistFormatVersion)
-      elif S.encrypted and S.ledger.groups.len > 0:
-        openCluster(S.keySet.master, S.ledger,
-          S.entries.schema, S.entries.rows,
-          S.entries.rowCount,
-          S.baseName, geistFormatVersion)
+    S.loadKeys(password)
+  S.loadClusters()
   # One pass over the decrypted rows rebuilds the live view. It reads two
   # fixed columns per row and no payload, and it is the same pass the load
   # above already paid for in cache terms.
@@ -1251,12 +1289,12 @@ proc close*(S: var Session) {.role: actor,
   ## must still let the next process in, or one bad write locks the database
   ## until somebody deletes a file by hand.
   var
-    written: tuple[ok: bool, err: string] = (false, "")
+    written: tuple[ok: bool, err: string] = (true, "")
   try:
     if S.dirty and not S.readOnly and S.config.writeMode != wmVolatile:
       written = S.save()
-      if not written.ok:
-        raise newException(IOError, written.err)
+    if not written.ok:
+      raise newException(IOError, written.err)
   finally:
     S.writeLease.releaseLease()
   S.entries = ClusterBuild()
@@ -1337,6 +1375,18 @@ proc restoreSlot*(S: var Session, slot: int): tuple[ok: bool,
 ## between generations. That sharing is what makes them cheap and it is
 ## also why a sweep must look inside every slot before deleting anything.
 
+proc externalRefsOf(s: Schema, raw: openArray[uint8],
+    into: var seq[string]) {.role: parser, tag: "db|read|sidecar".} =
+  ## s/raw/into: the sidecar locator of every column of one row that
+  ## lives outside it.
+  var
+    offsets: seq[int] = fieldOffsets(s, raw)
+    j: int = 0
+  while j < s.slots.len:
+    if s.isExternal(raw, j):
+      into.add refLocator(decodeRef(s.rawAt(raw, offsets, j)))
+    j = j + 1
+
 proc sidecarRefsIn(s: Schema, C: ClusterBuild,
     into: var seq[string]) {.role: parser,
     tag: "db|read|sidecar".} =
@@ -1345,19 +1395,10 @@ proc sidecarRefsIn(s: Schema, C: ClusterBuild,
   ##   asks whether a locator is present.
   var
     i: uint32 = 0'u32
-    j: int = 0
-    raw: ByteSeq = @[]
-    offsets: seq[int] = @[]
   if not s.hasCapped():
     return
   while i < C.rowCount:
-    raw = C.rowBytesAt(i)
-    offsets = fieldOffsets(s, raw)
-    j = 0
-    while j < s.slots.len:
-      if s.isExternal(raw, j):
-        into.add refLocator(decodeRef(s.rawAt(raw, offsets, j)))
-      j = j + 1
+    externalRefsOf(s, C.rowBytesAt(i), into)
     i = i + 1
 
 proc sidecarRefs*(s: Session): seq[string] {.role: parser,
@@ -1368,6 +1409,41 @@ proc sidecarRefs*(s: Session): seq[string] {.role: parser,
   sidecarRefsIn(s.entries.schema, s.entries, result)
   sidecarRefsIn(s.meta.schema, s.meta, result)
   sidecarRefsIn(s.journal.schema, s.journal, result)
+
+proc allExist(A: openArray[string]): bool {.role: parser, inline,
+    tag: "backup|storageIo".} =
+  ## A: are all of these files there?
+  for path in A:
+    if not fileExists(path):
+      return false
+  result = true
+
+proc refsInSlot(s: Session, slot: int, src: openArray[string]): tuple[
+    ok: bool, refs: seq[string], err: string] {.role: parser,
+    tag: "backup|db|read|sidecar".} =
+  ## s/slot/src: the sidecar references held by one backup slot.
+  ##
+  ## A slot is opened the only way a store can be: copied into a scratch
+  ## folder as generation 1, opened read-only, read, and removed again.
+  var
+    scratch: string = s.baseDir / (".geist-sweep-" & $slot)
+    g: Generation = generationPaths(scratch, s.baseName, 1'u64)
+    other: Session = default(Session)
+  try:
+    removeDir(scratch)
+    createDir(scratch)
+    copyFile(src[0], g.dataPath)
+    if s.encrypted:
+      copyFile(src[1], g.keyPath)
+      copyFile(src[2], g.ledgerPath)
+    discard commitManifest(scratch, 1'u64)
+    other = openSessionWithSchema(scratch, s.baseName, Schema(), s.config,
+      s.password, readOnly = true)
+    result = (true, other.sidecarRefs(), "")
+    other.close()
+  except CatchableError as exc:
+    result = (false, @[], "cannot read backup slot " & $slot & ": " & exc.msg)
+  removeDir(scratch)
 
 proc backupSidecarRefs(s: Session): tuple[ok: bool, refs: seq[string],
     err: string] {.role: parser,
@@ -1382,43 +1458,17 @@ proc backupSidecarRefs(s: Session): tuple[ok: bool, refs: seq[string],
     slot: int = 1
     live: seq[string] = @[]
     src: seq[string] = @[]
-    scratch: string = ""
-    g: Generation = default(Generation)
-    other: Session = default(Session)
-    i: int = 0
-    present: bool = false
+    one: tuple[ok: bool, refs: seq[string], err: string] = (false, @[], "")
   live = s.backupStems()
   while slot <= int(high(uint8)):
     src = restorePaths(live, slot)
-    present = true
-    i = 0
-    while i < src.len:
-      if not fileExists(src[i]):
-        present = false
-      i = i + 1
-    if not present:
+    if not allExist(src):
       # Slots are filled in order, so the first gap is the end of them.
       break
-    scratch = s.baseDir / (".geist-sweep-" & $slot)
-    try:
-      if dirExists(scratch):
-        removeDir(scratch)
-      createDir(scratch)
-      g = generationPaths(scratch, s.baseName, 1'u64)
-      copyFile(src[0], g.dataPath)
-      if s.encrypted:
-        copyFile(src[1], g.keyPath)
-        copyFile(src[2], g.ledgerPath)
-      discard commitManifest(scratch, 1'u64)
-      other = openSessionWithSchema(scratch, s.baseName, Schema(), s.config,
-        s.password, readOnly = true)
-      result.refs.add other.sidecarRefs()
-      other.close()
-      removeDir(scratch)
-    except CatchableError as exc:
-      if dirExists(scratch):
-        removeDir(scratch)
-      return (false, @[], "cannot read backup slot " & $slot & ": " & exc.msg)
+    one = s.refsInSlot(slot, src)
+    if not one.ok:
+      return (false, @[], one.err)
+    result.refs.add one.refs
     slot = slot + 1
   result.ok = true
 
@@ -1510,6 +1560,25 @@ proc rowsSince*(s: Session, cursor: uint64, limit: int = 256,
     used = used + result[^1].data.len
     i = i + 1'u32
 
+proc changeOf(S: Session, ident: tuple[id: RowId, flags: uint64],
+    data: openArray[uint8]): tuple[same: bool, kind: ChangeKind] {.
+    role: parser, tag: "db|sync".} =
+  ## S/ident/data: what storing this row from a peer would be.
+  ##
+  ##   no id at all                       ckAdded
+  ##   id unknown, not a tombstone        ckAdded
+  ##   id unknown, a tombstone            ckDeleted
+  ##   id known, these exact bytes        same -- nothing to do
+  ##   id known, a tombstone              ckDeleted
+  ##   id known, other bytes              ckUpdated
+  var
+    at: int = (if ident.id == 0'u64: -1 else: S.live.positionOf(ident.id))
+  if at >= 0 and S.entries.rowBytesAt(uint32(at)) == @data:
+    return (true, ckAdded)
+  if ident.id != 0'u64 and ident.flags.isTombstone():
+    return (false, ckDeleted)
+  result = (false, (if at >= 0: ckUpdated else: ckAdded))
+
 proc applyRow*(S: var Session, r: Row): tuple[ok: bool, id: RowId,
     err: string] {.role: dataWriter, tag: "appApi|db|sync|write".} =
   ## S: session receiving one row FROM A PEER.
@@ -1526,8 +1595,7 @@ proc applyRow*(S: var Session, r: Row): tuple[ok: bool, id: RowId,
   var
     shaped: tuple[ok: bool, err: string] = (false, "")
     ident: tuple[id: RowId, flags: uint64] = (default(RowId), 0'u64)
-    at: int = -1
-    kind: ChangeKind = ckAdded
+    change: tuple[same: bool, kind: ChangeKind] = (false, ckAdded)
   if S.readOnly:
     return (false, 0'u64, S.writeRefusal())
   shaped = validateRow(S.entries.schema, r.data)
@@ -1537,16 +1605,11 @@ proc applyRow*(S: var Session, r: Row): tuple[ok: bool, id: RowId,
   ident = S.entries.schema.identityOf(r.data)
   if S.hasIdentity() and ident.id == 0'u64:
     return (false, 0'u64, "row from peer carries no identity")
-  if ident.id != 0'u64:
-    at = S.live.positionOf(ident.id)
-    if at >= 0:
-      if S.entries.rowBytesAt(uint32(at)) == r.data:
-        # Already have exactly this version.
-        return (true, ident.id, "")
-      kind = if ident.flags.isTombstone(): ckDeleted else: ckUpdated
-    elif ident.flags.isTombstone():
-      kind = ckDeleted
-  discard S.appendPacked(r.data, ident.id, ident.flags, kind)
+  change = S.changeOf(ident, r.data)
+  if change.same:
+    # Already have exactly this version.
+    return (true, ident.id, "")
+  discard S.appendPacked(r.data, ident.id, ident.flags, change.kind)
   result = (true, ident.id, "")
 
 proc applyRows*(S: var Session, R: openArray[Row]): tuple[ok: bool,

@@ -208,7 +208,7 @@ proc startServer(c: DaemonConfig, key: AmeIdentityKey): GeistServer {.
   if not address.ok:
     raise newException(ValueError,
       "--listen must be dac://host:port, got '" & c.listen & "'")
-  trusted = collectTrust(c)
+  trusted = trustListFrom(c.trust, c.allowWrite)
   if not trusted.ok:
     raise newException(IOError, trusted.err)
   server = initGeistServer(address.a, key, trusted.peers,

@@ -39,6 +39,7 @@ proc sidecarFiles(root: string): int {.role: parser.} =
     result = result + 1
 
 suite "sidecar sweep":
+  # {.testKind: tkEdgeCase.}
   test "a payload no row references is reclaimed":
     var
       root = freshRoot("geist_t_sw1")
@@ -61,6 +62,7 @@ suite "sidecar sweep":
     check byId[Doc](db, a).value.blob == repeat("K", 4096)
     db.close()
 
+  # {.testKind: tkUnit.}
   test "a superseded version still in the log keeps its payload":
     var
       root = freshRoot("geist_t_sw2")
@@ -82,6 +84,7 @@ suite "sidecar sweep":
     check byId[Doc](db, a).value.blob == repeat("B", 4096)
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a payload a backup slot references is not touched":
     var
       root = freshRoot("geist_t_sw3")
@@ -109,6 +112,7 @@ suite "sidecar sweep":
     check sidecarFiles(root) > 0
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a read-only session refuses to sweep":
     var
       root = freshRoot("geist_t_sw4")
@@ -124,6 +128,7 @@ suite "sidecar sweep":
     reader.close()
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a database with no sidecar sweeps to nothing and says so":
     var
       root = freshRoot("geist_t_sw5")

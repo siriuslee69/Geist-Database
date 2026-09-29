@@ -15,11 +15,13 @@ type
 
 suite "hash agility":
 
+  # {.testKind: tkUnit.}
   test "every family produces both documented widths":
     for k in [hkBlake3, hkSha3, hkGimli]:
       check geistHash(k, cast[ByteSeq]("abc"), shortDigestBytes).len == 16
       check geistHash(k, cast[ByteSeq]("abc"), fullDigestBytes).len == 32
 
+  # {.testKind: tkEdgeCase.}
   test "families disagree, so a break in one is not a break in another":
     var
       a = geistHash(hkBlake3, cast[ByteSeq]("abc"), fullDigestBytes)
@@ -29,10 +31,12 @@ suite "hash agility":
     check b != c
     check a != c
 
+  # {.testKind: tkUnit.}
   test "hashing is deterministic across calls":
     check geistHash(hkSha3, cast[ByteSeq]("x"), 32) ==
       geistHash(hkSha3, cast[ByteSeq]("x"), 32)
 
+  # {.testKind: tkUnit.}
   test "only the two documented widths validate":
     check validDigestBytes(16)
     check validDigestBytes(32)
@@ -40,6 +44,7 @@ suite "hash agility":
     check not validDigestBytes(0)
     check not validDigestBytes(64)
 
+  # {.testKind: tkUnit.}
   test "a narrowed MAC still verifies at its own width":
     var
       key = initSecret(newSeq[uint8](32))
@@ -54,11 +59,13 @@ suite "hash agility":
     # A tag of the wrong width must not verify by prefix.
     check not verifyTag(mkCombined, key, msg, aad, t32[0 ..< 16])
 
+  # {.testKind: tkEdgeCase.}
   test "an empty tag is rejected rather than trivially accepted":
     var key = initSecret(newSeq[uint8](32))
     check not verifyTag(mkBlake3, key, cast[ByteSeq]("m"),
       cast[ByteSeq]("a"), @[])
 
+  # {.testKind: tkEdgeCase.}
   test "the tree hash travels with the data, not with the caller":
     # A ledger entry records its own tree hash so a database written under
     # one configuration stays verifiable after the configuration changes.
@@ -74,6 +81,7 @@ suite "hash agility":
     check back.keyRef == 5'u64
     check back.epoch == 9'u64
 
+  # {.testKind: tkEdgeCase.}
   test "config rejects a width that would weaken a guarantee":
     var c = appConfig()
     c.contentHashBytes = 20'u8
@@ -84,6 +92,7 @@ suite "hash agility":
     c.treeHashBytes = uint8(shortDigestBytes)
     check not validateGeistConfig(c).ok
 
+  # {.testKind: tkUnit.}
   test "presets carry the documented algorithm defaults":
     check appConfig().contentHashBytes == uint8(shortDigestBytes)
     check secureAppConfig().contentHashBytes == uint8(fullDigestBytes)
@@ -100,6 +109,7 @@ suite "hash agility":
     check secureAppConfig().mac == mkCombined
     check archiveConfig().mac == mkCombined
 
+  # {.testKind: tkUnit.}
   test "a database written with SHA3 throughout reopens and reads":
     var root = getTempDir() / "geist_t_sha3"
     removeDir(root)
@@ -116,6 +126,7 @@ suite "hash agility":
     re.close()
     removeDir(root)
 
+  # {.testKind: tkUnit.}
   test "sidecar verification uses the configured family":
     var root = getTempDir() / "geist_t_sccfg"
     removeDir(root)

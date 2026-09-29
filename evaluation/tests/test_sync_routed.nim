@@ -185,6 +185,7 @@ proc localStore(root: string, titles: openArray[string]): Session {.
 
 suite "a client pushes what it wrote while it was away":
 
+  # {.testKind: tkIntegration.}
   test "rows offered by address arrive, and can be pulled back":
     var
       base = freshRoot("push")
@@ -226,6 +227,7 @@ suite "a client pushes what it wrote while it was away":
     client.closeClient()
     stopServer(addr args, t)
 
+  # {.testKind: tkIntegration.}
   test "the second push sends nothing, because the first was remembered":
     var
       base = freshRoot("cursor")
@@ -266,6 +268,7 @@ suite "a client pushes what it wrote while it was away":
     client.closeClient()
     stopServer(addr args, t)
 
+  # {.testKind: tkIntegration.}
   test "pending says what is owed, and reads it off the disk":
     var
       base = freshRoot("pending")
@@ -294,6 +297,7 @@ suite "a client pushes what it wrote while it was away":
 
 suite "the two directions keep separate books":
 
+  # {.testKind: tkIntegration.}
   test "a pull cursor and a push cursor are different files":
     var
       base = freshRoot("books")
@@ -324,6 +328,7 @@ suite "the two directions keep separate books":
     client.closeClient()
     stopServer(addr args, t)
 
+  # {.testKind: tkIntegration.}
   test "a cursor is filed under the destination, not the hop":
     var
       base = freshRoot("filing")
@@ -365,6 +370,7 @@ suite "the two directions keep separate books":
 
 suite "a refusal is not a dead hop":
 
+  # {.testKind: tkIntegration.}
   test "an app the server does not serve comes back as an answer":
     var
       base = freshRoot("refuse")

@@ -278,11 +278,9 @@ proc seekMatching*(h: SeekHandle, slot: int, value: uint64,
     col: seq[uint64] = @[]
     i: int = 0
   col = h.seekFixedColumn(slot)
-  while i < col.len:
+  while i < col.len and (limit <= 0 or result.len < limit):
     if col[i] == value:
       result.add uint32(i)
-      if limit > 0 and result.len >= limit:
-        return
     i = i + 1
 
 proc indexCostBytes*(path: string): int {.role: parser,

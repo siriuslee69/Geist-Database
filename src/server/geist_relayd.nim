@@ -41,6 +41,7 @@
 import std/[json, os, strutils, times]
 
 import runePragmas
+import ../geist/args
 import ../geist/wire
 
 type
@@ -168,7 +169,7 @@ proc parseArgs*(argv: openArray[string]): RelayConfig {.role: parser,
     i: int = 0
     key: string = ""
     value: string = ""
-    at: int = 0
+    step: OptionStep = ("", "", false, 0)
   result.listen = "dac://127.0.0.1:47656"
   result.subject = "geist-relay"
   result.to = "spool"
@@ -178,19 +179,13 @@ proc parseArgs*(argv: openArray[string]): RelayConfig {.role: parser,
   result.timeoutMs = 1000
   result.idleSeconds = 900
   while i < argv.len:
-    if not argv[i].startsWith("--"):
-      raise newException(ValueError, "unexpected argument '" & argv[i] & "'")
-    key = argv[i][2 .. ^1]
-    value = ""
-    at = key.find('=')
-    if at > 0:
-      value = key[at + 1 .. ^1]
-      key = key[0 ..< at]
-    elif key notin ["oneshot", "quiet", "help"]:
-      if i + 1 >= argv.len:
-        raise newException(ValueError, "option --" & key & " needs a value")
-      value = argv[i + 1]
-      i = i + 1
+    step = nextOption(argv, i, ["oneshot", "quiet", "help"])
+    if step.bare:
+      raise newException(ValueError, "unexpected argument '" & step.value &
+        "'")
+    i = step.last
+    key = step.key
+    value = step.value
     case key
     of "listen": result.listen = value
     of "subject": result.subject = value
@@ -319,40 +314,6 @@ proc resolveIdentityPassword(c: RelayConfig): string {.role: sanitizer,
     return readFile(c.identityPasswordFile).strip()
   result = c.identityPassword
 
-proc collectTrust(c: RelayConfig): tuple[ok: bool, peers: seq[TrustedPeer],
-    err: string] {.role: configurator,
-    tag: "cryptoBoundary|server".} =
-  ## c: relay config whose pin files become the trust list.
-  ##
-  ## The FLAG grants the right, not the peer: `--trust` may collect from
-  ## the spool, `--allow-write` may also send. A pin listed under both
-  ## gets the union, because the operator clearly meant the wider one.
-  var
-    i: int = 0
-    loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
-      (false, default(AmePinnedPeerIdentity), "")
-    at: int = -1
-    j: int = 0
-  while i < c.trust.len + c.allowWrite.len:
-    loaded = loadPin(if i < c.trust.len: c.trust[i]
-                     else: c.allowWrite[i - c.trust.len])
-    if not loaded.ok:
-      return (false, @[], loaded.err)
-    at = -1
-    j = 0
-    while j < result.peers.len:
-      if result.peers[j].pin.subject == loaded.pin.subject:
-        at = j
-      j = j + 1
-    if at >= 0:
-      if i >= c.trust.len:
-        result.peers[at].rights.incl prWrite
-    else:
-      result.peers.add TrustedPeer(pin: loaded.pin,
-        rights: if i < c.trust.len: {prRead} else: {prRead, prWrite})
-    i = i + 1
-  result.ok = true
-
 proc deskFor*(c: RelayConfig): RelayDesk {.role: configurator,
     tag: "config|server|stream".} =
   ## c: relay options resolved to the pipe they describe.
@@ -415,7 +376,7 @@ proc runRelayd*(argv: seq[string]): int {.role: metaOrchestrator,
       raise newException(ValueError,
         "--trust <peer.pin> (or --allow-write) is required: without a pin " &
         "there is no peer to trust, and every handshake would be refused")
-    trusted = collectTrust(c)
+    trusted = trustListFrom(c.trust, c.allowWrite)
     if not trusted.ok:
       raise newException(IOError, trusted.err)
     D = deskFor(c)
@@ -445,12 +406,11 @@ proc runRelayd*(argv: seq[string]): int {.role: metaOrchestrator,
         c.timeoutMs)
       if step.served:
         served = served + 1
-        if not c.quiet:
-          stderr.writeLine("[" & now().format("HH:mm:ss") & "] request " &
-            $served & ": " & $D.accepted & " accepted, " & $D.delivered &
-            " delivered, " & $D.refused & " refused" &
-            (if D.failed > 0: ", " & $D.failed & " failed (" & D.lastErr & ")"
-             else: ""))
+        c.note("[" & now().format("HH:mm:ss") & "] request " & $served &
+          ": " & $D.accepted & " accepted, " & $D.delivered &
+          " delivered, " & $D.refused & " refused" &
+          (if D.failed > 0: ", " & $D.failed & " failed (" & D.lastErr & ")"
+           else: ""))
       elif not step.ok:
         # An idle window is ok = true with served = false, so only a real
         # failure reaches this line.

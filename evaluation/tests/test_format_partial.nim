@@ -22,12 +22,14 @@ suite "format":
       c.addRow(Row3(id: i, name: "row-" & $i, score: uint16(i * 3)))
     check writeGeistFile(path, @[c]).ok
 
+  # {.testKind: tkUnit.}
   test "index read cost is independent of row count":
     var r = readIndex(path)
     check r.ok
     check r.f.indexBytes == headerBytes + indexEntryBytes
     check r.f.index[0].rowCount == 12'u32
 
+  # {.testKind: tkUnit.}
   test "a single row is addressable without loading the cluster":
     # This schema has a text column, so its rows vary and addressing goes
     # through the offset table. `seekRow` picks the right path from the
@@ -42,6 +44,7 @@ suite "format":
     check h.h.schema.u64At(row.data, offs, 2) == 21'u64
     check h.h.seekObject[:Row3](7'u32).name == "row-7"
 
+  # {.testKind: tkUnit.}
   test "an all-fixed schema stays dense and addresses arithmetically":
     type Dense = object
       a*: int
@@ -63,6 +66,7 @@ suite "format":
     check dh.h.seekObject[:Dense](4'u32).b == 12
     removeDir(droot)
 
+  # {.testKind: tkUnit.}
   test "a full cluster read reconstructs objects":
     var
       r = readIndex(path)
@@ -70,6 +74,7 @@ suite "format":
     check full.rowCount == 12'u32
     check objectAt[Row3](full, 5'u32).name == "row-5"
 
+  # {.testKind: tkUnit.}
   test "changed clusters are detected from the index alone":
     var
       before = readIndex(path)

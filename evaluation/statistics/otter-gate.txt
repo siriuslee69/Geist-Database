@@ -1,33 +1,36 @@
 Otter measured ..
 Fix what is listed here before moving on; each item maps to a rule in CONVENTIONS.md.
 
-SECRETS — 14 candidate(s). Remove or move behind config:
+SECRETS — 17 candidate(s). Remove or move behind config:
   docs/relay.md:257  key  /run…21…-id
-  evaluation/tests/test_daemon_live.nim:581  key  geis…19…eys
+  evaluation/tests/test_daemon_live.nim:590  key  geis…19…eys
   evaluation/tests/test_option_precedence.nim:32  key  /fro…17….pw
-  evaluation/tests/test_registry.nim:253  key  fjor…18…box
-  src/geist/settings.nim:292  key  iden…20…ile
-  src/server/geist_relayd.nim:273  key  iden…20…ile
-  evaluation/tests/test_doc.nim:277  email  alic…17…com
-  evaluation/tests/test_doc.nim:282  email  frie…24…com
-LAYOUT — 35 place(s) where the order of a file is not helping (1 file(s) with a seam in them, 34 group(s) sitting apart).
+  evaluation/tests/test_registry.nim:272  key  fjor…18…box
+  src/geist/settings.nim:300  key  iden…20…ile
+  src/server/geist_relayd.nim:268  key  iden…20…ile
+  evaluation/tests/test_doc.nim:301  email  alic…17…com
+  evaluation/tests/test_doc.nim:306  email  frie…24…com
+LAYOUT — 48 place(s) where the order of a file is not helping (1 file(s) with a seam in them, 47 group(s) sitting apart).
   Rule: a routine belongs beside the thing that uses it, and a file that is already two files should be two files.
-  src/geist/session.nim:1220  SEAM — only 12 of the 47 routine(s) above are needed below
-      -> cut at line 1220: 47 routine(s) and about 1083 lines above, 26 and about 565 below.
-  src/geist/session.nim:162  APART — backupStems, openSessionWithSchema, close, sidecarRefs
+  src/geist/doc.nim:378  SEAM — only 4 of the 14 routine(s) above are needed below
+      -> cut at line 378: 14 routine(s) and about 254 lines above, 32 and about 521 below.
+  src/geist/session.nim:162  APART — backupStems, allExist, refsInSlot
       all called by `backupSidecarRefs`, which reads as its steps
-      -> move these together. They are 224 lines spread over 1187, with 43 unrelated routine(s) in between.
+      -> move these together. They are 47 lines spread over 1285, with 54 unrelated routine(s) in between.
   src/geist/session.nim:162  APART — backupStems, writeRefusal, publishGeneration
       all called by `restoreSlot`, which reads as its steps
-      -> move these together. They are 60 lines spread over 911, with 36 unrelated routine(s) in between.
+      -> move these together. They are 60 lines spread over 971, with 43 unrelated routine(s) in between.
   src/geist/session.nim:152  APART — artifactSet, backupStems, stampMetaCounters, writeRefusal, publishGeneration, transposeDue, writeTransposedNow
       all called by `save`, which reads as its steps
-      -> move these together. They are 146 lines spread over 958, with 35 unrelated routine(s) in between.
-  src/clients/geist_cli.nim:137  APART — fail, openDirect, connectRemote
-      all called by `cmdSync`, which reads as its steps
-      -> move these together. They are 66 lines spread over 856, with 32 unrelated routine(s) in between.
-FAMILIES — 12 group(s) of routines that are one routine with a knob on it (53 routines, about 262 lines).
+      -> move these together. They are 146 lines spread over 1018, with 42 unrelated routine(s) in between.
+  src/geist/session.nim:644  APART — maybeFlush, logCount, applyRow
+      all called by `applyRows`, which reads as its steps
+      -> move these together. They are 54 lines spread over 957, with 37 unrelated routine(s) in between.
+FAMILIES — 14 group(s) of routines that are one routine with a knob on it (63 routines, about 291 lines).
   Rule: no complex logic; build modular, parallel, multipass logic. Siblings differing in one or two places want one routine and a parameter.
+  src/server/geistd_config|proc  isServer, isClient, needsWriting, daemonConfigFor, syncPlanFor
+      varies in 2 direction(s) (calls, what it returns), 100% alike, they share a module and a shape
+      -> write one routine taking a parameter that names which of the 5 cases is meant. An enum with 5 values, and a table or case that turns it into the numbers each version hard-codes today.
   src/geist/registry|proc  clockOf, slotKey, openCount, openKeys
       varies in 2 direction(s) (calls, what it returns), 100% alike, they share a module and a shape
       -> write one generic routine. Only the types taken in differ, so the body is already shared; give it a type parameter and let the 4 call sites keep their names as aliases if they read better.
@@ -37,50 +40,48 @@ FAMILIES — 12 group(s) of routines that are one routine with a knob on it (53 
   src/geist/layout|proc  configDir, keysDir, keystoreDir, peersDir, dbDir, spoolDir, logDir, identityPath, pinPath
       varies in 3 direction(s) (calls, inputs, literals), 100% alike, they share a module and a shape
       -> write one generic routine. Only the types taken in differ, so the body is already shared; give it a type parameter and let the 9 call sites keep their names as aliases if they read better.
-  src/geist/address|proc  isLabelByte, isTargetByte, bareAddress, isRouted, refuse, forLeaf
-      varies in 3 direction(s) (calls, assignments, what it returns), 100% alike, they share a module and a shape
-      -> write one generic routine. Only the types taken in differ, so the body is already shared; give it a type parameter and let the 6 call sites keep their names as aliases if they read better.
-EMBEDDED CODE — 6 string(s) hold another language (61 line(s)).
+EMBEDDED CODE — 7 string(s) hold another language (65 line(s)).
   Rule: another language belongs in its own file. While it is inline, a comment on those lines is written the way THAT language writes one.
-  evaluation/tests/test_settings.nim:136  15 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_settings.nim:145  15 line(s) of other, comments are not known - check before adding one
   evaluation/tests/test_option_precedence.nim:28  14 line(s) of other, comments are not known - check before adding one
-  evaluation/tests/test_router.nim:73  13 line(s) of other, comments are not known - check before adding one
-  evaluation/tests/test_reconcile.nim:147  8 line(s) of other, comments are not known - check before adding one
-  evaluation/tests/test_settings.nim:34  7 line(s) of other, comments are not known - check before adding one
-  evaluation/tests/test_settings.nim:196  4 line(s) of other, comments are not known - check before adding one
-STATE — 2 entry(s) written and never read.
+  evaluation/tests/test_router.nim:76  13 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_reconcile.nim:162  8 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_settings.nim:36  7 line(s) of other, comments are not known - check before adding one
+  evaluation/tests/test_settings.nim:209  4 line(s) of other, comments are not known - check before adding one
+  examples/geist_convert.nim:34  4 line(s) of other, comments are not known - check before adding one
+STATE — 5 entry(s) written and never read.
   Rule: every write is a claim about the world. A claim nobody reads is dead weight.
   ServeArgs.ready
   ServeArgs.failed
-PLACEHOLDERS — 1 routine(s) that do not do the job yet.
-  Rule: a placeholder MUST be named with a ph_ prefix, or be finished.
-  src/geist/doc.nim:123  defaultDocStyle
-NESTING — 97 triple and 0 deeper site(s).
+  DeskArgs.ready
+  DeskArgs.rows
+  DeskArgs.err
+NESTING — 35 triple and 0 deeper site(s).
   Rule: no loop nesting, no if nesting. Pull the inner block into an inline proc or a template.
-  src/geist/row.nim:230  writeColumn  depth 3 (if)
-  src/geist/config.nim:751  applyColumnPolicy  depth 3 (if)
-  src/geist/crypto/column.nim:191  openCluster  depth 3 (if)
-  src/geist/session.nim:532  openSessionWithSchema  depth 3 (if)
-  src/clients/geist_relay.nim:376  cmdPoll  depth 3 (for)
-  src/geist/backup.nim:142  runBackup  depth 3 (if)
-  src/geist/crypto/column.nim:143  sealCluster  depth 3 (while)
-  src/geist/keystore.nim:351  get  depth 3 (if)
-  src/geist/route.nim:212  validate  depth 3 (if)
-  src/geist/session.nim:524  openSessionWithSchema  depth 3 (if)
-DEAD CODE — 2 leftover (56 lines), 37 unused public.
+  src/geist/transport.nim:294  connectGeist  depth 3 (if)
+  examples/geist_buffers.nim:124  runReceiver  depth 3 (if)
+  src/geist/crypto/column.nim:175  sealCluster  depth 3 (if)
+  src/geist/doc.nim:312  fromNode  depth 3 (if)
+  src/geist/doc.nim:348  fromNodeB  depth 3 (if)
+  src/geist/session.nim:1593  applyRow  depth 3 (if)
+  src/geist/show.nim:146  cellsOf  depth 3 (if)
+  src/geist/show.nim:372  showJson  depth 3 (if)
+  src/geist/store.nim:532  changedClusters  depth 3 (if)
+  src/geist/transport.nim:368  send  depth 3 (if)
+DEAD CODE — 2 leftover (56 lines), 39 unused public.
   Rule: no backwards-compatibility shims or dead API. Delete it.
   examples/geist_buffers.nim:71  answer  29 lines
   src/geist/address.nim:204  $  27 lines
-ROLES — 11 routine(s) declare no role pragma.
+ROLES — 13 routine(s) declare no role pragma.
   Rule: functions need custom pragmas (role/metaTags). Otter drops undeclared code from every chart.
-CONFIG — 41 dead and 8 never-set field(s) on configurator types.
+CONFIG — 46 dead and 12 never-set field(s) on configurator types.
 OVERSIZED FILES — split these; routines are long and the file is dense:
-  src/server/geist_routed.nim  603 lines, 16 routines, avg 26, deepest 3
-  src/geist/transpose.nim  576 lines, 16 routines, avg 27, deepest 3
+  src/server/geist_routed.nim  598 lines, 16 routines, avg 26, deepest 3
+  src/geist/transpose.nim  592 lines, 17 routines, avg 26, deepest 3
+  src/geist/serve.nim  580 lines, 16 routines, avg 26, deepest 2
   evaluation/benchmarks/bench_geist.nim  496 lines, 13 routines, avg 29, deepest 2
-  src/server/geistd.nim  494 lines, 14 routines, avg 25, deepest 3
-  src/geist/crypto/column.nim  304 lines, 8 routines, avg 31, deepest 3
+  src/geist/payload.nim  181 lines, 3 routines, avg 28, deepest 2
   evaluation/tests/modular/relay_only.nim  60 lines, 1 routines, avg 37, deepest 1
 
-Coverage: 240 of 898 routines untested; 531 tests, 15 with a declared testKind.
-Shape: 30146 lines, 898 routines, avg 17.
+Coverage: 267 of 1035 routines untested; 563 tests, 563 with a declared testKind.
+Shape: 33662 lines, 1035 routines, avg 16.

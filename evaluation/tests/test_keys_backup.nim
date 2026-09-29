@@ -3,6 +3,7 @@ import std/[os, unittest]
 import geist
 
 suite "keys":
+  # {.testKind: tkEdgeCase.}
   test "key file seals and unseals, wrong password rejected":
     var
       root = getTempDir() / "geist_t_keys"
@@ -16,6 +17,7 @@ suite "keys":
     check r.keys.master.use() == K.master.use()
     check not readKeyFile(g.keyPath, "nope").ok
 
+  # {.testKind: tkEdgeCase.}
   test "the ledger is integrity-checked, not encrypted":
     var
       root = getTempDir() / "geist_t_ledger"
@@ -31,6 +33,7 @@ suite "keys":
     writeFile(p, raw)
     check not readLedgerFile(p).ok
 
+  # {.testKind: tkUnit.}
   test "the manifest is the single atomic swap point":
     var root = getTempDir() / "geist_t_man"
     removeDir(root); createDir(root)
@@ -38,6 +41,7 @@ suite "keys":
     var m = readManifest(root)
     check m.ok and m.n == 4'u64
 
+  # {.testKind: tkUnit.}
   test "per-batch rekey resets the epoch without a global rewrite":
     var
       K = newKeySet()
@@ -51,6 +55,7 @@ suite "keys":
     check L.entries[0].keyRef == fresh
     check L.entries[0].epoch == 0'u64
 
+  # {.testKind: tkUnit.}
   test "batches approaching the high-water mark are reported":
     var L = Ledger(databaseId: "db", batchRows: 8'u32,
                    groups: @[ColumnGroup(groupId: 0'u16, slots: @[0])])
@@ -60,6 +65,7 @@ suite "keys":
     check batchesNeedingRekey(L).len == 1
 
 suite "backup":
+  # {.testKind: tkUnit.}
   test "rotation shifts .b1 -> .b2 -> .b3 newest first":
     var
       root = getTempDir() / "geist_t_bak"
@@ -78,6 +84,7 @@ suite "backup":
     check readFile(slotPath(p, 3)) == "generation-1"
     check st.rotations == 3'u32
 
+  # {.testKind: tkEdgeCase.}
   test "an incomplete artifact set is refused, not half-copied":
     var
       root = getTempDir() / "geist_t_bak2"
@@ -94,6 +101,7 @@ suite "backup":
     check r.err.len > 0
     check not fileExists(slotPath(data, 1))
 
+  # {.testKind: tkEdgeCase.}
   test "restore refuses a partial set and restores a complete one":
     var
       root = getTempDir() / "geist_t_bak3"

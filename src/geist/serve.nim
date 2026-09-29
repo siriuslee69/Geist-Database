@@ -26,6 +26,7 @@ import ./address
 import ./bytecheck
 import ./payload
 import ./transport
+import ./identity
 
 proc handshakeParams(): bfx.AmeRuntimeParams {.role: configurator, inline,
     tag: "ame|cryptoBoundary|networkSurface".} =
@@ -577,3 +578,42 @@ proc closeServer*(S: var GeistServer) {.role: actor,
   S.peers.clear()
   S.open = false
 
+
+## ---------------------------- who may dial in -----------------------
+
+proc grant(P: var seq[TrustedPeer], pin: bfx.AmePinnedPeerIdentity,
+    rights: set[PeerRight]) {.role: truthBuilder, tag: "cryptoBoundary|server".} =
+  ## P/pin/rights: the pin added with these rights -- or, when it is listed
+  ## already, given these rights as well. A pin listed as a reader AND a
+  ## writer gets both: the operator clearly meant the wider one.
+  for p in P.mitems:
+    if p.pin.subject == pin.subject:
+      p.rights = p.rights + rights
+      return
+  P.add TrustedPeer(pin: pin, rights: rights)
+
+proc trustListFrom*(readers, writers: openArray[string]): tuple[ok: bool,
+    peers: seq[TrustedPeer], err: string] {.role: dataFetcher,
+    tag: "cryptoBoundary|read|server".} =
+  ## readers: pin files of peers that may read (`--trust`).
+  ## writers: pin files of peers that may read AND write (`--allow-write`).
+  ##
+  ## The FLAG grants the right, not the peer. Every daemon builds its trust
+  ## list here, so they cannot come to disagree about what a flag means.
+  ## A pin that will not load is FATAL rather than skipped: starting with a
+  ## shorter list than the operator wrote would quietly refuse peers they
+  ## believe are allowed.
+  var
+    loaded: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string] =
+      (false, default(bfx.AmePinnedPeerIdentity), "")
+  for path in readers:
+    loaded = loadPin(path)
+    if not loaded.ok:
+      return (false, @[], path & ": " & loaded.err)
+    result.peers.grant(loaded.pin, {prRead})
+  for path in writers:
+    loaded = loadPin(path)
+    if not loaded.ok:
+      return (false, @[], path & ": " & loaded.err)
+    result.peers.grant(loaded.pin, {prRead, prWrite})
+  result.ok = true

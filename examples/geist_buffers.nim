@@ -98,6 +98,17 @@ proc answer(q: Query, p: PeerContext): Reply {.role: actor, gcsafe.} =
     else:
       result = Reply(ok: false, err: "this endpoint only holds a buffer")
 
+proc serveUntilStopped(a: ptr ServeArgs, server: var GeistServer) {.
+    role: orchestrator.} =
+  ## a/server: answer until the main thread sets `stop`; remember the
+  ## first thing that went wrong, for the main thread to print.
+  var
+    step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
+  while not a.stop:
+    step = serveOnce(server, answer, 200)
+    if not step.ok:
+      a.err.keepFirst(step.err)
+
 proc runReceiver(a: ptr ServeArgs) {.role: orchestrator.} =
   ## a: where to listen, and the two key files.
   var
@@ -105,7 +116,6 @@ proc runReceiver(a: ptr ServeArgs) {.role: orchestrator.} =
       default(GeistDacAddress))
     server: tuple[ok: bool, server: GeistServer, err: string] = (false,
       GeistServer(), "")
-    step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
   try:
     address = parseDacAddress(a.listen)
     ## No Session, no path, no store. An identity, and a list of who is
@@ -119,10 +129,7 @@ proc runReceiver(a: ptr ServeArgs) {.role: orchestrator.} =
       a.ready = true
       return
     a.ready = true
-    while not a.stop:
-      step = serveOnce(server.server, answer, 200)
-      if not step.ok and a.err.len == 0 and step.err.len > 0:
-        a.err = step.err
+    serveUntilStopped(a, server.server)
     server.server.closeServer()
   except CatchableError as exc:
     a.err = exc.msg

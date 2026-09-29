@@ -40,6 +40,7 @@ proc fill(db: var Session, n: int) {.role: dataWriter.} =
 
 suite "a rebuilt row is the row that was stored":
 
+  # {.testKind: tkUnit.}
   test "every row of a varying schema comes back byte for byte":
     var
       root = freshRoot("exact")
@@ -57,6 +58,7 @@ suite "a rebuilt row is the row that was stored":
       i = i + 1'u32
     db.close()
 
+  # {.testKind: tkUnit.}
   test "a dense schema addresses its columns arithmetically":
     var
       root = freshRoot("dense")
@@ -79,6 +81,7 @@ suite "a rebuilt row is the row that was stored":
       i = i + 1'u32
     db.close()
 
+  # {.testKind: tkUnit.}
   test "a collapsing schema keeps its omitted columns omitted":
     var
       root = freshRoot("collapse")
@@ -106,6 +109,7 @@ suite "a rebuilt row is the row that was stored":
       i = i + 1'u32
     db.close()
 
+  # {.testKind: tkUnit.}
   test "a rebuilt row still decodes as the object it was":
     var
       root = freshRoot("object")
@@ -124,6 +128,7 @@ suite "a rebuilt row is the row that was stored":
 
 suite "a search reads one column":
 
+  # {.testKind: tkUnit.}
   test "the answer matches the row scan, and costs less":
     var
       root = freshRoot("find")
@@ -148,6 +153,7 @@ suite "a search reads one column":
     check hit.read < uint64(getFileSize(db.dataPath()))
     db.close()
 
+  # {.testKind: tkUnit.}
   test "a column with many matches finds all of them":
     var
       root = freshRoot("many")
@@ -163,6 +169,7 @@ suite "a search reads one column":
     check hit.rows.len == 100          # every seventh of 700
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a limit stops the scan early":
     var
       root = freshRoot("limit")
@@ -176,6 +183,7 @@ suite "a search reads one column":
     check view.t.transposedFind("tag", "seven", 3).rows.len == 3
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "an unknown column is an error, not an empty answer":
     var
       root = freshRoot("nocol")
@@ -191,6 +199,7 @@ suite "a search reads one column":
     check "no column 'nosuchfield'" in hit.err
     db.close()
 
+  # {.testKind: tkUnit.}
   test "the copy holds the log, so superseded rows are still in it":
     # The property a caller MUST know about: a hit is a log position, and
     # deciding whether it is visible is the session's job. This is the
@@ -219,6 +228,7 @@ suite "a search reads one column":
 
 suite "which copy is newer":
 
+  # {.testKind: tkEdgeCase.}
   test "absent, then current, then stale":
     var
       root = freshRoot("state")
@@ -238,6 +248,7 @@ suite "which copy is newer":
     check "STALE" in describeTransposeState(st.state, st.live, st.built)
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a stale copy is refused rather than searched":
     var
       root = freshRoot("refuse")
@@ -254,6 +265,7 @@ suite "which copy is newer":
     check "STALE" in view.err
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "an unsaved session will not build a copy":
     var
       root = freshRoot("dirty")
@@ -266,6 +278,7 @@ suite "which copy is newer":
     check "unsaved rows" in built.err
     db.close()
 
+  # {.testKind: tkUnit.}
   test "tmNone says so instead of building one":
     var
       root = freshRoot("none")
@@ -280,6 +293,7 @@ suite "which copy is newer":
 
 suite "when the copy is written":
 
+  # {.testKind: tkUnit.}
   test "tmOnSave keeps it current and retires the old ones":
     var
       root = freshRoot("onsave")
@@ -300,6 +314,7 @@ suite "when the copy is written":
     check copies == 1
     db.close()
 
+  # {.testKind: tkUnit.}
   test "tmInterval waits for its window":
     var
       root = freshRoot("interval")
@@ -319,6 +334,7 @@ suite "when the copy is written":
 
 suite "configuration refuses what it cannot do":
 
+  # {.testKind: tkEdgeCase.}
   test "a sealed store may not keep a plaintext column copy":
     var c = secureAppConfig()
     c.transpose = tmOnSave
@@ -327,6 +343,7 @@ suite "configuration refuses what it cannot do":
     check "plaintext column copy" in checked.err
     check "encryption at rest" in checked.err
 
+  # {.testKind: tkEdgeCase.}
   test "an interval of zero is not an interval":
     var c = appConfig()
     c.transpose = tmInterval
@@ -335,6 +352,7 @@ suite "configuration refuses what it cannot do":
     check not checked.ok
     check "transposeEverySeconds" in checked.err
 
+  # {.testKind: tkEdgeCase.}
   test "config.toml names the mode, and a typo is refused":
     var dir = freshRoot("settings")
     createDir(dir)
@@ -348,6 +366,7 @@ suite "configuration refuses what it cannot do":
     check not bad.ok
     check "must be none, onSave, interval or manual" in bad.err
 
+  # {.testKind: tkEdgeCase.}
   test "a file that says nothing leaves the preset alone":
     var dir = freshRoot("silent")
     createDir(dir)
@@ -360,6 +379,7 @@ suite "configuration refuses what it cannot do":
 
 suite "a damaged copy is refused":
 
+  # {.testKind: tkEdgeCase.}
   test "a truncated file does not decode into nonsense":
     var
       root = freshRoot("truncated")
@@ -375,6 +395,7 @@ suite "a damaged copy is refused":
     check "past its own end" in opened.err or "truncated" in opened.err
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a file that is not a column copy is named as such":
     var root = freshRoot("notours")
     createDir(root)

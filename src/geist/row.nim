@@ -157,6 +157,60 @@ proc padTo(W: var RowWriter, n: int) {.role: helper, inline,
     W.body.add 0'u8
     i = i + 1
 
+proc isAllZero(A: openArray[uint8]): bool {.role: parser, inline,
+    tag: "codecBoundary|db".} =
+  ## A: are all of these bytes zero? True for no bytes at all.
+  for b in A:
+    if b != 0'u8:
+      return false
+  result = true
+
+proc writeFixed(W: var RowWriter, sl: Slot, A: openArray[uint8]): bool {.
+    role: dataWriter, tag: "codecBoundary|db|write".} =
+  ## W/sl/A: one value into a fixed-width column -> whether it was written.
+  ## Too wide: refused (opError) or cut to the width and counted
+  ## (opTruncate) -- never silently.
+  if uint32(A.len) <= sl.width:
+    W.body.addBytes(A)
+    W.padTo(int(sl.width) - A.len)
+    return true
+  if sl.onOverflow == opError:
+    W.err = "column '" & W.schema.nameOf(sl.nameId) & "' is " &
+      $sl.width & " B and cannot hold " & $A.len & " B; widen it, make " &
+      "it colCapped or colVariable, or set onOverflow = opTruncate"
+    return false
+  W.body.addBytes(A.toOpenArray(0, int(sl.width) - 1))
+  W.truncated = W.truncated + 1'u32
+  W.truncatedIn.add W.schema.nameOf(sl.nameId)
+  result = true
+
+proc writeCapped(W: var RowWriter, sl: Slot, A: openArray[uint8]): bool {.
+    role: dataWriter, tag: "codecBoundary|db|sidecar|write".} =
+  ## W/sl/A: one value into a capped column -> whether it was written.
+  ##
+  ## Fits: | u16 length | bytes | padding |, inline. Too wide: the value
+  ## moves to the sidecar and its reference occupies the same column. The
+  ## capped bit is what tells a reader which of the two it is looking at.
+  var
+    encoded: ByteSeq = @[]
+  if uint32(A.len) + uint32(cappedLengthBytes) <= sl.width:
+    W.body.addU16(uint16(A.len))
+    W.body.addBytes(A)
+    W.padTo(int(sl.width) - cappedLengthBytes - A.len)
+    return true
+  encoded = encodeRef(W.store.putSidecar(@A))
+  if uint32(encoded.len) > sl.width:
+    W.err = "column '" & W.schema.nameOf(sl.nameId) & "' is " &
+      $sl.width & " B, too narrow for a " & $encoded.len &
+      " B reference; a colCapped column needs at least " &
+      $minCappedWidth & " B"
+    return false
+  W.head.bitSet(W.schema.cappedBase(), W.cursor)
+  W.externalised = W.externalised + 1'u32
+  W.body.addBytes(encoded)
+  W.padTo(int(sl.width) - encoded.len)
+  result = true
+
 proc writeColumn*(W: var RowWriter, A: openArray[uint8]) {.role: dataWriter,
     tag: "codecBoundary|db|sidecar|write".} =
   ## W: writer positioned at its next column.
@@ -166,78 +220,29 @@ proc writeColumn*(W: var RowWriter, A: openArray[uint8]) {.role: dataWriter,
   ## object mappers above never branch on policy.
   var
     sl: Slot = default(Slot)
-    n: int = 0
-    payload: ByteSeq = @[]
-    r: Ref = default(Ref)
-    encoded: ByteSeq = @[]
-    i: int = 0
-    allEmpty: bool = false
+    written: bool = true
   if W.cursor >= W.schema.slots.len:
     W.err = "more values than columns in " & W.schema.typeName
     return
   sl = W.schema.slots[W.cursor]
-  n = A.len
-
   # Collapse first: an omitted column occupies no bytes at all, whatever
   # its kind. Zero and empty are the same thing in Nim, so this is
   # lossless rather than a policy decision.
-  if W.schema.autoCollapse:
-    allEmpty = true
-    i = 0
-    while i < n:
-      if A[i] != 0'u8:
-        allEmpty = false
-        break
-      i = i + 1
-    if n == 0 or allEmpty:
-      W.head.bitSet(W.schema.nullBase(), W.cursor)
-      W.omitted = W.omitted + 1'u32
-      W.cursor = W.cursor + 1
-      return
-
+  if W.schema.autoCollapse and isAllZero(A):
+    W.head.bitSet(W.schema.nullBase(), W.cursor)
+    W.omitted = W.omitted + 1'u32
+    W.cursor = W.cursor + 1
+    return
   case sl.column
   of colVariable:
-    W.body.addU32(uint32(n))
+    W.body.addU32(uint32(A.len))
     W.body.addBytes(A)
   of colFixed:
-    if uint32(n) > sl.width:
-      case sl.onOverflow
-      of opError:
-        W.err = "column '" & W.schema.nameOf(sl.nameId) & "' is " &
-          $sl.width & " B and cannot hold " & $n & " B; widen it, make " &
-          "it colCapped or colVariable, or set onOverflow = opTruncate"
-        return
-      of opTruncate:
-        W.body.addBytes(A.toOpenArray(0, int(sl.width) - 1))
-        W.truncated = W.truncated + 1'u32
-        W.truncatedIn.add W.schema.nameOf(sl.nameId)
-        W.cursor = W.cursor + 1
-        return
-    W.body.addBytes(A)
-    W.padTo(int(sl.width) - n)
+    written = W.writeFixed(sl, A)
   of colCapped:
-    if uint32(n) + uint32(cappedLengthBytes) <= sl.width:
-      W.body.addU16(uint16(n))
-      W.body.addBytes(A)
-      W.padTo(int(sl.width) - cappedLengthBytes - n)
-    else:
-      # Too wide to sit inline: the value moves to the sidecar and its
-      # reference occupies the same column. The bit is what tells a reader
-      # which of the two it is looking at.
-      payload = @A
-      r = W.store.putSidecar(payload)
-      encoded = encodeRef(r)
-      if uint32(encoded.len) > sl.width:
-        W.err = "column '" & W.schema.nameOf(sl.nameId) & "' is " &
-          $sl.width & " B, too narrow for a " & $encoded.len &
-          " B reference; a colCapped column needs at least " &
-          $minCappedWidth & " B"
-        return
-      W.head.bitSet(W.schema.cappedBase(), W.cursor)
-      W.externalised = W.externalised + 1'u32
-      W.body.addBytes(encoded)
-      W.padTo(int(sl.width) - encoded.len)
-  W.cursor = W.cursor + 1
+    written = W.writeCapped(sl, A)
+  if written:
+    W.cursor = W.cursor + 1
 
 proc writeU64*(W: var RowWriter, v: uint64) {.role: dataWriter,
     tag: "codecBoundary|db|write".} =
@@ -353,11 +358,10 @@ proc validateRow*(s: Schema, A: openArray[uint8]): tuple[ok: bool,
     return (false, "row is " & $A.len & " B, shorter than the " & $o &
       " B of bitmaps this schema declares")
   while i < s.slots.len:
-    if not s.isOmitted(A, i):
-      step = s.stepColumn(A, i, o)
-      if step.err.len > 0:
-        return (false, step.err)
-      o = step.o
+    step = (if s.isOmitted(A, i): (o, "") else: s.stepColumn(A, i, o))
+    if step.err.len > 0:
+      return (false, step.err)
+    o = step.o
     i = i + 1
   if o != A.len:
     return (false, "row has " & $(A.len - o) &
@@ -639,7 +643,7 @@ proc rowStats*(s: Schema, A: openArray[uint8]): tuple[present: int,
       result.omitted = result.omitted + 1
     else:
       result.present = result.present + 1
-      if s.isExternal(A, i):
-        result.external = result.external + 1
+    if not s.isOmitted(A, i) and s.isExternal(A, i):
+      result.external = result.external + 1
     i = i + 1
   result.bytes = A.len

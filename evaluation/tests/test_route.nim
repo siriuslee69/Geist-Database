@@ -39,9 +39,11 @@ proc at(s: string): GeistAddress {.role: parser.} =
 
 suite "a table is refused when routing would be ambiguous":
 
+  # {.testKind: tkUnit.}
   test "a valid table passes":
     check vpsTable().validate().ok
 
+  # {.testKind: tkUnit.}
   test "two routes with the same pattern":
     var t = vpsTable()
     t.route.add Route(app: "eris", instance: "*", hops: @[
@@ -50,6 +52,7 @@ suite "a table is refused when routing would be ambiguous":
     check not r.ok
     check "two routes match eris.*" in r.err
 
+  # {.testKind: tkUnit.}
   test "two hops sharing a priority":
     var t = vpsTable()
     t.route[0].hops.add hop("d9", "dac://10.0.0.9:1", 0'u8)
@@ -57,21 +60,25 @@ suite "a table is refused when routing would be ambiguous":
     check not r.ok
     check "share priority 0" in r.err
 
+  # {.testKind: tkEdgeCase.}
   test "a router with no name of its own":
     var t = vpsTable()
     t.node = ""
     check not t.validate().ok
 
+  # {.testKind: tkEdgeCase.}
   test "a route with no hops":
     var t = vpsTable()
     t.route[0].hops = @[]
     check not t.validate().ok
 
+  # {.testKind: tkUnit.}
   test "a hop that is neither local nor reachable":
     var t = vpsTable()
     t.route[0].hops[0].endpoint = ""
     check not t.validate().ok
 
+  # {.testKind: tkEdgeCase.}
   test "probeSuccesses of zero, which would strand a down hop":
     var t = vpsTable()
     t.probeSuccesses = 0'u8
@@ -79,12 +86,14 @@ suite "a table is refused when routing would be ambiguous":
 
 suite "matching picks the most specific route":
 
+  # {.testKind: tkUnit.}
   test "an exact app beats the catch-all":
     var t = vpsTable()
     t.route.add Route(app: "*", instance: "*", hops: @[
       hop("home", "dac://10.0.0.9:1", 0'u8)])
     check t.route[t.matchRoute(at("geist://eris/notes"))].app == "eris"
 
+  # {.testKind: tkUnit.}
   test "an exact instance beats an app wildcard":
     var t = vpsTable()
     t.route.add Route(app: "eris", instance: "games", hops: @[
@@ -93,9 +102,11 @@ suite "matching picks the most specific route":
       "games"
     check t.route[t.matchRoute(at("geist://eris.main/notes"))].instance == "*"
 
+  # {.testKind: tkEdgeCase.}
   test "an app nothing serves has no route":
     check vpsTable().matchRoute(at("geist://snotra/cards")) < 0
 
+  # {.testKind: tkUnit.}
   test "and the catch-all catches it once there is one":
     var t = vpsTable()
     t.route.add Route(app: "*", instance: "*", hops: @[
@@ -104,6 +115,7 @@ suite "matching picks the most specific route":
 
 suite "with everything healthy, priority zero serves":
 
+  # {.testKind: tkUnit.}
   test "eris goes to d1":
     var
       v = initRouteView(vpsTable())
@@ -112,10 +124,12 @@ suite "with everything healthy, priority zero serves":
     check c.hop.name == "d1"
     check not c.probing
 
+  # {.testKind: tkUnit.}
   test "fjord goes to d1 as well":
     var v = initRouteView(vpsTable())
     check v.chooseHop(at("geist://fjord/mail"), 100).hop.name == "d1"
 
+  # {.testKind: tkEdgeCase.}
   test "an unroutable app is refused by name":
     var
       v = initRouteView(vpsTable())
@@ -125,12 +139,14 @@ suite "with everything healthy, priority zero serves":
 
 suite "takeover":
 
+  # {.testKind: tkEdgeCase.}
   test "one failure is not a dead daemon":
     var v = initRouteView(vpsTable())
     v.noteSuccess("dac://10.0.0.1:47655", 100)
     v.noteFailure("dac://10.0.0.1:47655", 110)
     check v.chooseHop(at("geist://eris/notes"), 110).hop.name == "d1"
 
+  # {.testKind: tkEdgeCase.}
   test "continuous failure past the threshold moves eris to d2":
     var v = initRouteView(vpsTable())
     v.noteSuccess("dac://10.0.0.1:47655", 100)
@@ -143,6 +159,7 @@ suite "takeover":
     check c.hop.name == "d2"
     check not c.probing
 
+  # {.testKind: tkUnit.}
   test "and fjord to d3 at the same moment, from the same health record":
     var v = initRouteView(vpsTable())
     v.noteSuccess("dac://10.0.0.1:47655", 100)
@@ -150,12 +167,14 @@ suite "takeover":
     check v.chooseHop(at("geist://eris/notes"), 131).hop.name == "d2"
     check v.chooseHop(at("geist://fjord/mail"), 131).hop.name == "d3"
 
+  # {.testKind: tkEdgeCase.}
   test "avalon is untouched: it never used d1":
     var v = initRouteView(vpsTable())
     v.noteSuccess("dac://10.0.0.1:47655", 100)
     v.noteFailure("dac://10.0.0.1:47655", 131)
     check v.chooseHop(at("geist://avalon/vault"), 131).hop.name == "d4"
 
+  # {.testKind: tkUnit.}
   test "a success in the middle resets the clock":
     var v = initRouteView(vpsTable())
     v.noteSuccess("dac://10.0.0.1:47655", 100)
@@ -164,6 +183,7 @@ suite "takeover":
     v.noteFailure("dac://10.0.0.1:47655", 150)
     check v.chooseHop(at("geist://eris/notes"), 150).hop.name == "d1"
 
+  # {.testKind: tkEdgeCase.}
   test "a hop that never worked at all goes down on its own timer":
     var v = initRouteView(vpsTable())
     v.noteFailure("dac://10.0.0.1:47655", 100)
@@ -173,6 +193,7 @@ suite "takeover":
 
 suite "recovery":
 
+  # {.testKind: tkEdgeCase.}
   test "one success does not promote a crash-looping daemon":
     var v = initRouteView(vpsTable())
     v.noteFailure("dac://10.0.0.1:47655", 100)
@@ -181,6 +202,7 @@ suite "recovery":
     v.noteSuccess("dac://10.0.0.1:47655", 200)
     check v.chooseHop(at("geist://eris/notes"), 200).hop.name == "d2"
 
+  # {.testKind: tkUnit.}
   test "two in a row do":
     var v = initRouteView(vpsTable())
     v.noteFailure("dac://10.0.0.1:47655", 100)
@@ -189,6 +211,7 @@ suite "recovery":
     v.noteSuccess("dac://10.0.0.1:47655", 210)
     check v.chooseHop(at("geist://eris/notes"), 210).hop.name == "d1"
 
+  # {.testKind: tkEdgeCase.}
   test "a failure between them starts the count again":
     var v = initRouteView(vpsTable())
     v.noteFailure("dac://10.0.0.1:47655", 100)
@@ -200,6 +223,7 @@ suite "recovery":
 
 suite "when everything is down":
 
+  # {.testKind: tkEdgeCase.}
   test "the best hop is probed rather than the route refused":
     var v = initRouteView(vpsTable())
     v.noteFailure("dac://10.0.0.1:47655", 100)
@@ -211,6 +235,7 @@ suite "when everything is down":
     check c.probing
     check c.hop.name == "d1"
 
+  # {.testKind: tkEdgeCase.}
   test "but not more often than the probe interval":
     var v = initRouteView(vpsTable())
     v.noteFailure("dac://10.0.0.1:47655", 100)
@@ -224,6 +249,7 @@ suite "when everything is down":
 
 suite "an address that names a machine":
 
+  # {.testKind: tkUnit.}
   test "is pinned to it, even when a healthier hop exists":
     var v = initRouteView(vpsTable())
     v.noteFailure("dac://10.0.0.1:47655", 100)
@@ -233,6 +259,7 @@ suite "an address that names a machine":
     check c.hop.name == "d1"
     check c.probing
 
+  # {.testKind: tkEdgeCase.}
   test "and a machine that serves no such app is refused, not redirected":
     var
       v = initRouteView(vpsTable())
@@ -242,6 +269,7 @@ suite "an address that names a machine":
 
 suite "a local hop":
 
+  # {.testKind: tkUnit.}
   test "is served here rather than forwarded":
     var t = defaultRouteTable("vps-1")
     t.route = @[Route(app: "eris", instance: "*", hops: @[
@@ -252,6 +280,7 @@ suite "a local hop":
     check v.servesLocally(at("geist://eris/notes"))
     check v.chooseHop(at("geist://eris/notes"), 100).hop.local
 
+  # {.testKind: tkEdgeCase.}
   test "and a fallback takes over when it is not priority zero":
     var t = defaultRouteTable("vps-1")
     t.route = @[Route(app: "eris", instance: "*", hops: @[
@@ -265,6 +294,7 @@ suite "a local hop":
 
 suite "an application error is not a transport failure":
 
+  # {.testKind: tkEdgeCase.}
   test "only noteFailure moves health, so a refusal never demotes":
     var v = initRouteView(vpsTable())
     v.noteSuccess("dac://10.0.0.1:47655", 100)
@@ -279,6 +309,7 @@ suite "an application error is not a transport failure":
 
 suite "what an operator is shown":
 
+  # {.testKind: tkUnit.}
   test "names every hop, its priority and its state":
     var v = initRouteView(vpsTable())
     v.noteSuccess("dac://10.0.0.1:47655", 100)

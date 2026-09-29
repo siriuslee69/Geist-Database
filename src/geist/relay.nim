@@ -219,6 +219,21 @@ proc isPrintableText(body: openArray[uint8]): bool {.role: parser,
       return false
   result = validateUtf8(asText(body)) < 0
 
+proc escapedByte(b: uint8): string {.role: sanitizer, inline,
+    tag: "formatting|stream".} =
+  ## b: one byte as it appears on a single line: a newline, tab or
+  ## backslash escaped the way a person expects, any other control byte as
+  ## \xNN, everything else as itself.
+  case char(b)
+  of '\n': result = "\\n"
+  of '\r': result = "\\r"
+  of '\t': result = "\\t"
+  of '\\': result = "\\\\"
+  elif b < 0x20'u8 or b == 0x7F'u8:
+    result = "\\x" & toHex(b)
+  else:
+    result = $char(b)
+
 proc oneLine(body: openArray[uint8]): string {.role: sanitizer,
     tag: "formatting|stream".} =
   ## body: text flattened to a single line.
@@ -226,20 +241,8 @@ proc oneLine(body: openArray[uint8]): string {.role: sanitizer,
   ## A plain-lines log promises one line per message; a message containing
   ## a newline would otherwise become two records, and the second would
   ## look like it came from nobody.
-  var
-    c: char = '\0'
   for b in body:
-    c = char(b)
-    case c
-    of '\n': result.add "\\n"
-    of '\r': result.add "\\r"
-    of '\t': result.add "\\t"
-    of '\\': result.add "\\\\"
-    else:
-      if b < 0x20'u8 or b == 0x7F'u8:
-        result.add "\\x" & toHex(b)
-      else:
-        result.add c
+    result.add escapedByte(b)
 
 proc stamp*(at: int64): string {.role: helper,
     tag: "formatting|stream".} =
@@ -458,6 +461,14 @@ proc runExec(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
     return (false, result.output, "'" & D.exec & "' exited " & $code)
   result.ok = true
 
+proc openLog(D: var RelayDesk) {.role: dataWriter,
+    tag: "server|storageIo|stream".} =
+  ## D: its --file opened for appending, its folder made first.
+  if D.file.parentDir().len > 0:
+    createDir(D.file.parentDir())
+  D.log = open(D.file, fmAppend)
+  D.logOpen = true
+
 proc writeOut(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
     err: string] {.role: orchestrator,
     tag: "server|stream|write".} =
@@ -473,13 +484,10 @@ proc writeOut(D: var RelayDesk, m: RelayMessage): tuple[ok: bool,
       stdout.write(text)
       stdout.flushFile()
       return (true, "")
+    if not D.logOpen and D.file.len == 0:
+      return (false, "--to file needs --file <path>")
     if not D.logOpen:
-      if D.file.len == 0:
-        return (false, "--to file needs --file <path>")
-      if D.file.parentDir().len > 0:
-        createDir(D.file.parentDir())
-      D.log = open(D.file, fmAppend)
-      D.logOpen = true
+      D.openLog()
     D.log.write(text)
     D.log.flushFile()
     result = (true, "")
@@ -541,6 +549,80 @@ proc welcome(D: RelayDesk, stream: string): bool {.role: parser,
     return true
   result = stream in D.streams
 
+proc refuseCounted(D: var RelayDesk, why: string): Reply {.role: truthBuilder,
+    inline, tag: "server|stream".} =
+  ## D/why: a refusal, counted -- the operator sees how many were turned
+  ## away in the relay's report.
+  D.refused = D.refused + 1
+  result = refuse(why)
+
+proc relayPut(D: var RelayDesk, q: Query, p: PeerContext,
+    stream: string): Reply {.role: actor,
+    tag: "networkSurface|server|stream|write".} =
+  ## D/q/p/stream: one message handed to the relay.
+  ##
+  ## Sending IS writing. A peer pinned for reading may collect what other
+  ## peers left; it may not put anything into the pipe.
+  var
+    m: RelayMessage = default(RelayMessage)
+    sent: tuple[ok: bool, output: ByteSeq, err: string] =
+      (false, default(ByteSeq), "")
+  if not (prWrite in p.rights):
+    return D.refuseCounted("'" & p.subject & "' may read but not send; " &
+      "the operator grants that with --allow-write <pin>")
+  if not D.welcome(stream):
+    return D.refuseCounted("this relay takes no stream '" & stream &
+      "'; it takes " & D.streams.join(", "))
+  if q.payload.len == 0:
+    return D.refuseCounted("a message carried no bytes")
+  m = RelayMessage(stream: stream, sender: p.subject,
+    at: getTime().toUnix(), ordinal: D.nextOrdinal(stream), body: q.payload)
+  D.accepted = D.accepted + 1
+  sent = D.deliver(m)
+  if not sent.ok:
+    return Reply(ok: false, err: sent.err, cursor: m.ordinal)
+  # The command's own answer travels back as the body of one row, so the
+  # sender gets its transcript from the same call that sent the audio.
+  if sent.output.len > 0:
+    result.rows.add Row(schemaId: relayEnvelopeId, data: sent.output)
+  result.cursor = m.ordinal
+  result.matched = 1'u32
+  result.ok = true
+
+proc relayDrain(D: var RelayDesk, q: Query, p: PeerContext,
+    stream: string): Reply {.role: actor,
+    tag: "networkSurface|read|server|stream".} =
+  ## D/q/p/stream: what this reader has not collected yet.
+  ##
+  ## One drain, three spellings, because a relay has nothing a named
+  ## subscription would protect. `qoSubscribe` names a reader and takes
+  ## its first batch in the same call; `qoPoll` continues under that
+  ## name; `qoSync` is the same thing for a reader that would rather keep
+  ## its own position than be remembered.
+  ##
+  ## A name that has never been seen starts at zero and reads what is still
+  ## held. Unlike a database, that is bounded by construction -- the spool
+  ## is -- so there is no need to make a reader say hello before it may ask.
+  var
+    drained: tuple[msgs: seq[RelayMessage], cursor: uint64] = (@[], 0'u64)
+    reader: string = q.subscriptionId
+  if not (prRead in p.rights):
+    return D.refuseCounted("'" & p.subject & "' may not read this relay")
+  if q.op == qoSync:
+    reader = p.subject
+    D.readers[readerKey(p.subject, stream)] = q.cursor
+  if reader.len == 0:
+    return refuse("a subscription needs a name")
+  drained = D.drain(reader, stream, if q.limit == 0'u32: 64 else: int(q.limit))
+  for msg in drained.msgs:
+    result.rows.add msg.asRow()
+  result.cursor = drained.cursor
+  # What this stream has taken IN TOTAL. A reader whose cursor moved
+  # further than the rows it received knows the spool dropped the
+  # difference, which is the only way it could find out.
+  result.matched = uint32(D.streamCount(stream))
+  result.ok = true
+
 proc answerRelay*(D: var RelayDesk, q: Query, p: PeerContext): Reply {.
     role: actor, tag: "appApi|networkSurface|server|stream|write".} =
   ## D: the pipe and what it is holding.
@@ -553,75 +635,15 @@ proc answerRelay*(D: var RelayDesk, q: Query, p: PeerContext): Reply {.
   ## thought it was querying a store would be a lie that costs an
   ## afternoon.
   var
-    m: RelayMessage = default(RelayMessage)
     stream: string = parseAddress(q.collection).a.forLeaf()
-    limit: int = 0
-    sent: tuple[ok: bool, output: ByteSeq, err: string] =
-      (false, default(ByteSeq), "")
-    drained: tuple[msgs: seq[RelayMessage], cursor: uint64] = (@[], 0'u64)
   D.reap()
-  limit = if q.limit == 0'u32: 64 else: int(q.limit)
   if stream.len == 0:
     stream = "default"
   case q.op
   of qoPut:
-    # Sending IS writing. A peer pinned for reading may collect what other
-    # peers left; it may not put anything into the pipe.
-    if not (prWrite in p.rights):
-      D.refused = D.refused + 1
-      return refuse("'" & p.subject & "' may read but not send; the " &
-        "operator grants that with --allow-write <pin>")
-    if not D.welcome(stream):
-      D.refused = D.refused + 1
-      return refuse("this relay takes no stream '" & stream & "'; it takes " &
-        D.streams.join(", "))
-    if q.payload.len == 0:
-      D.refused = D.refused + 1
-      return refuse("a message carried no bytes")
-    m.stream = stream
-    m.sender = p.subject
-    m.at = getTime().toUnix()
-    m.ordinal = D.nextOrdinal(stream)
-    m.body = q.payload
-    D.accepted = D.accepted + 1
-    sent = D.deliver(m)
-    if not sent.ok:
-      return Reply(ok: false, err: sent.err, cursor: m.ordinal)
-    # The command's own answer travels back as the body of one row, so the
-    # sender gets its transcript from the same call that sent the audio.
-    if sent.output.len > 0:
-      result.rows.add Row(schemaId: relayEnvelopeId, data: sent.output)
-    result.cursor = m.ordinal
-    result.matched = 1'u32
-    result.ok = true
+    result = D.relayPut(q, p, stream)
   of qoSubscribe, qoPoll, qoSync:
-    # One drain, three spellings, because a relay has nothing a named
-    # subscription would protect. `qoSubscribe` names a reader and takes
-    # its first batch in the same call; `qoPoll` continues under that
-    # name; `qoSync` is the same thing for a reader that would rather
-    # keep its own position than be remembered.
-    if not (prRead in p.rights):
-      D.refused = D.refused + 1
-      return refuse("'" & p.subject & "' may not read this relay")
-    if q.op == qoSync:
-      D.readers[readerKey(p.subject, stream)] = q.cursor
-      drained = D.drain(p.subject, stream, limit)
-    else:
-      if q.subscriptionId.len == 0:
-        return refuse("a subscription needs a name")
-      # A name that has never been seen starts at zero and reads what is
-      # still held. Unlike a database, that is bounded by construction --
-      # the spool is -- so there is no need to make a reader say hello
-      # before it may ask.
-      drained = D.drain(q.subscriptionId, stream, limit)
-    for msg in drained.msgs:
-      result.rows.add msg.asRow()
-    result.cursor = drained.cursor
-    # What this stream has taken IN TOTAL. A reader whose cursor moved
-    # further than the rows it received knows the spool dropped the
-    # difference, which is the only way it could find out.
-    result.matched = uint32(D.streamCount(stream))
-    result.ok = true
+    result = D.relayDrain(q, p, stream)
   of qoGet, qoFind, qoFetch, qoDelete:
     result = refuse("this endpoint is a relay, not a database: it forwards " &
       "messages and keeps " & $D.spool & " per stream in memory. Point " &

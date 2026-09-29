@@ -33,6 +33,7 @@ proc put(D: var RelayDesk, stream, body: string,
 
 suite "a message keeps who sent it":
 
+  # {.testKind: tkEdgeCase.}
   test "the sender is the pin's subject, not anything the payload said":
     var
       D = initRelayDesk()
@@ -46,6 +47,7 @@ suite "a message keeps who sent it":
     check m.sender == "phone"
     check asText(m.body) == "sender: someone-else"
 
+  # {.testKind: tkUnit.}
   test "an envelope survives a round trip":
     var m = RelayMessage(stream: "voice", sender: "phone", at: 1_700_000_000'i64,
       ordinal: 7'u64, body: asBytes("bytes\x00with a nul"))
@@ -56,6 +58,7 @@ suite "a message keeps who sent it":
     check back.ordinal == 7'u64
     check back.body == m.body
 
+  # {.testKind: tkEdgeCase.}
   test "a truncated envelope decodes to nothing rather than reading past it":
     var
       m = RelayMessage(stream: "voice", sender: "phone", body: asBytes("hi"))
@@ -63,6 +66,7 @@ suite "a message keeps who sent it":
     check decodeMessage(wire[0 ..< wire.len - 1]).body.len == 0
     check decodeMessage(@[]).stream == ""
 
+  # {.testKind: tkUnit.}
   test "ordinals count from one, per stream":
     var D = initRelayDesk()
     check D.put("a", "one").cursor == 1'u64
@@ -74,6 +78,7 @@ suite "a message keeps who sent it":
 
 suite "rights come from the pin":
 
+  # {.testKind: tkEdgeCase.}
   test "a peer pinned for reading may collect but not send":
     var D = initRelayDesk()
     discard D.put("voice", "from the phone")
@@ -86,6 +91,7 @@ suite "rights come from the pin":
     check allowed.ok
     check allowed.rows.len == 1
 
+  # {.testKind: tkEdgeCase.}
   test "a peer with no rights at all may not even collect":
     var D = initRelayDesk()
     discard D.put("voice", "held")
@@ -94,6 +100,7 @@ suite "rights come from the pin":
     check not refused.ok
     check "may not read" in refused.err
 
+  # {.testKind: tkEdgeCase.}
   test "an empty message is refused, and counted":
     var
       D = initRelayDesk()
@@ -102,6 +109,7 @@ suite "rights come from the pin":
     check "carried no bytes" in refused.err
     check D.refused == 1
 
+  # {.testKind: tkUnit.}
   test "a named accept-list keeps a peer from inventing streams":
     var D = initRelayDesk()
     D.streams = @["voice", "notes"]
@@ -113,6 +121,7 @@ suite "rights come from the pin":
 
 suite "the spool is bounded and says so":
 
+  # {.testKind: tkUnit.}
   test "the oldest falls off and is counted":
     var D = initRelayDesk()
     D.spool = 3
@@ -132,6 +141,7 @@ suite "the spool is bounded and says so":
     check reply.matched == 10'u32
     check reply.cursor == 10'u64
 
+  # {.testKind: tkEdgeCase.}
   test "a spool of zero holds nothing but still counts":
     var D = initRelayDesk()
     D.spool = 0
@@ -141,6 +151,7 @@ suite "the spool is bounded and says so":
 
 suite "readers do not consume each other":
 
+  # {.testKind: tkUnit.}
   test "two names on one stream each see everything once":
     var D = initRelayDesk()
     discard D.put("voice", "first")
@@ -160,6 +171,7 @@ suite "readers do not consume each other":
     check more.rows.len == 1
     check asText(decodeMessage(more.rows[0].data).body) == "third"
 
+  # {.testKind: tkEdgeCase.}
   test "a poll limit leaves the rest for the next call":
     var D = initRelayDesk()
     for i in 1 .. 5:
@@ -172,6 +184,7 @@ suite "readers do not consume each other":
       subscriptionId: "r", limit: 10'u32), watcher)
     check rest.rows.len == 3
 
+  # {.testKind: tkUnit.}
   test "a sync keeps its own position instead of being remembered":
     var D = initRelayDesk()
     for i in 1 .. 4:
@@ -187,6 +200,7 @@ suite "readers do not consume each other":
 
 suite "a relay says it is not a database":
 
+  # {.testKind: tkEdgeCase.}
   test "every stored-data question is refused by name":
     var D = initRelayDesk()
     for op in [qoGet, qoFind, qoFetch, qoDelete]:
@@ -197,6 +211,7 @@ suite "a relay says it is not a database":
 
 suite "how a message is written down":
 
+  # {.testKind: tkUnit.}
   test "plain lines stay one line each":
     var m = RelayMessage(stream: "logs", sender: "phone", at: 1_700_000_000'i64,
       ordinal: 1'u64, body: asBytes("two\nlines\there"))
@@ -208,6 +223,7 @@ suite "how a message is written down":
     check "2023-11-14T" in line
     check " phone logs " in line
 
+  # {.testKind: tkUnit.}
   test "json carries text as text":
     var m = RelayMessage(stream: "notes", sender: "phone", at: 1_700_000_000'i64,
       ordinal: 3'u64, body: asBytes("hello \"world\""))
@@ -219,6 +235,7 @@ suite "how a message is written down":
     check node["body"].getStr() == "hello \"world\""
     check not node.hasKey("base64")
 
+  # {.testKind: tkUnit.}
   test "json carries bytes as base64":
     var m = RelayMessage(stream: "voice", sender: "phone",
       body: @[0'u8, 1'u8, 2'u8, 255'u8])
@@ -227,11 +244,13 @@ suite "how a message is written down":
     check node["base64"].getStr() == "AAEC/w=="
     check node["bytes"].getInt() == 4
 
+  # {.testKind: tkEdgeCase.}
   test "raw adds nothing at all":
     var m = RelayMessage(stream: "voice", sender: "phone",
       body: asBytes("exactly these bytes"))
     check render(m, rfRaw) == "exactly these bytes"
 
+  # {.testKind: tkUnit.}
   test "a file sink appends and can be read back":
     var path = "build/test-relay/log.jsonl"
     removeDir("build/test-relay")
@@ -253,6 +272,7 @@ suite "how a message is written down":
 
 suite "a delivered command":
 
+  # {.testKind: tkUnit.}
   test "gets the body on stdin and answers with its stdout":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "tr a-z A-Z"
@@ -261,6 +281,7 @@ suite "a delivered command":
     check reply.rows.len == 1
     check asText(reply.rows[0].data).strip() == "PRETEND THIS IS A TRANSCRIPT"
 
+  # {.testKind: tkUnit.}
   test "is told about the message in its environment":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "printf '%s/%s/%s' \"$GEIST_STREAM\" \"$GEIST_FROM\" \"$GEIST_BYTES\""
@@ -268,6 +289,7 @@ suite "a delivered command":
     check reply.ok
     check asText(reply.rows[0].data) == "voice/phone/10"
 
+  # {.testKind: tkEdgeCase.}
   test "never sees the message on its command line":
     var D = initRelayDesk(rsExec, rfRaw)
     # If the body were interpolated into the command, this would run `id`.
@@ -276,6 +298,7 @@ suite "a delivered command":
     check reply.ok
     check asText(reply.rows[0].data) == "$(id) `id` ; id"
 
+  # {.testKind: tkEdgeCase.}
   test "that fails is reported with what it exited":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "exit 3"
@@ -284,6 +307,7 @@ suite "a delivered command":
     check "exited 3" in reply.err
     check D.failed == 1
 
+  # {.testKind: tkUnit.}
   test "that hangs is stopped rather than hanging the relay":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "sleep 30"
@@ -292,6 +316,7 @@ suite "a delivered command":
     check not reply.ok
     check "did not finish within 200ms" in reply.err
 
+  # {.testKind: tkEdgeCase.}
   test "with no timeout is started and not waited for":
     var flag = "build/test-relay/triggered"
     removeDir("build/test-relay")
@@ -307,6 +332,7 @@ suite "a delivered command":
     D.closeRelay()
     check fileExists(flag)
 
+  # {.testKind: tkUnit.}
   test "spooling happens whatever the sink is":
     var D = initRelayDesk(rsExec, rfRaw)
     D.exec = "cat"

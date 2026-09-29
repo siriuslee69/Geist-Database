@@ -116,6 +116,26 @@ proc rotateOne(source, stem: string,
   except CatchableError as exc:
     result = (false, exc.msg)
 
+proc missingArtifact(P: openArray[string]): string {.role: parser,
+    tag: "backup|storageIo".} =
+  ## P: the artifact set -> "refusing ... missing <path>" for the first one
+  ## named but not on disk, or "".
+  for path in P:
+    if path.len > 0 and not fileExists(path):
+      return "refusing to rotate an incomplete artifact set: missing " & path
+  result = ""
+
+proc rotateNamed(path, stem: string, copies: int,
+    copied: var seq[string]): tuple[ok: bool, err: string] {.
+    role: dataWriter, tag: "backup|storageIo|write".} =
+  ## path/stem/copies: one artifact rotated, when it is named at all.
+  ## copied: gains the new slot-1 path on success.
+  if path.len == 0:
+    return (true, "")
+  result = rotateOne(path, stem, copies)
+  if result.ok:
+    copied.add slotPath(stem, 1)
+
 proc runBackup*(P: openArray[string], stems: openArray[string],
     p: BackupPolicy, S: var BackupState, now: int64 = 0'i64): BackupResult {.
     role: orchestrator, tag: "backup|orchestrator|storageIo|write".} =
@@ -138,20 +158,14 @@ proc runBackup*(P: openArray[string], stems: openArray[string],
   if not decision.yes:
     return
   if p.requireFullSet:
-    while i < P.len:
-      if P[i].len > 0 and not fileExists(P[i]):
-        result.err = "refusing to rotate an incomplete artifact set: " &
-          "missing " & P[i]
-        return
-      i = i + 1
-  i = 0
+    result.err = missingArtifact(P)
+  if result.err.len > 0:
+    return
   while i < P.len:
-    if P[i].len > 0:
-      step = rotateOne(P[i], stems[i], int(p.copies))
-      if not step.ok:
-        result.err = step.err
-        return
-      result.copied.add slotPath(stems[i], 1)
+    step = rotateNamed(P[i], stems[i], int(p.copies), result.copied)
+    if not step.ok:
+      result.err = step.err
+      return
     i = i + 1
   result.performed = true
   S.writesSinceBackup = 0'u32

@@ -9,6 +9,7 @@ type
     body: string
 
 suite "session":
+  # {.testKind: tkUnit.}
   test "open, put, find, save, reopen":
     var root = getTempDir() / "geist_t_sess"
     removeDir(root)
@@ -24,6 +25,7 @@ suite "session":
     check find[Note](db2, "title", "t5").len == 1
     db2.close()
 
+  # {.testKind: tkEdgeCase.}
   test "encryption leaves no plaintext on disk and reopens":
     var root = getTempDir() / "geist_t_enc"
     removeDir(root)
@@ -40,6 +42,7 @@ suite "session":
     check get[Note](db2, 37'u32).body == "MARKER-37"
     db2.close()
 
+  # {.testKind: tkEdgeCase.}
   test "a wrong password fails loudly instead of minting a new key set":
     var root = getTempDir() / "geist_t_pw"
     removeDir(root)
@@ -50,6 +53,7 @@ suite "session":
     expect IOError:
       discard openGeist[Note](root, secureAppConfig(), "wrong")
 
+  # {.testKind: tkUnit.}
   test "the encrypted artifact set is all three files":
     var root = getTempDir() / "geist_t_set"
     removeDir(root)
@@ -60,6 +64,7 @@ suite "session":
     for p in db.artifactSet(): check fileExists(p)
     db.close()
 
+  # {.testKind: tkUnit.}
   test "subscribe starts at head, replay rewinds":
     var root = getTempDir() / "geist_t_sub"
     removeDir(root)
@@ -73,6 +78,7 @@ suite "session":
     check poll(db, "live").len == 0        # cursor advanced
     db.close()
 
+  # {.testKind: tkEdgeCase.}
   test "history can be disabled and checkpoint then refuses":
     var root = getTempDir() / "geist_t_hist"
     removeDir(root)

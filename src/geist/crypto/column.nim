@@ -99,6 +99,57 @@ proc batchPieces(s: Schema, rows: ByteSeq, first, last: uint32,
     result.rowLens.add total
     r = r + 1'u32
 
+proc lastRowOf(L: Ledger, b: uint32, rowCount: uint32): uint32 {.role: math,
+    inline, tag: "batch".} =
+  ## L/b/rowCount: the last row of batch b; the final batch may be short.
+  result = min(b * L.batchRows + L.batchRows - 1'u32, rowCount - 1'u32)
+
+proc slotOf(L: Ledger, g: int, b: uint32): int {.role: math, inline,
+    tag: "batch".} =
+  ## L/g/b: where group g's entry for batch b sits in the ledger:
+  ##
+  ##   entries = | b0 g0 | b0 g1 | ... | b1 g0 | b1 g1 | ...
+  result = int(b) * max(1, L.groups.len) + int(L.groups[g].groupId)
+
+proc entryFor(L: var Ledger, g: int, b: uint32, cipher: CipherKind,
+    mac: MacKind, treeHash: HashKind, keyRef: KeyId): LedgerEntry {.
+    role: truthBuilder, tag: "batch|cryptoBoundary".} =
+  ## L/g/b: the entry batch b of group g is sealed under -- the one on
+  ## file, grown into when new, with its coordinates filled in.
+  ## cipher/mac/treeHash: what this seal uses.
+  ## keyRef: the key to use when the entry names none yet. An entry that
+  ## already names one keeps it: re-sealing a batch must not move it to
+  ## another key behind the ledger's back.
+  L.ensureCapacity(b)
+  result = L.entries[L.slotOf(g, b)]
+  result.groupId = L.groups[g].groupId
+  result.batchIndex = b
+  result.cipher = cipher
+  result.mac = mac
+  result.treeHash = treeHash
+  if result.keyRef == 0'u64:
+    result.keyRef = keyRef
+
+proc storedEntry(L: Ledger, g: int, b: uint32): LedgerEntry {.role: parser,
+    tag: "batch|cryptoBoundary".} =
+  ## L/g/b: the entry batch b of group g was sealed under; ValueError when
+  ## the ledger does not have it.
+  if L.slotOf(g, b) >= L.entries.len:
+    raise newException(ValueError,
+      "ledger is missing batch " & $b & " for column group " &
+      $L.groups[g].groupId & ": the database cannot be decrypted " &
+      "without its ledger")
+  result = L.entries[L.slotOf(g, b)]
+
+proc rowSlicesOf(plain: ByteSeq, lens: seq[int]): seq[ByteSeq] {.
+    role: parser, tag: "batch".} =
+  ## plain/lens: one batch's gathered bytes cut back into its rows.
+  var
+    o: int = 0
+  for n in lens:
+    result.add plain[o ..< o + n]
+    o = o + n
+
 proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
     rows: var ByteSeq, rowCount: uint32,
     databaseId: string, schemaVersion: uint16,
@@ -114,16 +165,10 @@ proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
   var
     g: int = 0
     b: uint32 = 0'u32
-    first: uint32 = 0'u32
-    last: uint32 = 0'u32
     built: tuple[pieces: seq[Piece], rowLens: seq[int]] = (@[], @[])
     plain: ByteSeq = @[]
     sealedBytes: ByteSeq = @[]
-    rowSlices: seq[ByteSeq] = @[]
     e: LedgerEntry = default(LedgerEntry)
-    slot: int = 0
-    o: int = 0
-    i: int = 0
   if L.batchRows == 0'u32 or rowCount == 0'u32:
     return
   if not s.isDense():
@@ -133,30 +178,13 @@ proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
   while g < L.groups.len:
     b = 0'u32
     while b * L.batchRows < rowCount:
-      first = b * L.batchRows
-      last = min(first + L.batchRows - 1'u32, rowCount - 1'u32)
-      built = batchPieces(s, rows, first, last, L.groups[g].slots)
+      e = L.entryFor(g, b, cipher, mac, treeHash, keyRef)
+      built = batchPieces(s, rows, b * L.batchRows,
+        L.lastRowOf(b, rowCount), L.groups[g].slots)
       plain = gather(rows, built.pieces)
-      rowSlices = @[]
-      o = 0
-      i = 0
-      while i < built.rowLens.len:
-        rowSlices.add plain[o ..< o + built.rowLens[i]]
-        o = o + built.rowLens[i]
-        i = i + 1
-      L.ensureCapacity(b)
-      slot = int(b) * max(1, L.groups.len) + int(L.groups[g].groupId)
-      e = L.entries[slot]
-      e.cipher = cipher
-      e.mac = mac
-      e.treeHash = treeHash
-      e.groupId = L.groups[g].groupId
-      e.batchIndex = b
-      if e.keyRef == 0'u64:
-        e.keyRef = keyRef
       sealedBytes = sealBatch(master, e, databaseId, schemaVersion, plain,
-        rowSlices)
-      L.entries[slot] = e
+        rowSlicesOf(plain, built.rowLens))
+      L.entries[L.slotOf(g, b)] = e
       scatter(rows, built.pieces, sealedBytes)
       b = b + 1'u32
     g = g + 1
@@ -171,30 +199,19 @@ proc openCluster*(master: Secret, L: Ledger, s: Schema,
   var
     g: int = 0
     b: uint32 = 0'u32
-    first: uint32 = 0'u32
-    last: uint32 = 0'u32
     built: tuple[pieces: seq[Piece], rowLens: seq[int]] = (@[], @[])
     cipherBytes: ByteSeq = @[]
     plain: ByteSeq = @[]
-    e: LedgerEntry = default(LedgerEntry)
-    slot: int = 0
   if L.batchRows == 0'u32 or rowCount == 0'u32:
     return
   while g < L.groups.len:
     b = 0'u32
     while b * L.batchRows < rowCount:
-      first = b * L.batchRows
-      last = min(first + L.batchRows - 1'u32, rowCount - 1'u32)
-      built = batchPieces(s, rows, first, last, L.groups[g].slots)
+      built = batchPieces(s, rows, b * L.batchRows,
+        L.lastRowOf(b, rowCount), L.groups[g].slots)
       cipherBytes = gather(rows, built.pieces)
-      slot = int(b) * max(1, L.groups.len) + int(L.groups[g].groupId)
-      if slot >= L.entries.len:
-        raise newException(ValueError,
-          "ledger is missing batch " & $b & " for column group " &
-          $L.groups[g].groupId & ": the database cannot be decrypted " &
-          "without its ledger")
-      e = L.entries[slot]
-      plain = openBatch(master, e, databaseId, schemaVersion, cipherBytes)
+      plain = openBatch(master, L.storedEntry(g, b), databaseId,
+        schemaVersion, cipherBytes)
       scatter(rows, built.pieces, plain)
       b = b + 1'u32
     g = g + 1
