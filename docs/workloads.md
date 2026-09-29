@@ -257,8 +257,8 @@ caught by hashing it. The router forwards on a third party's behalf and
 narrows rights to the intersection of the router's and the subject's.
 
 Two gaps. Ceiling 4 caps an object at ~78 MB over the wire. And
-`discoversPeers` is a field on `GeistConfig` that **nothing reads** --
-there is no peer discovery; peers are pinned by an operator, by hand.
+there is no peer discovery: every peer is pinned by an operator, by
+hand. A per-store transport strength does not exist either; `[transport] startTier` is one value per process.
 
 ### Position streaming — fits on a LAN; video does not
 

@@ -1,52 +1,48 @@
 # Progress
 
-Commit Message: Production pass 3: transport split into asking end, answering end and payload; third-party notices
+Commit Message: Session and serve split by job; two inert config fields gone; the CLI follows [storage] preset
 
 Features (Planned):
-- Declare a `testKind` on the evaluation routines: 15 of 531 declare one.
-  Mechanical, but each needs a real decision (unit / edge case /
-  integration), which is why it was not scripted.
-- Flatten the 97 triple-nested sites Otter lists (no site is deeper).
-- Split the oversized files: `src/clients/geist_cli.nim` (~1100 lines)
-  first, then `src/geist/serve.nim`, `src/server/geist_routed.nim`,
-  `src/geist/transpose.nim`.
-- Remove the unused public symbols and the 41 dead configurator fields
-  Otter lists -- after checking each: its call graph misses implicit
-  calls (`$`, callbacks).
-- `decodeSchema` from a FILE (store.nim, transpose.nim) is not walked by
-  `bytecheck` the way a peer's bytes are. A corrupted file can still
-  raise a defect instead of an error.
+- Media streaming: one object tops out at ~78 MB over the wire (payload
+  ceiling 4), and there is no streaming path for multi-gigabyte values.
+  The media-stream server use case needs this first.
+- Peer discovery: every peer is pinned by hand. A per-store transport
+  strength (today one `[transport] startTier` per process).
+- Automatic tier climbing: `TriggerPolicy` is validated and carried, but
+  a session only changes strength when asked.
 - Carrier pairing (Bifrost 95a3ef2, local branch `carrier-pairing`) for
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
-- Bytes from a peer are walked (`bytecheck.nim`) before they are decoded;
-  a malformed request gets an error reply instead of stopping geistd.
-- `transport.nim` split: asking end (`transport`), answering end
-  (`serve`), multi-datagram envelope (`payload`).
-- Every routine at depth 4 flattened (16 -> 0); roles on 97 more routines;
-  finished constant-returning routines say `stage: stDone`.
-- Declarations: every `var` has a starting value, one-line runs are
-  blocks, no `let` (886 per-file findings -> the checker's own false
-  positives).
-- `geist`'s `fail` and every program's `--help` no longer quit from deep
-  inside; the entry routine decides the exit code.
-- THIRD_PARTY_LICENSES.md.
-- Bifrost 29915b7 and the newest main of every dependency (2026-09-27).
-- `configs/default.toml` is the one settings file; build presets
-  `server`, `iot`, `android` (2026-09-27).
-- Generic tasks from the Nimble-Tasks submodule (2026-09-27).
-- `nimsimd` pinned as a submodule; a build with `--noNimblePath` works.
-- `Var-Invariants` contracts on the routines doing offset arithmetic
-  over untrusted bytes.
-- `evaluation/` layout; `agents/PROGRESS.md`; `Rune-Pragmas` pinned;
-  a CI workflow whose every step names a task that exists.
+- The six roles, one call each (docs/roles.md): writer, reader, network
+  syncer (`SyncAgent`), background daemon as server AND client
+  (`geistd --sync`), converter (`convertDoc`, `geist convert`), in-memory
+  sealing (`sealObject` / `openObject`).
+- Every evaluation routine declares its `testKind` (567 of 567).
+- Nesting: 93 triple sites -> 12, all in `evaluation/benchmarks/prototypes`
+  (frozen experiments, kept as they were measured).
+- Big files split: session (6 modules), serve / peers, transpose /
+  transposed, doc / docnode, geist_cli / cli/*, geist_routed / _config.
+- Files read from disk fail as errors, never defects: `readAt` checks the
+  range before allocating and refuses short reads; `schemaFrom` walks a
+  stored schema before decoding it.
+- A failed open gives its write lease back; exit no longer crashes.
+- Otter "dead config fields" checked one by one: all but two were read
+  through `S.config.x`, which Otter does not follow. The two real ones
+  (`transferTier`, `discoversPeers`) are removed.
+- Earlier: production passes 1-3, restructure to the workspace
+  conventions, Bifrost 29915b7 (see dated entries below).
 
 Features (In Progress):
 - None.
 
 Notes:
-- Last problem encountered: see the newest dated entry.
+- Last problem encountered: Otter lists ~50 "dead" configurator fields
+  and ~55 unused public routines. Checked by grep: almost all are false
+  positives (fields read as `S.config.x`, thread procs, callbacks,
+  benchmark and prototype entry points). Fixed: only the two above, plus
+  the CLI, which ignored `[storage] preset` from configs/default.toml
+  because it started from a hardcoded "app".
 
 ## 2026-09-27 Production Passes
 

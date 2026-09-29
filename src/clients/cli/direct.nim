@@ -103,7 +103,8 @@ proc cmdInit*(o: Options) {.role: actor,
   if not written.ok:
     fail(written.err)
   db.close()
-  echo "created ", storePaths(o).dir, " with preset '", o.preset, "'"
+  echo "created ", storePaths(o).dir, " with preset '",
+    (if o.preset.len > 0: o.preset else: geistDefaults().preset), "'"
   echo "schema: ", describeSchema(parsed.s)
 
 proc cmdPut*(o: Options) {.role: actor,

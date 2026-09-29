@@ -157,31 +157,6 @@ type
     ##   tmManual    rebuilt only when asked; may be stale, and says so
     transpose*: TransposeMode
     transposeEverySeconds*: uint32
-    ## ---- transport ----
-    ##
-    ## NEITHER OF THESE IS READ BY ANYTHING. They are set by `baseConfig`
-    ## and no code in this repository ever looks at them, which Otter
-    ## reports as two dead configurator fields. They are left in place,
-    ## named and documented as inert, rather than deleted, because both
-    ## name a decision Geist genuinely has to make eventually and a reader
-    ## who finds them should know which:
-    ##
-    ##   transferTier   which AME strength a store's own traffic opens at.
-    ##                  Today the tier comes from `[transport] startTier`
-    ##                  in configs/default.toml, which is per PROCESS, not per
-    ##                  store. A machine serving one public database and
-    ##                  one private one cannot currently ask for different
-    ##                  strengths for each.
-    ##   discoversPeers whether a node looks for peers rather than being
-    ##                  handed their pins by an operator. There is no
-    ##                  discovery in Geist at all; every peer is pinned by
-    ##                  hand. `docs/workloads.md` lists this under what
-    ##                  decentralized hosting still lacks.
-    ##
-    ## Setting either of them today does nothing. If you are wiring one
-    ## up, that is the right moment to delete this comment.
-    transferTier*: uint8
-    discoversPeers*: bool
 
 proc fixedColumn*(field: FieldName, width: uint32 = defaultFixedWidth,
     onOverflow: OverflowPolicy = opError): ColumnPolicy {.role: configurator,
@@ -243,8 +218,6 @@ proc baseConfig(name: string, c: CipherKind): GeistConfig {.role: configurator,
   result.sealMeta = c != ckNone
   result.sealJournal = c != ckNone
   result.backup = defaultBackupPolicy()
-  result.transferTier = 2'u8
-  result.discoversPeers = true
 
 proc normalizeGeistConfig*(c: GeistConfig): GeistConfig {.role: configurator,
     tag: "appApi|config|db|read".} =

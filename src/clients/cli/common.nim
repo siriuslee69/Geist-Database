@@ -61,7 +61,7 @@ geist <command> [options]
   --remote dac://host:port  operate through a running geistd
   --password <text>       at-rest password (prefer --password-file)
   --password-file <file>  read the password from a file
-  --preset <name>         config preset, default app
+  --preset <name>         config preset, default: [storage] preset in configs/default.toml
   --schema "a:int,b:text" field list, only for `init`
   --type <name>           object type label for `init`
   --limit <n>             maximum rows, default 20
@@ -160,7 +160,7 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     key: string = ""
     value: string = ""
     step: OptionStep = ("", "", false, 0)
-  result.preset = "app"
+  result.preset = ""   # "" = whatever configs/default.toml names
   result.limit = 20
   result.slot = 1
   result.subject = "geist-cli"
@@ -272,7 +272,7 @@ proc openDirect*(o: Options, schema: Schema = Schema(),
   try:
     # An unnamed preset means "whatever configs/default.toml says", which is the
     # library default when there is no such file.
-    c = if o.preset == "app": defaultGeistConfig()
+    c = if o.preset.len == 0: defaultGeistConfig()
         else: applyDefaults(geistConfigPreset(o.preset), geistDefaults())
   except ValueError as exc:
     fail(exc.msg)

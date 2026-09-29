@@ -2137,24 +2137,46 @@ quiet import.
   |  src/geist/config.nim          presets                         |
   |  src/geist/toml_read.nim       shared TOML reader (no policy)  |
   |  src/geist/settings.nim        [storage] [backup] + disk keys  |
-  |  src/geist/session.nim         open / put / set / save         |
   |  src/geist/keys.nim            key file, ledger, generations   |
   |  src/geist/backup.nim          .b1 / .b2 / .b3                 |
   |  src/geist/crypto/             seal, check, batch, column      |
+  |                                                                |
+  |  src/geist/session.nim         one import for the five below   |
+  |  src/geist/sessionopen.nim       the Session type, open, lease |
+  |  src/geist/sessioncore.nim       put / set / delete / save     |
+  |  src/geist/replicate.nim         rowsSince, applyRows, poll    |
+  |  src/geist/observe.nim           observe, followStore          |
+  |  src/geist/sessionsweep.nim      sidecar sweep                 |
+  |  src/geist/sessionview.nim       show, visible rows            |
+  |                                                                |
   |  src/geist/collection.nim      seq-shaped API over a Session   |
   |  src/geist/seek.nim            partial cluster reads           |
   |  src/geist/dynamic.nim         rows without a compile-time type|
   |  src/geist/show.nim            rows as a table, elided         |
-  |  src/geist/transpose.nim       the column-first search copy    |
+  |  src/geist/transpose.nim       builds the column-first copy    |
+  |  src/geist/transposed.nim      reads the column-first copy     |
+  |  src/geist/docnode.nim         object <-> JSON tree            |
+  |  src/geist/doc.nim             JSON / TOML files, converting   |
+  |  src/geist/seal.nim            one object sealed in memory     |
+  |  src/geist/secrets.nim         seal / open bytes, key or pass  |
+  |  src/geist/keystore.nim        where a key lives, per platform |
+  |  src/geist/users.nim           a sign-in database              |
+  |  src/geist/reconcile.nim       hand-edited table vs roster     |
+  |  src/geist/address.nim         what a request names            |
+  |  src/geist/route.nim           which endpoint serves an address|
+  |  src/geist/layout.nim          one Geist folder per machine    |
   +----------------------------------------------------------------+
 
   +-- PART 3  import geist/wire -----------------------------------+
   |  src/geist/wire.nim            public wire facade              |
   |  src/geist/masks.nim           strength levels Geist owns      |
   |  src/geist/transport.nim       asking end: codec, connect, send|
-  |  src/geist/serve.nim           answering end: one socket, peers|
+  |  src/geist/peers.nim           who may talk, server state      |
+  |  src/geist/handshake.nim       hello, cookie, sealed finish    |
+  |  src/geist/serve.nim           answering end: one frame, reply |
   |  src/geist/payload.nim         one payload over many datagrams |
-  |  src/geist/bytecheck.nim       walks peer bytes before decoding |
+  |  src/geist/bytecheck.nim       walks peer bytes before decoding|
+  |  src/geist/link.nim            find a hop, connect, fail over  |
   |  src/geist/identity.nim        key files and pins              |
   |  src/geist/relay.nim           Query meaning against a pipe    |
   |  src/geist/transport_settings.nim   [transport] only           |
@@ -2164,13 +2186,23 @@ quiet import.
   |  src/geist/network.nim         re-exports both halves          |
   |  src/geist/answer.nim          Query meaning against a Session |
   |  src/geist/need.nim            what this store is missing      |
+  |  src/geist/offer.nim           what a peer is missing from here|
+  |  src/geist/registry.nim        many stores behind one daemon   |
+  |  src/geist/agent.nim           sync as server, client or both  |
   +----------------------------------------------------------------+
 
   +-- BINARIES (compose halves; never redefine a border) ----------+
+  |  src/geist/args.nim            the option reader all five share|
   |  src/clients/geist_cli.nim     local folder or remote geistd   |
+  |  src/clients/cli/common.nim      options, settings, opening    |
+  |  src/clients/cli/direct.nim      commands on a local folder    |
+  |  src/clients/cli/remote.nim      commands against a geistd     |
   |  src/server/geistd.nim         part 1 + part 3 + answer        |
+  |  src/server/geistd_config.nim    its options and TOML          |
   |  src/clients/geist_relay.nim   part 3 only                     |
   |  src/server/geist_relayd.nim   part 3 + relay handler          |
+  |  src/server/geist_routed.nim   part 3 + route: forwards        |
+  |  src/server/geist_routed_config.nim  its options and TOML      |
   +----------------------------------------------------------------+
 
   evaluation/tests/   evaluation/benchmarks/   examples/   nix/

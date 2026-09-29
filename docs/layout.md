@@ -106,10 +106,13 @@ and below, never sideways within its own level, and never upward.
   level 2   store.nim  row.nim  keys.nim  crypto/*
             |  the store itself and what protects it
             v
-  level 3   session.nim  collection.nim  seek.nim  backup.nim
+  level 3   sessionopen -> sessioncore -> replicate / observe /
+            sessionsweep / sessionview  (session.nim gathers them)
+            collection.nim  seek.nim  backup.nim
             |  what a caller actually holds and asks
             v
   level 4   masks.nim  bytecheck.nim  payload.nim -> transport.nim
+            -> peers.nim -> handshake.nim
             -> serve.nim -> network.nim
             |  the wire, which is the only part that knows Bifrost
             v

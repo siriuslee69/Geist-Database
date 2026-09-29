@@ -62,7 +62,9 @@ const
     ## whatever its master branch holds today.
   cliEntry: string = "src/clients/geist_cli.nim"
   serverEntry: string = "src/server/geistd.nim"
-  storageModules: array[16, string] = ["geist", "geist@ssession",
+  storageModules: array[22, string] = ["geist", "geist@ssession",
+    "geist@ssessionopen", "geist@ssessioncore", "geist@sreplicate",
+    "geist@sobserve", "geist@ssessionsweep", "geist@ssessionview",
     "geist@sstore", "geist@srow", "geist@srowid", "geist@skeys",
     "geist@sconfig", "geist@sbackup", "geist@slease", "geist@ssidecar",
     "geist@scollection", "geist@sseek", "geist@sdurable", "geist@smapper",
