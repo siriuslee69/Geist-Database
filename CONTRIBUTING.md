@@ -46,6 +46,7 @@ nimble buildAll      # build all five programs for release
 nimble checkModular  # the storage half must build with no network stack
 nimble checkRelay    # the wire half must build with no database in it
 nimble checkRouter   # the router must build with no database in it
+nimble checkForward  # the forwarder must build with no store and no handshake
 ```
 
 Those two are the ones that fail silently in review otherwise, and they

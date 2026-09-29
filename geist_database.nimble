@@ -14,10 +14,12 @@
 ##   buildCliRelay      geist-relay        the relay's command line client
 ##   buildServerRelayd  geist-relayd       the message relay
 ##   buildServerRouted  geist-routed       the request router
+##   buildServerForwardd geist-forwardd    the VPS datagram forwarder
 ##   checkAll           compile-check every public module
 ##   checkModular       the storage half builds with NO network stack
 ##   checkRelay         the wire half builds with NO database in it
 ##   checkRouter        the router builds with NO database in it
+##   checkForward       the forwarder builds with no database, no handshake
 ##   testCore ...       one area of the test suite, for a quick loop
 ##   bench<Group>       one benchmark group
 ##   demoCli            a scratch database driven through the CLI
@@ -71,6 +73,9 @@ const
     "geist@sdynamic", "geist@ssettings"]
     ## The C files a program has compiled the DATABASE half into. The relay
     ## and the router must produce none of them.
+  forwardForbidden: array[6, string] = ["geist@stransport", "geist@sserve",
+    "geist@shandshake", "geist@speers", "geist@smasks", "geist@sidentity"]
+    ## Modules that mean a handshake is being made: not for the forwarder.
   benchSource: string = "evaluation/benchmarks/bench_geist.nim"
   benchProgram: string = "build/evaluation/bench_geist"
 
@@ -103,15 +108,17 @@ proc runTestFiles(A: openArray[string]) =
     exec "nim c -r --hints:off -o:build/evaluation/" & f & " evaluation/tests/" &
       f & ".nim"
 
-proc leakedStorage(cacheDir: string): seq[string] =
+proc leakedStorage(cacheDir: string, extra: openArray[string] = []):
+    seq[string] =
   ## cacheDir: a nimcache folder -> the database modules compiled into it.
+  ## extra: more module names that must not be there either.
   var
     name: string = ""
   for f in listFiles(cacheDir):
     name = f.extractFilename()
     if name.len > 8 and name.endsWith(".nim.c") and
         (name.startsWith("@p") or name.startsWith("@m")) and
-        (name[2 .. ^7] in storageModules):
+        (name[2 .. ^7] in storageModules or name[2 .. ^7] in extra):
       result.add name
 
 proc runBench(group: string) =
@@ -131,6 +138,7 @@ proc runBench(group: string) =
 #   geist-relay    buildCliRelay       src/clients/geist_relay.nim
 #   geist-relayd   buildServerRelayd   src/server/geist_relayd.nim
 #   geist-routed   buildServerRouted   src/server/geist_routed.nim
+#   geist-forwardd buildServerForwardd src/server/geist_forwardd.nim
 
 task buildCliRelay, "Build geist-relay, the relay's command line client":
   buildProgram("src/clients/geist_relay.nim", "geist_database_cli_relay")
@@ -141,12 +149,16 @@ task buildServerRelayd, "Build geist-relayd, the message relay":
 task buildServerRouted, "Build geist-routed, the request router":
   buildProgram("src/server/geist_routed.nim", "geist_database_server_routed")
 
+task buildServerForwardd, "Build geist-forwardd, the VPS datagram forwarder":
+  buildProgram("src/server/geist_forwardd.nim", "geist_database_server_forwardd")
+
 task buildAll, "Build every Geist program for release":
   buildProgram(cliEntry, "geist_database_cli")
   buildProgram(serverEntry, "geist_database_server")
   buildProgram("src/clients/geist_relay.nim", "geist_database_cli_relay")
   buildProgram("src/server/geist_relayd.nim", "geist_database_server_relayd")
   buildProgram("src/server/geist_routed.nim", "geist_database_server_routed")
+  buildProgram("src/server/geist_forwardd.nim", "geist_database_server_forwardd")
 
 # ---------------------------------------------------------------------
 # Compile checks
@@ -156,7 +168,8 @@ task checkAll, "Compile-check every public module":
   for f in listFiles("src/geist") & listFiles("src/geist/crypto") &
       @["src/geist.nim", "src/clients/geist_cli.nim",
         "src/clients/geist_relay.nim", "src/server/geistd.nim",
-        "src/server/geist_relayd.nim", "src/server/geist_routed.nim"]:
+        "src/server/geist_relayd.nim", "src/server/geist_routed.nim",
+        "src/server/geist_forwardd.nim"]:
     if f.endsWith(".nim"):
       exec "nim c --compileOnly --hints:off " & f
 
@@ -216,6 +229,21 @@ task checkRouter, "Prove the router forwards without compiling a store":
     quit(1)
   echo "router build: no database module compiled"
 
+task checkForward, "Prove the forwarder moves bytes without a store or a handshake":
+  ## The forwarder holds no key. If a database module OR the handshake
+  ## (the answering end, the asking end, the tiers, identities) ever
+  ## reaches its build, it has started doing what a VPS must not do.
+  var
+    leaked: seq[string] = @[]
+  exec "nim c --hints:off --warnings:off " &
+    "--nimcache:build/nimcache-forward -o:build/forward-only " &
+    "src/server/geist_forwardd.nim"
+  leaked = leakedStorage("build/nimcache-forward", forwardForbidden)
+  if leaked.len > 0:
+    echo "The forwarder build pulled in: " & leaked.join(", ")
+    quit(1)
+  echo "forwarder build: no database and no handshake module compiled"
+
 # ---------------------------------------------------------------------
 # One area of the test suite (`nimble test` runs all of them)
 # ---------------------------------------------------------------------
@@ -233,7 +261,7 @@ task testDurability, "Run the generation-swap, lease and restore tests":
   runTestFiles(["test_durability_lease", "test_sidecar_sweep"])
 
 task testExchange, "Run the live-socket daemon and identity tests":
-  runTestFiles(["test_daemon_live", "test_row_identity"])
+  runTestFiles(["test_daemon_live", "test_row_identity", "test_forward"])
 
 task testApiSurface, "Run the collection, seek and column storage tests":
   runTestFiles(["test_collection_seek", "test_hash_agility",

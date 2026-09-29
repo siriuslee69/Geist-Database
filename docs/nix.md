@@ -7,6 +7,7 @@ Four things live under `nix/`:
 | `default.nix` | the package: the daemons and their clients |
 | `module.nix` | `services.geistd` and `programs.geist-client` |
 | `relay-module.nix` | `services.geist-relay`, the daemon with no database |
+| `forward-module.nix` | `services.geist-forward`, the VPS end of Client -> VPS -> Home: no key, no store |
 | `nix/tests/` | three NixOS VM tests that run real machines against each other |
 
 ## The package
@@ -183,6 +184,28 @@ the question of where a message goes: `to`, `format`, `file`, `exec`,
 Its default port is 47656, one above `geistd`'s, so a machine can run both
 without either being told about the other. Full options and the reasoning
 in [relay.md](relay.md).
+
+## `services.geist-forward`
+
+A separate module in `nix/forward-module.nix`, exported as
+`nixosModules.geist-forward`, for the small program on a VPS that carries
+datagrams to a home server. It holds no key and no state, so it has no
+identity, no pins and no state directory; it runs as a dynamic user in a
+tight sandbox.
+
+```nix
+services.geist-forward = {
+  enable = true;
+  openFirewall = true;
+  home = "10.8.0.2:47655";   # geistd, as reachable from the VPS
+};
+```
+
+`home` is the only required option. `maxClients`, `clientIdleSeconds`,
+`pingSeconds`, `silentSeconds`, `bufferDatagrams`, `bufferBytes` and
+`followHome` match `[runtime.forward]` in `configs/default.toml`; what
+each bounds is in [forwarding.md](forwarding.md). The module has not been
+run under a NixOS VM test yet -- only parsed.
 
 ## The VM tests
 

@@ -44,9 +44,12 @@
 import std/[os, strutils, tables, times]
 
 import runePragmas
+import ../geist/stop
 import ../geist/network
 
 import ./geistd_config
+
+export stop
 
 export geistd_config
 
@@ -67,28 +70,6 @@ type
     applied*: int
     pushed*: int
     writable*: bool
-
-var
-  shutdownRequested: bool = false
-
-proc requestShutdown*() {.role: actor,
-    tag: "entrypoint|lifecycle|server".} =
-  ## Ask the serve loop to stop after the request in flight.
-  shutdownRequested = true
-
-when defined(posix):
-  import std/posix
-
-  proc onSignal(sig: cint) {.role: actor, noconv.} =
-    ## sig: SIGTERM or SIGINT; only used to leave the loop cleanly.
-    requestShutdown()
-
-proc installSignalHandlers*() {.role: orchestrator,
-    tag: "entrypoint|lifecycle|server".} =
-  ## Make SIGTERM and SIGINT request a graceful stop.
-  when defined(posix):
-    signal(SIGTERM, onSignal)
-    signal(SIGINT, onSignal)
 
 proc reloadIfChanged*(S: var DaemonState,
     c: DaemonConfig): bool {.role: actor,
@@ -294,7 +275,7 @@ proc runLoop(S: var DaemonState, c: DaemonConfig, server: var GeistServer,
   ## between turns instead.
   var
     stop: bool = false
-  while not shutdownRequested and not stop:
+  while not shutdownWanted() and not stop:
     if reloadIfChanged(S, c) and not c.quiet:
       echo "reloaded: file changed underneath (", S.session.entryCount(),
         " rows)"
@@ -317,7 +298,7 @@ proc runGeistd*(argv: seq[string]): int {.role: metaOrchestrator,
     written: tuple[ok: bool, err: string] = (false, "")
   # A fresh run: a stop asked of an EARLIER run in this process (a test,
   # or a program that embeds the daemon) must not end this one at once.
-  shutdownRequested = false
+  clearShutdown()
   try:
     c = resolveConfig(argv)
     if c.help:

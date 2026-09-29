@@ -71,8 +71,8 @@ inspected:
 ```
 
 Run by `nimble checkModular`, `nimble checkRelay` and
-`nimble checkRouter`. A comment saying "the relay must not open a
-database" is a wish; a build that fails when it does is a rule. This is
+`nimble checkRouter` and `nimble checkForward`. A comment saying "the relay
+must not open a database" is a wish; a build that fails when it does is a rule. This is
 the mechanism that keeps the three halves in `docs/layout.md` separable
 on a small device, where "compiles a post-quantum KEM you never use" is
 measured in kilobytes of flash.

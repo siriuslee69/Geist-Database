@@ -2,7 +2,7 @@
 
 ## Installation
 
-### ❄ NixOS — the programs (`geist`, `geistd`, `geist-relay`, `geist-relayd`, `geist-routed`)
+### ❄ NixOS — the programs (`geist`, `geistd`, `geist-relay`, `geist-relayd`, `geist-routed`, `geist-forwardd`)
 
 ```sh
 git clone https://github.com/siriuslee69/Geist-Database.git
@@ -12,7 +12,9 @@ nix-build nix/default.nix             # -> ./result/bin/geist, geistd, ...
 ```
 
 As a service, import `nix/module.nix` (`services.geistd`) or
-`nix/relay-module.nix` (`services.geist-relay`); every option is in
+`nix/relay-module.nix` (`services.geist-relay`) or
+`nix/forward-module.nix` (`services.geist-forward`, the VPS end of
+Client -> VPS -> Home); every option is in
 [docs/nix.md](docs/nix.md).
 
 ### ❄ NixOS — as a library in your own Nim program
@@ -1892,6 +1894,31 @@ only pushes stays a read-only follower. The same keys live under
 From code, the same two parts are `serveStore` and `tick`
 (`src/geist/agent.nim`, `examples/geist_sync.nim`).
 
+## 2.9 Two ways through a VPS
+
+A home server has no public address; a rented machine does. Two ways
+to use one (full comparison: [docs/forwarding.md](docs/forwarding.md)):
+
+```text
+  A. FORWARD   client ---> VPS ---> home        geist-forwardd on the VPS
+     bytes untouched; ONE handshake, client <-> home; home must be
+     reachable from the VPS (VPN, forwarded port, IPv6)
+
+  B. MAILBOX   client ---> VPS <--- home        geistd on the VPS, and
+     two handshakes; home only dials OUT       home runs geistd --sync
+```
+
+```text
+geist-forwardd --listen dac://0.0.0.0:47655 --to dac://10.8.0.2:47655
+geist --remote dac://vps.example:47655 --peer-pin home.pin list
+```
+
+The client dials the VPS and pins the HOME server's key. The forwarder
+holds no key, so it cannot read or change what passes. A `list` through
+it takes as long as a `list` without it (0.22 s both on one machine).
+`geist-routed` is different: it opens each request and makes a second
+handshake, so use it when the VPS must decide, not when it must not.
+
 ---
 
 # Part 3 — The pipe
@@ -2177,6 +2204,10 @@ quiet import.
   |  src/geist/payload.nim         one payload over many datagrams |
   |  src/geist/bytecheck.nim       walks peer bytes before decoding|
   |  src/geist/link.nim            find a hop, connect, fail over  |
+  |  src/geist/forward.nim         VPS forwarder: bytes, no key    |
+  |  src/geist/forward_settings.nim  [runtime.forward] only        |
+  |  src/geist/ping.nim            the one datagram anyone may send|
+  |  src/geist/stop.nim            "stop" for every daemon         |
   |  src/geist/identity.nim        key files and pins              |
   |  src/geist/relay.nim           Query meaning against a pipe    |
   |  src/geist/transport_settings.nim   [transport] only           |
@@ -2203,6 +2234,7 @@ quiet import.
   |  src/server/geist_relayd.nim   part 3 + relay handler          |
   |  src/server/geist_routed.nim   part 3 + route: forwards        |
   |  src/server/geist_routed_config.nim  its options and TOML      |
+  |  src/server/geist_forwardd.nim  the VPS forwarder, no handshake|
   +----------------------------------------------------------------+
 
   evaluation/tests/   evaluation/benchmarks/   examples/   nix/
@@ -2257,10 +2289,12 @@ shared half.
   nimble buildCliRelay      build/geist_database_cli_relay    (= geist-relay)
   nimble buildServerRelayd  build/geist_database_server_relayd (= geist-relayd)
   nimble buildServerRouted  build/geist_database_server_routed (= geist-routed)
+  nimble buildServerForwardd build/geist_database_server_forwardd (= geist-forwardd)
   nimble checkAll           compile every public module
   nimble checkModular       part 1 with the network stack absent
   nimble checkRelay         part 3 with no database in the C output
   nimble checkRouter        the router with no store in the C output
+  nimble checkForward       the forwarder with no store and no handshake
   nimble testCore           mapper + format
   nimble testCrypto         seal + keys + backup
   nimble testApi            session + masks + transport
@@ -2317,6 +2351,14 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   recovery-strength handshake fails at Frodo           use archive strength or below; the Frodo
                                                        path in the pinned stack is known bad and
                                                        is excluded here on purpose
+  forwarded link never opens (geist-forwardd)          check that the VPS can reach home: try
+                                                       `nc -u` to home from the VPS. A home behind
+                                                       a router that lets nothing in cannot be
+                                                       forwarded to; use way B (docs/forwarding.md)
+  forwarded link works, then fails after ~2 minutes    clientIdleSeconds is shorter than the quiet
+                                                       spell; the client gets a new place and the
+                                                       next call re-shakes hands. Raise it or ask
+                                                       more often
   handshake too big for one frame                      expected at archive/recovery; those levels
                                                        need package transfer
   lost .ledger, still have data + keys                 unrecoverable by design; always back up

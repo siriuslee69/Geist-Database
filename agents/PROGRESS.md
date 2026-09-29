@@ -1,8 +1,12 @@
 # Progress
 
-Commit Message: Session and serve split by job; two inert config fields gone; the CLI follows [storage] preset
+Commit Message: geist-forwardd: Client -> VPS -> Home with one handshake, made end to end; shared stop module
 
 Features (Planned):
+- A NixOS VM test for services.geist-forward (the module is only parsed).
+- Forwarding to a home that no one can reach INTO (strict NAT) is not
+  possible with a blind forwarder; the mailbox way (docs/forwarding.md,
+  way B) is the answer there.
 - Media streaming: one object tops out at ~78 MB over the wire (payload
   ceiling 4), and there is no streaming path for multi-gigabyte values.
   The media-stream server use case needs this first.
@@ -14,6 +18,13 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- `geist-forwardd` (src/geist/forward.nim): the VPS end of Client -> VPS ->
+  Home on Bifrost's `UdpForwarder`. Bytes untouched, so ONE handshake, made
+  client <-> home (0.22 s per call direct and forwarded). Answers must come
+  from home; ping/pong (ping.nim) tells it home is alive; `followHome` is
+  off by default. `[runtime.forward]`, `services.geist-forward`,
+  `nimble checkForward`, docs/forwarding.md, examples/geist_forward.nim.
+- One `stop.nim` for the four daemons (was three copies).
 - The six roles, one call each (docs/roles.md): writer, reader, network
   syncer (`SyncAgent`), background daemon as server AND client
   (`geistd --sync`), converter (`convertDoc`, `geist convert`), in-memory

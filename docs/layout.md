@@ -80,6 +80,8 @@ this -- they FAIL THE BUILD when it stops being true.
   |         the same transport with a pipe where the database is    |
   |         compiles NO database module at all                      |
   |         proved by: nimble checkRelay, nimble checkRouter        |
+  |         the forwarder is smaller still: no database AND no      |
+  |         handshake. proved by: nimble checkForward               |
   +----------------------------------------------------------------+
 ```
 
@@ -111,7 +113,9 @@ and below, never sideways within its own level, and never upward.
             collection.nim  seek.nim  backup.nim
             |  what a caller actually holds and asks
             v
-  level 4   masks.nim  bytecheck.nim  payload.nim -> transport.nim
+  level 4   ping.nim  stop.nim (tiny, no Bifrost)
+            forward.nim  forward_settings.nim (a VPS forwarder)
+            masks.nim  bytecheck.nim  payload.nim -> transport.nim
             -> peers.nim -> handshake.nim
             -> serve.nim -> network.nim
             |  the wire, which is the only part that knows Bifrost

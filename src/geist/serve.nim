@@ -29,6 +29,7 @@ import ./payload
 import ./transport
 import ./peers
 import ./handshake
+import ./ping
 
 export peers
 
@@ -145,6 +146,15 @@ proc serveOnce*(S: var GeistServer, handler: ServedHandler,
     return (false, false, exc.msg)
   if not got.ok:
     # Nothing arrived within the window. Ordinary.
+    return (true, false, "")
+  if isPing(got.payload):
+    # A forwarder asking "still there?". Answered before anything is
+    # decoded and without touching a session; see ./ping.
+    try:
+      bfx.sendDacFrameBytes(S.sock, got.remote, pongBytes())
+    except CatchableError as exc:
+      return (false, false, "pong to " & bfx.formatDacAddress(got.remote) &
+        " failed: " & exc.msg)
     return (true, false, "")
   key = bfx.formatDacAddress(got.remote)
   try:

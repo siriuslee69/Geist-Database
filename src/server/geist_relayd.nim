@@ -41,8 +41,11 @@
 import std/[json, os, strutils, times]
 
 import runePragmas
+import ../geist/stop
 import ../geist/args
 import ../geist/wire
+
+export stop
 
 type
   RelayConfig* {.
@@ -110,28 +113,6 @@ geist-relayd --identity <file> --trust <pin> [options]
 
 Every status line is written to stderr, so --to stdout stays a clean pipe.
 """
-
-var
-  shutdownRequested: bool = false
-
-proc requestShutdown*() {.role: actor,
-    tag: "entrypoint|lifecycle|server".} =
-  ## Ask the serve loop to stop after the request in flight.
-  shutdownRequested = true
-
-when defined(posix):
-  import std/posix
-
-  proc onSignal(sig: cint) {.role: actor, noconv.} =
-    ## sig: SIGTERM or SIGINT; only used to leave the loop cleanly.
-    requestShutdown()
-
-proc installSignalHandlers*() {.role: orchestrator,
-    tag: "entrypoint|lifecycle|server".} =
-  ## Make SIGTERM and SIGINT request a graceful stop.
-  when defined(posix):
-    signal(SIGTERM, onSignal)
-    signal(SIGINT, onSignal)
 
 proc note(c: RelayConfig, line: string) {.role: helper,
     tag: "server|status".} =
@@ -398,7 +379,7 @@ proc runRelayd*(argv: seq[string]): int {.role: metaOrchestrator,
     for t in trusted.peers:
       c.note("  trusts:  " & t.pin.subject &
         (if prWrite in t.rights: "  (may send)" else: "  (may collect)"))
-    while not shutdownRequested:
+    while not shutdownWanted():
       step = serveOnce(server.server,
         proc (q: Query, p: PeerContext): Reply {.gcsafe.} =
           {.cast(gcsafe).}:

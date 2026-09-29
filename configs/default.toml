@@ -158,3 +158,35 @@ requireCookie = true
 # keys run to ~1.3 MB, well past one frame.
 secretAtMiB = 64
 archiveAtMiB = 1024
+
+[runtime.forward]
+# Read by geist-forwardd only: the small program on a VPS that carries
+# datagrams from clients to a home server it cannot be dialled at directly.
+# The forwarder holds no key and opens nothing, so every number here bounds
+# what a stranger can make it spend, not what it may read.
+#
+#   Client ---> VPS (geist-forwardd) ---> home (geistd)
+#
+# Most clients the table holds. A newcomer is refused when it is full;
+# an existing client is never pushed out to make room.
+maxClients = 512
+
+# A client with no traffic for this long loses its place. Its next
+# datagram gets a fresh one, and home sees a new source port.
+clientIdleSeconds = 120
+
+# How often the VPS asks home "still there?", and how long silence lasts
+# before home counts as away (datagrams are then held, a few, not many).
+# silentSeconds must be longer than pingSeconds.
+pingSeconds = 20
+silentSeconds = 60
+
+# Held for a silent home: the newest N datagrams or bytes, oldest dropped.
+# Covers a reboot, not an outage -- the transport above asks again.
+bufferDatagrams = 64
+bufferBytes = 262144
+
+# Chase a home address that changed (a line that reconnects). Also lets
+# anyone who can reach the control socket move the forwarder, so leave it
+# false unless home's address really does change.
+followHome = false

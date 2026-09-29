@@ -1,6 +1,6 @@
 # What Geist Is For, and the Call for Each Job
 
-Six jobs another program can hand to Geist, one call or one command each,
+Six jobs (and one way to reach them through a VPS) another program can hand to Geist, one call or one command each,
 and where each stops. Every row names a runnable example.
 
 ╭⟢ 1. The six roles 🌊
@@ -30,6 +30,9 @@ and where each stops. Every row names a runnable example.
   encrypt in memory        geist           sealObject / openObject,    geist_seal
                                            sealWithKey / openWithKey,
                                            ...WithPassword
+  reach home via a VPS     geist-forwardd  one process on the VPS,   docs/forwarding.md;
+                                           no code in your app:        `geist-forwardd --help`
+                                           dial the VPS, pin home
 ```
 
 **Def. 1 (pull and push).** To PULL is to ask another store for what this

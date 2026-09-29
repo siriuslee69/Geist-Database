@@ -74,5 +74,7 @@
       # The relay is its own module: a machine that only moves messages
       # has no database options to answer for.
       nixosModules.geist-relay = import ./nix/relay-module.nix;
+      # The VPS end of Client -> VPS -> Home: no key, no store, no state.
+      nixosModules.geist-forward = import ./nix/forward-module.nix;
     };
 }

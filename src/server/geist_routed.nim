@@ -56,8 +56,11 @@
 import std/[os, strutils, times]
 
 import runePragmas
+import ../geist/stop
 import ../geist/wire
 import ./geist_routed_config
+
+export stop
 
 export geist_routed_config
 
@@ -72,28 +75,6 @@ type
     forwarded*: int
     refused*: int
     lastErr*: string
-
-var
-  shutdownRequested*: bool = false
-
-proc requestShutdown*() {.role: actor,
-    tag: "entrypoint|lifecycle|server".} =
-  ## Ask the serve loop to stop after the request in flight.
-  shutdownRequested = true
-
-when defined(posix):
-  import std/posix
-
-  proc onSignal(sig: cint) {.role: actor, noconv.} =
-    ## sig: SIGTERM or SIGINT; only used to leave the loop cleanly.
-    requestShutdown()
-
-proc installSignalHandlers*() {.role: orchestrator,
-    tag: "entrypoint|lifecycle|server".} =
-  ## Make SIGTERM and SIGINT request a graceful stop.
-  when defined(posix):
-    signal(SIGTERM, onSignal)
-    signal(SIGINT, onSignal)
 
 ## ---------------------------- routing -------------------------------
 
@@ -310,7 +291,7 @@ proc runRouted*(argv: seq[string]): int {.role: metaOrchestrator,
     served: int = 0
   # A fresh run: a stop asked of an earlier run in this process must not
   # end this one at once.
-  shutdownRequested = false
+  clearShutdown()
   try:
     a = parseArgs(argv)
     if a.help:
@@ -325,7 +306,7 @@ proc runRouted*(argv: seq[string]): int {.role: metaOrchestrator,
       writeRouterPin(a.pinOut, key)
       return 0
     server = startRouter(c, key, S)
-    while not shutdownRequested and not routeStep(S, c, a, server, served):
+    while not shutdownWanted() and not routeStep(S, c, a, server, served):
       discard
     S.client.closeClient()
     server.closeServer()
