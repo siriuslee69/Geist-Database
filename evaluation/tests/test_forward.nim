@@ -246,7 +246,12 @@ suite "the forwarder":
     check quick.ok
     bfx.sendDacFrameBytes(client, address(47964), hello)
     atHome = nextAtHome(home, quick.f)
-    check quick.f.forwardCounts().sockets == 1
+    # With an idle limit of 0 the client may already be released by the time
+    # the frame arrives, so the socket count is NOT checked here (a race the
+    # faster release build hit). What matters: the frame got through, and the
+    # place and socket are given back.
+    check atHome.payload == hello
+    check quick.f.forwardCounts().sockets <= 1
     while i < 40 and quick.f.forwardCounts().clients > 0:
       sleep(5)
       discard quick.f.forwardStep(5)

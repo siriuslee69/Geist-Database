@@ -229,10 +229,20 @@ This is the subtlety most likely to be "cleaned up" incorrectly later.
 
 | use | property needed | combiner | why |
 |---|---|---|---|
-| batch tag | unforgeability (PRF) | BLAKE3-HMAC **XOR** Gimli-HMAC | XOR is a sound PRF combiner: if either is a secure PRF, the XOR is |
+| key file and secrets tags | unforgeability (PRF) | BLAKE3-HMAC **XOR** Gimli-HMAC | XOR is a sound PRF combiner: if either is a secure PRF, the XOR is |
+| batch tag | unforgeability (PRF) | **keyed BLAKE3 alone**, own key derived from the batch key | one keyed hash per batch; the cascade already doubles the cipher |
+| batch digest | detects damage, NO key | **Gimli alone** (unkeyed XOF) | checkable by anyone; a second family beside the BLAKE3 tag |
 | Merkle tree | collision resistance | **BLAKE3 alone** | XOR is **not** a sound collision-resistance combiner — a collision in the XOR need not be a collision in either input |
 
 Do not XOR the tree hash to "make it consistent" with the tag.
+
+The batch digest and tag both cover the sealed bytes AND their binding:
+position, row lengths, and the cluster's schema and row count. The offsets
+and schema stay in clear (section 10), so without the binding the same
+sealed bytes could be re-cut at other row boundaries, read under other
+field types, or cut short through the index, and every check would pass.
+Old ledgers (before the digest and tag existed) are refused, not accepted
+without checks: accepting them would let anyone strip the checks off.
 
 ---
 

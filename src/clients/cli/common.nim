@@ -78,6 +78,10 @@ geist <command> [options]
 
 commands
   inspect                 header + cluster index; no password needed
+  verify                  check every sealed batch's integrity digest; no
+                          password needed. Proves the bytes are the ones
+                          written, not who wrote them (the password check
+                          on opening does that)
   schema                  show the stored field list
   info                    config, counts, ledger and backup state
   init                    create a database from --schema

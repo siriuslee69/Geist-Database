@@ -8,7 +8,7 @@
 ## The preset -> normalize -> validate shape is carried over deliberately:
 ## it was the best-designed part of the previous implementation. What is
 ## new are the knobs the rearchitecture introduced -- column policy, batch
-## geometry, cipher/mac selection, sidecar threshold, backup rotation.
+## geometry, cipher selection, sidecar threshold, backup rotation.
 ##
 ## Two independent questions, and a preset normally answers both:
 ##
@@ -124,8 +124,8 @@ type
     chainHash*: HashKind
     ## ---- encryption ----
     cipher*: CipherKind
-    mac*: MacKind
-    macBytes*: uint8
+    ## Every sealed batch carries a Gimli integrity digest and a keyed
+    ## BLAKE3 tag (crypto/batch.nim); neither is configurable.
     batchRows*: uint32
     columnGroups*: seq[seq[FieldName]]
     rekeyAtEpoch*: uint64
@@ -206,13 +206,6 @@ proc baseConfig(name: string, c: CipherKind): GeistConfig {.role: configurator,
   result.treeHashBytes = uint8(fullDigestBytes)
   result.chainHash = hkBlake3
   result.cipher = c
-  # Gimli is the default authenticator: measured 2147 ns/op against
-  # BLAKE3's 2410 and the XOR combiner's 4608 (docs/STORAGE_PLAN.md 7b).
-  # It is the fastest of the three on row-sized messages and the cheapest
-  # on a constrained part, which is where a MAC pass is felt. Presets that
-  # want two independent primitives opt into mkCombined explicitly.
-  result.mac = mkGimli
-  result.macBytes = uint8(fullDigestBytes)
   result.batchRows = defaultBatchRows
   result.rekeyAtEpoch = defaultRekeyAtEpoch
   result.sealMeta = c != ckNone
@@ -240,8 +233,6 @@ proc normalizeGeistConfig*(c: GeistConfig): GeistConfig {.role: configurator,
     result.contentHashBytes = uint8(shortDigestBytes)
   if result.treeHashBytes == 0'u8:
     result.treeHashBytes = uint8(fullDigestBytes)
-  if result.macBytes == 0'u8:
-    result.macBytes = uint8(fullDigestBytes)
 
 proc validateGeistConfig*(c: GeistConfig): tuple[ok: bool, err: string] {.
     role: sanitizer, tag: "appApi|config|db|read".} =
@@ -285,9 +276,6 @@ proc validateGeistConfig*(c: GeistConfig): tuple[ok: bool, err: string] {.
   if not validDigestBytes(int(n.treeHashBytes)):
     return (false, "treeHashBytes must be " & $shortDigestBytes & " or " &
       $fullDigestBytes & ", got " & $n.treeHashBytes)
-  if not validDigestBytes(int(n.macBytes)):
-    return (false, "macBytes must be " & $shortDigestBytes & " or " &
-      $fullDigestBytes & ", got " & $n.macBytes)
   # Merkle leaves and journal links must resist collisions, not merely
   # second preimages: a 16-byte tree digest puts a birthday attack at 2^64.
   if int(n.treeHashBytes) != fullDigestBytes:
@@ -322,7 +310,6 @@ proc secureCollapsedConfig*(): GeistConfig {.role: configurator,
   ## bitmaps as well as the values, so which columns were set does not
   ## leak.
   result = baseConfig("secure-collapsed", ckCascade)
-  result.mac = mkCombined
   result.autoCollapse = true
   result.batchRows = 32'u32
   result.contentHashBytes = uint8(fullDigestBytes)
@@ -332,10 +319,6 @@ proc secureAppConfig*(): GeistConfig {.role: configurator,
     tag: "appApi|config|cryptoBoundary|db".} =
   ## Local application records with the full cascade at rest.
   result = baseConfig("secure-app", ckCascade)
-  # Two structurally independent primitives, deliberately: this preset
-  # exists for maximum assurance, and the 2.15x cost of the combiner is
-  # the point rather than an oversight. The default is mkGimli.
-  result.mac = mkCombined
   result.batchRows = 32'u32
   result.contentHashBytes = uint8(fullDigestBytes)
   result = normalizeGeistConfig(result)
@@ -375,7 +358,6 @@ proc archiveConfig*(): GeistConfig {.role: configurator,
   ## Scan-heavy long-term storage. Large batches are cheap here because
   ## reads are sequential and the Merkle path keeps point checks logarithmic.
   result = baseConfig("archive", ckCascade)
-  result.mac = mkCombined
   result.batchRows = 1024'u32
   result.contentHashBytes = uint8(fullDigestBytes)
   result.sidecarThreshold = 512'u32
@@ -416,7 +398,6 @@ proc ledgerConfig*(): GeistConfig {.role: configurator,
   # that wrote it, so it should not depend on a single hash family. SHA3's
   # sponge is structurally independent of BLAKE3's tree, so a break in one
   # construction does not imply a break in the other.
-  result.mac = mkCombined
   result.contentHash = hkSha3
   result.contentHashBytes = uint8(fullDigestBytes)
   result.treeHash = hkSha3

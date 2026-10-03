@@ -269,7 +269,8 @@ knows the schema knows every offset.
   column group    a set of columns sealed together.
   batch           the unit that is sealed: one column group crossed with
                   one range of `batchRows` rows.
-  ledger          the PUBLIC table of which key and epoch each batch used.
+  ledger          the PUBLIC table of which key and epoch each batch used,
+                  and its two checks (Gimli digest, keyed BLAKE3 tag).
                   Lose it and the data cannot be opened, by design.
   key file        the sealed secret material, `.keys`.
 
@@ -1055,12 +1056,42 @@ column group.
         v
   sealed bytes
         |
-        |  tag       = keyed check (two checks XOR'd)
+        |  digest    = Gimli over the sealed bytes          (no key: "is this what was written?")
+        |  tag       = keyed BLAKE3 over the same           (key:    "did a key holder write it?")
         |  tree root = proof a single row still belongs
-        |  + public bytes binding WHERE this batch sits
+        |  both checks are bound to: WHERE the batch sits, its row lengths,
+        |  the cluster's schema and total row count
         v
   stored batch
 ```
+
+Opening a batch checks the digest, then the tag, and refuses before a single
+byte is decrypted:
+
+```text
+  digest wrong   -> "sealed data is damaged"            a broken disk, a cut file
+  tag wrong      -> "sealed data failed authentication" a deliberate change (even
+                                                        with a recomputed digest),
+                                                        or the wrong key
+```
+
+The digest needs no password, so anyone can check a sealed store (or a
+keyring folder) without opening it:
+
+```text
+$ geist verify --path data/notes
+intact: 5 sealed batch(es) checked
+```
+
+```nim
+let r = verifyStoreIntegrity("data/notes")   # r.ok, r.batches, r.problems
+```
+
+It also checks each cluster against the index hash and that no sealed
+cluster is missing. What it cannot tell is WHO changed a file: anyone can
+recompute a digest, which is why opening also checks the tag. Layout fields
+a reader never uses (header padding, `rowBytes`) are not covered; changing
+one never changes what is read.
 
 Rules that matter day to day:
 
@@ -1068,7 +1099,8 @@ Rules that matter day to day:
   - no stored random number for the stream start; it is derived from
     (key id, group, batch index, epoch)
   - every rewrite bumps the epoch, so a stream start never repeats
-  - a batch moved somewhere else fails its check
+  - a batch moved somewhere else, re-cut at other row boundaries, or cut
+    short through the index fails its check
   - one row can be opened without opening its whole batch
   - a fresh key id per batch avoids rewriting the file when a counter
     climbs
@@ -1080,7 +1112,7 @@ A sealed generation is **three files that travel together**:
   +-- generation N ------------------------+
   |  name.ge1st.gN     the data            |
   |  name.keys.gN      secret material     |
-  |  name.ledger.gN    public epochs/roots |
+  |  name.ledger.gN    public epochs/checks|
   +----------------------------------------+
         ^
         |  "current" points at the set, not at a file

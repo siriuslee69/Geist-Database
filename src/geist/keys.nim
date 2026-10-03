@@ -45,6 +45,10 @@ const
   argonMemoryKiB* = 65536
   argonLanes* = 4
   keyFileMagic* = "GEKEY\x02"
+  ledgerMagic* = "GELED\x02"
+    ## Ledger files start with this. Version 2 entries carry the per-batch
+    ## digest and tag; an older ledger has neither and is refused, because
+    ## accepting it would let anyone strip the checks off a store.
 
 type
   KeySealing* {.role: memory, tag: "cryptoBoundary|keyLifecycle|types".} = object
@@ -430,7 +434,7 @@ proc writeLedgerFile*(path: string, L: openArray[Ledger]): tuple[ok: bool,
   ## it needs integrity, NOT confidentiality. Only the key file is secret.
   ## Getting this backwards is a common error.
   var
-    buf: ByteSeq = @[]
+    buf: ByteSeq = @(cast[ByteSeq](ledgerMagic))
     i: int = 0
   buf.addU32(uint32(L.len))
   while i < L.len:
@@ -459,6 +463,10 @@ proc readLedgerFile*(path: string): tuple[ok: bool, ledgers: seq[Ledger],
     if check[i] != raw[raw.len - 32 + i]:
       return (false, @[], "ledger file failed integrity check")
     i = i + 1
+  if raw.len < ledgerMagic.len + 36 or cast[string](raw[0 ..< ledgerMagic.len]) != ledgerMagic:
+    return (false, @[], "ledger from an older Geist: its batches carry no integrity " &
+      "digest or authentication tag, so it is refused. Recreate the store.")
+  o = ledgerMagic.len
   n = int(raw.getU32(o)); o = o + 4
   i = 0
   while i < n:

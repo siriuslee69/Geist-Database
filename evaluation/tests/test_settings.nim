@@ -84,7 +84,6 @@ copies = 3
     check c.backup.copies == 4'u8
     # ...and everything the preset chose for itself did not.
     check c.cipher == secureAppConfig().cipher
-    check c.mac == secureAppConfig().mac
     check c.batchRows == secureAppConfig().batchRows
 
   # {.testKind: tkUnit.}

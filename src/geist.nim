@@ -85,6 +85,7 @@ import ./geist/seek
 import ./geist/crypto/hashing
 import ./geist/seal
 import ./geist/keyring
+import ./geist/verify
 
 export types, secret, config, backup, session
 export toml_read, settings
@@ -94,6 +95,8 @@ export doc, reconcile, address, route, keystore, layout
 export secrets, users, seal
 ## Several sealed stores opened one password at a time (staged vaults).
 export keyring
+## Keyless check of every sealed batch (Gimli digests in the ledger).
+export verify
 export mapper
 export rowid
 export durable

@@ -19,6 +19,7 @@ import std/os
 import runePragmas
 import ./types
 import ./crypto/hashing
+import ./format
 
 type
   SidecarStore* {.role: truthState, tag: "sidecar|storageIo|types".} = object
@@ -203,7 +204,7 @@ proc decodeRef*(A: openArray[uint8]): Ref {.role: parser,
     n: int = 0
   if A.len < refTagBytes + 1:
     return
-  result.target = RefTarget(A[0])
+  result.target = enumAt[RefTarget](A[0], "reference target")
   case result.target
   of rtSidecar, rtExternal:
     n = min(fullDigestBytes, A.len - refTagBytes)

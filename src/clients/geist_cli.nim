@@ -90,6 +90,7 @@ proc dispatchCli(argv: seq[string]): int {.role: metaOrchestrator,
     return 0
   case o.command
   of "inspect": cmdInspect(o)
+  of "verify": cmdVerify(o)
   of "schema": cmdSchema(o)
   of "info": cmdInfo(o)
   of "init": cmdInit(o)

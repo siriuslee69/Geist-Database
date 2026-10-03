@@ -112,11 +112,11 @@ proc slotOf(L: Ledger, g: int, b: uint32): int {.role: math, inline,
   result = int(b) * max(1, L.groups.len) + int(L.groups[g].groupId)
 
 proc entryFor(L: var Ledger, g: int, b: uint32, cipher: CipherKind,
-    mac: MacKind, treeHash: HashKind, keyRef: KeyId): LedgerEntry {.
+    treeHash: HashKind, keyRef: KeyId): LedgerEntry {.
     role: truthBuilder, tag: "batch|cryptoBoundary".} =
   ## L/g/b: the entry batch b of group g is sealed under -- the one on
   ## file, grown into when new, with its coordinates filled in.
-  ## cipher/mac/treeHash: what this seal uses.
+  ## cipher/treeHash: what this seal uses.
   ## keyRef: the key to use when the entry names none yet. An entry that
   ## already names one keeps it: re-sealing a batch must not move it to
   ## another key behind the ledger's back.
@@ -125,7 +125,6 @@ proc entryFor(L: var Ledger, g: int, b: uint32, cipher: CipherKind,
   result.groupId = L.groups[g].groupId
   result.batchIndex = b
   result.cipher = cipher
-  result.mac = mac
   result.treeHash = treeHash
   if result.keyRef == 0'u64:
     result.keyRef = keyRef
@@ -153,13 +152,13 @@ proc rowSlicesOf(plain: ByteSeq, lens: seq[int]): seq[ByteSeq] {.
 proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
     rows: var ByteSeq, rowCount: uint32,
     databaseId: string, schemaVersion: uint16,
-    cipher: CipherKind, mac: MacKind, keyRef: KeyId,
+    cipher: CipherKind, keyRef: KeyId,
     treeHash: HashKind = hkBlake3) {.role: encryptor,
     tag: "appApi|batch|cryptoBoundary|write".} =
   ## master/L: key material and the ledger receiving one entry per batch.
   ## s/rows/rowCount: the cluster being sealed in place.
   ## databaseId/schemaVersion: AAD components binding each batch's position.
-  ## cipher/mac/keyRef/treeHash: policy from the configuration. Each is
+  ## cipher/keyRef/treeHash: policy from the configuration. Each is
   ##   recorded in the ledger entry so the data stays readable if the
   ##   configuration later changes.
   var
@@ -178,12 +177,12 @@ proc sealCluster*(master: Secret, L: var Ledger, s: Schema,
   while g < L.groups.len:
     b = 0'u32
     while b * L.batchRows < rowCount:
-      e = L.entryFor(g, b, cipher, mac, treeHash, keyRef)
+      e = L.entryFor(g, b, cipher, treeHash, keyRef)
       built = batchPieces(s, rows, b * L.batchRows,
         L.lastRowOf(b, rowCount), L.groups[g].slots)
       plain = gather(rows, built.pieces)
       sealedBytes = sealBatch(master, e, databaseId, schemaVersion, plain,
-        rowSlicesOf(plain, built.rowLens))
+        rowSlicesOf(plain, built.rowLens), clusterBinding(s, rowCount))
       L.entries[L.slotOf(g, b)] = e
       scatter(rows, built.pieces, sealedBytes)
       b = b + 1'u32
@@ -211,10 +210,36 @@ proc openCluster*(master: Secret, L: Ledger, s: Schema,
         L.lastRowOf(b, rowCount), L.groups[g].slots)
       cipherBytes = gather(rows, built.pieces)
       plain = openBatch(master, L.storedEntry(g, b), databaseId,
-        schemaVersion, cipherBytes)
+        schemaVersion, cipherBytes, built.rowLens, clusterBinding(s, rowCount))
       scatter(rows, built.pieces, plain)
       b = b + 1'u32
     g = g + 1
+
+proc lensOf(offsets: seq[uint32], first, last: uint32): seq[int] {.role: parser,
+    tag: "batch|read".} =
+  ## offsets/first/last: each row's length in one packed batch (call after
+  ## `spanOf`, which has already checked the table covers these rows). A
+  ## stored table running backwards is damage: ValueError, not a crash.
+  var
+    r: uint32 = first
+  while r <= last:
+    result.add int(offsets[int(r) + 1]) - int(offsets[int(r)])
+    if result[^1] < 0:
+      raise newException(ValueError, "damaged data: row-offset table runs backwards at row " & $r)
+    r = r + 1'u32
+
+proc spanOf(offsets: seq[uint32], first, last: uint32, n: int): tuple[a, z: int] {.
+    role: sanitizer, tag: "batch|read".} =
+  ## offsets: a stored (so possibly damaged) row-offset table. first/last:
+  ## the batch's rows. n: bytes in the row region. Where the batch starts
+  ## and ends; ValueError ("damaged") instead of a crash when the table
+  ## points outside the rows or backwards.
+  if int(last) + 1 >= offsets.len:
+    raise newException(ValueError, "damaged data: row-offset table is too short")
+  result = (int(offsets[int(first)]), int(offsets[int(last) + 1]))
+  if result.a > result.z or result.z > n:
+    raise newException(ValueError, "damaged data: row offsets " & $result.a & ".." &
+      $result.z & " lie outside the " & $n & " stored bytes")
 
 ## ------------------------- packed (P1) -------------------------------
 ##
@@ -228,12 +253,13 @@ proc openCluster*(master: Secret, L: Ledger, s: Schema,
 ## and sealing whole rows means the null bitmap is covered too, which
 ## column sealing would have left in clear.
 
-proc sealPacked*(master: Secret, L: var Ledger, rows: var ByteSeq,
+proc sealPacked*(master: Secret, L: var Ledger, s: Schema, rows: var ByteSeq,
     offsets: seq[uint32], rowCount: uint32, databaseId: string,
-    schemaVersion: uint16, cipher: CipherKind, mac: MacKind, keyRef: KeyId,
+    schemaVersion: uint16, cipher: CipherKind, keyRef: KeyId,
     treeHash: HashKind = hkBlake3) {.role: encryptor,
     tag: "appApi|batch|cryptoBoundary|write".} =
   ## master/L: key material and the ledger receiving one entry per batch.
+  ## s: the cluster's schema, bound into each batch's checks.
   ## rows/offsets/rowCount: the varying cluster, sealed in place.
   ## The offset table stays in CLEAR: encrypting it would make the rows
   ## region un-navigable -- you could not find the row to decrypt without
@@ -269,14 +295,13 @@ proc sealPacked*(master: Secret, L: var Ledger, rows: var ByteSeq,
     slot = int(b) * max(1, L.groups.len)
     e = L.entries[slot]
     e.cipher = cipher
-    e.mac = mac
     e.treeHash = treeHash
     e.groupId = 0'u16
     e.batchIndex = b
     if e.keyRef == 0'u64:
       e.keyRef = keyRef
     sealedBytes = sealBatch(master, e, databaseId, schemaVersion, plain,
-      rowSlices)
+      rowSlices, clusterBinding(s, rowCount))
     L.entries[slot] = e
     i = 0
     while i < sealedBytes.len:
@@ -284,11 +309,11 @@ proc sealPacked*(master: Secret, L: var Ledger, rows: var ByteSeq,
       i = i + 1
     b = b + 1'u32
 
-proc openPacked*(master: Secret, L: Ledger, rows: var ByteSeq,
+proc openPacked*(master: Secret, L: Ledger, s: Schema, rows: var ByteSeq,
     offsets: seq[uint32], rowCount: uint32, databaseId: string,
     schemaVersion: uint16) {.role: decryptor,
     tag: "appApi|batch|cryptoBoundary|read".} =
-  ## master/L/rows/offsets/rowCount: the inverse of `sealPacked`.
+  ## master/L/s/rows/offsets/rowCount: the inverse of `sealPacked`.
   var
     b: uint32 = 0'u32
     first: uint32 = 0'u32
@@ -304,17 +329,64 @@ proc openPacked*(master: Secret, L: Ledger, rows: var ByteSeq,
   while b * L.batchRows < rowCount:
     first = b * L.batchRows
     last = min(first + L.batchRows - 1'u32, rowCount - 1'u32)
-    a = int(offsets[int(first)])
-    z = int(offsets[int(last) + 1])
+    (a, z) = spanOf(offsets, first, last, rows.len)
     slot = int(b) * max(1, L.groups.len)
     if slot >= L.entries.len:
       raise newException(ValueError,
         "ledger is missing batch " & $b & ": the database cannot be " &
         "decrypted without its ledger")
     e = L.entries[slot]
-    plain = openBatch(master, e, databaseId, schemaVersion, rows[a ..< z])
+    plain = openBatch(master, e, databaseId, schemaVersion, rows[a ..< z],
+      lensOf(offsets, first, last), clusterBinding(s, rowCount))
     i = 0
     while i < plain.len:
       rows[a + i] = plain[i]
       i = i + 1
+    b = b + 1'u32
+
+## ------------------------- sealed batches ----------------------------
+##
+## Where each batch's SEALED bytes sit, worked out from public data only:
+## the ledger, the clear offset table (packed rows) and the schema (dense
+## rows). This is what lets `checkBatch` run without a key.
+
+proc packedBatch(L: Ledger, rows: ByteSeq, offsets: seq[uint32], b, last: uint32):
+    tuple[e: LedgerEntry, sealed: ByteSeq, lens: seq[int]] {.role: parser, inline,
+    tag: "batch|cryptoBoundary|read".} =
+  ## L/rows/offsets: a packed cluster. b/last: the batch and its last row.
+  var
+    s: tuple[a, z: int] = spanOf(offsets, b * L.batchRows, last, rows.len)
+  if int(b) * max(1, L.groups.len) >= L.entries.len:
+    raise newException(ValueError, "ledger is missing batch " & $b)
+  result = (L.entries[int(b) * max(1, L.groups.len)], rows[s.a ..< s.z],
+    lensOf(offsets, b * L.batchRows, last))
+
+proc denseBatches(L: Ledger, s: Schema, rows: ByteSeq, b, last: uint32):
+    seq[tuple[e: LedgerEntry, sealed: ByteSeq, lens: seq[int]]] {.role: parser, inline,
+    tag: "batch|cryptoBoundary|read".} =
+  ## L/s/rows: a dense cluster. b/last: the batch and its last row; one
+  ## result per column group.
+  var
+    g: int = 0
+    built: tuple[pieces: seq[Piece], rowLens: seq[int]] = (@[], @[])
+  while g < L.groups.len:
+    built = batchPieces(s, rows, b * L.batchRows, last, L.groups[g].slots)
+    result.add (L.storedEntry(g, b), gather(rows, built.pieces), built.rowLens)
+    g = g + 1
+
+proc sealedBatches*(L: Ledger, s: Schema, rows: ByteSeq, offsets: seq[uint32],
+    rowCount: uint32, varying: bool): seq[tuple[e: LedgerEntry, sealed: ByteSeq, lens: seq[int]]] {.
+    role: parser, tag: "appApi|batch|cryptoBoundary|read".} =
+  ## L: the cluster's ledger. s/rows/offsets/rowCount: the cluster as stored.
+  ## varying: packed (whole rows per batch) or dense (column groups).
+  ## ValueError when the ledger lacks an entry the rows need.
+  var
+    b: uint32 = 0'u32
+  if L.batchRows == 0'u32 or rowCount == 0'u32 or L.entries.len == 0:
+    return
+  while b * L.batchRows < rowCount:
+    if varying:
+      result.add packedBatch(L, rows, offsets, b, L.lastRowOf(b, rowCount))
+    else:
+      result.add denseBatches(L, s, rows, b, L.lastRowOf(b, rowCount))
     b = b + 1'u32

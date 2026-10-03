@@ -60,6 +60,16 @@ proc putU16*(A: var ByteSeq, o: int, v: uint16) {.role: helper,
   A[o] = uint8(v and 0xFF)
   A[o + 1] = uint8((v shr 8) and 0xFF)
 
+proc enumAt*[T: enum](b: uint8, what: string): T {.role: parser,
+    tag: "codecBoundary|read".} =
+  ## b: a stored byte meant to be one of T's values; what: its name for the
+  ## message. A damaged file gives a byte past the last value: that is a
+  ## ValueError ("damaged"), never a crash.
+  if int(b) > ord(high(T)):
+    raise newException(ValueError, "damaged data: " & what & " byte " & $b &
+      " is not a known value")
+  result = T(b)
+
 proc getU16*(A: openArray[uint8], o: int): uint16 {.role: parser,
     tag: "codecBoundary|read".} =
   ## A/o: source buffer and byte offset.
@@ -218,8 +228,8 @@ proc decodeIndexEntry*(A: openArray[uint8], o: int): IndexEntry {.role: parser,
   ## A/o: buffer and offset of one encoded index row.
   var
     i: int = 0
-  result.role = ClusterRole(A[o])
-  result.mode = ClusterMode(A[o + 1])
+  result.role = enumAt[ClusterRole](A[o], "cluster role")
+  result.mode = enumAt[ClusterMode](A[o + 1], "cluster mode")
   result.schemaId = A.getU16(o + 2)
   result.rowCount = A.getU32(o + 4)
   result.rowBytes = A.getU32(o + 8)
@@ -283,9 +293,9 @@ proc decodeSchema*(A: openArray[uint8], o: var int): Schema {.role: parser,
   o = o + 4
   while i < n:
     sl.nameId = A.getU16(o)
-    sl.kind = SlotKind(A[o + 2])
-    sl.column = ColumnKind(A[o + 3])
-    sl.onOverflow = OverflowPolicy(A[o + 4])
+    sl.kind = enumAt[SlotKind](A[o + 2], "slot kind")
+    sl.column = enumAt[ColumnKind](A[o + 3], "column kind")
+    sl.onOverflow = enumAt[OverflowPolicy](A[o + 4], "overflow policy")
     sl.width = A.getU32(o + 5)
     result.slots.add sl
     o = o + 9

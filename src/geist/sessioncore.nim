@@ -581,27 +581,27 @@ proc save*(S: var Session): tuple[ok: bool, err: string] =
     if onDisk.varyingRows():
       # Variable rows have no column-range geometry, so the whole row is
       # the unit. See crypto/column.nim.
-      sealPacked(S.keySet.master, S.ledger, onDisk.rows, onDisk.rowOffsets,
+      sealPacked(S.keySet.master, S.ledger, onDisk.schema, onDisk.rows, onDisk.rowOffsets,
         onDisk.rowCount, S.baseName, geistFormatVersion, S.config.cipher,
-        S.config.mac, keyRef, S.config.treeHash)
+        keyRef, S.config.treeHash)
     elif S.ledger.groups.len > 0:
       sealCluster(S.keySet.master, S.ledger, onDisk.schema, onDisk.rows,
         onDisk.rowCount, S.baseName, geistFormatVersion,
-        S.config.cipher, S.config.mac, keyRef, S.config.treeHash)
+        S.config.cipher, keyRef, S.config.treeHash)
     # Meta and journal carry `Record`, whose text and payload columns make
     # its rows vary -- so they take the packed path, exactly like an entry
     # cluster with a text column. A column group is only a byte range when
     # every row has the same shape.
     if S.config.sealMeta and S.metaLedger.groups.len > 0:
-      sealPacked(S.keySet.master, S.metaLedger, metaDisk.rows,
+      sealPacked(S.keySet.master, S.metaLedger, metaDisk.schema, metaDisk.rows,
         metaDisk.rowOffsets, metaDisk.rowCount, S.metaLedger.databaseId,
-        geistFormatVersion, S.config.cipher, S.config.mac, keyRef,
+        geistFormatVersion, S.config.cipher, keyRef,
         S.config.treeHash)
     if S.config.sealJournal and S.journalLedger.groups.len > 0:
-      sealPacked(S.keySet.master, S.journalLedger, journalDisk.rows,
+      sealPacked(S.keySet.master, S.journalLedger, journalDisk.schema, journalDisk.rows,
         journalDisk.rowOffsets, journalDisk.rowCount,
         S.journalLedger.databaseId, geistFormatVersion, S.config.cipher,
-        S.config.mac, keyRef, S.config.treeHash)
+        keyRef, S.config.treeHash)
   written = writeGeistFile(staging.dataPath,
     @[metaDisk, journalDisk, onDisk], next)
   if written.ok and S.encrypted:

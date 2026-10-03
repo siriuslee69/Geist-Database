@@ -458,7 +458,7 @@ proc openRecords(S: Session, C: var ClusterBuild, L: Ledger) {.
     role: decryptor, tag: "cryptoBoundary|db|read".} =
   ## S/C/L: a meta or journal cluster opened in place, when it was sealed.
   if S.encrypted and L.groups.len > 0:
-    openPacked(S.keySet.master, L, C.rows, C.rowOffsets, C.rowCount,
+    openPacked(S.keySet.master, L, C.schema, C.rows, C.rowOffsets, C.rowCount,
       L.databaseId, geistFormatVersion)
 
 proc openEntries(S: var Session) {.role: decryptor,
@@ -466,12 +466,22 @@ proc openEntries(S: var Session) {.role: decryptor,
   ## S: the entry cluster opened in place. Varying rows are sealed row by
   ## row (packed); fixed rows are sealed by column group.
   if S.encrypted and S.entries.varyingRows():
-    openPacked(S.keySet.master, S.ledger, S.entries.rows,
+    openPacked(S.keySet.master, S.ledger, S.entries.schema, S.entries.rows,
       S.entries.rowOffsets, S.entries.rowCount, S.baseName,
       geistFormatVersion)
   elif S.encrypted and S.ledger.groups.len > 0:
     openCluster(S.keySet.master, S.ledger, S.entries.schema,
       S.entries.rows, S.entries.rowCount, S.baseName, geistFormatVersion)
+
+proc requirePresent(S: Session, found: bool, L: Ledger, name: string) {.
+    role: sanitizer, tag: "cryptoBoundary|db|read".} =
+  ## found: whether the data file has the cluster. L: its ledger. A sealed
+  ## cluster the ledger lists batches for but the file lacks was dropped
+  ## (a changed cluster count or role): refused, never read as empty.
+  if S.encrypted and not found and L.entries.len > 0:
+    raise newException(IOError, "the sealed " & name & " cluster is missing from " &
+      "the data file though the ledger lists " & $L.entries.len & " batch(es): " &
+      "the file was damaged or changed")
 
 proc loadClusters(S: var Session) {.role: orchestrator,
     tag: "db|read|storageIo".} =
@@ -487,14 +497,17 @@ proc loadClusters(S: var Session) {.role: orchestrator,
   if not index.ok:
     raise newException(IOError, index.err)
   got = S.readRole(index.f, crMeta)
+  S.requirePresent(got.found, S.metaLedger, "meta")
   if got.found:
     S.meta = got.c
     S.openRecords(S.meta, S.metaLedger)
   got = S.readRole(index.f, crJournal)
+  S.requirePresent(got.found, S.journalLedger, "journal")
   if got.found:
     S.journal = got.c
     S.openRecords(S.journal, S.journalLedger)
   got = S.readRole(index.f, crEntry)
+  S.requirePresent(got.found, S.ledger, "entries")
   if got.found:
     S.entries = got.c
     S.openEntries()

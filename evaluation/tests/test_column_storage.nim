@@ -298,12 +298,3 @@ suite "packed storage":
     check "collapsed" in names
     check "secure-collapsed" in names
 
-  # {.testKind: tkUnit.}
-  test "gimli is the default authenticator":
-    check appConfig().mac == mkGimli
-    check collapsedConfig().mac == mkGimli
-    check iotConfig().mac == mkGimli
-    check chatConfig().mac == mkGimli
-    # Presets wanting two independent primitives still opt in explicitly.
-    check secureAppConfig().mac == mkCombined
-    check ledgerConfig().mac == mkCombined

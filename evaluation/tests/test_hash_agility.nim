@@ -69,9 +69,9 @@ suite "hash agility":
   test "the tree hash travels with the data, not with the caller":
     # A ledger entry records its own tree hash so a database written under
     # one configuration stays verifiable after the configuration changes.
-    var e = LedgerEntry(cipher: ckChaCha20, mac: mkBlake3, treeHash: hkSha3,
+    var e = LedgerEntry(cipher: ckChaCha20, treeHash: hkSha3,
       keyRef: 5'u64, groupId: 1'u16, batchIndex: 2'u32, epoch: 9'u64,
-      root: newSeq[uint8](32))
+      root: newSeq[uint8](32), digest: newSeq[uint8](32), tag: @[7'u8, 7])
     var
       buf = encodeLedgerEntry(e)
       o = 0
@@ -80,6 +80,7 @@ suite "hash agility":
     check back.cipher == ckChaCha20
     check back.keyRef == 5'u64
     check back.epoch == 9'u64
+    check back.digest == newSeq[uint8](32) and back.tag == @[7'u8, 7]
 
   # {.testKind: tkEdgeCase.}
   test "config rejects a width that would weaken a guarantee":
@@ -100,14 +101,6 @@ suite "hash agility":
     check ledgerConfig().treeHash == hkSha3
     check ledgerConfig().chainHash == hkSha3
     check ledgerConfig().contentHash == hkSha3
-    # Gimli is the default: fastest of the three on row-sized messages,
-    # which is where a MAC pass is felt on a constrained part.
-    check iotConfig().mac == mkGimli
-    check appConfig().mac == mkGimli
-    # Assurance presets opt into two independent primitives explicitly,
-    # accepting the measured 2.15x.
-    check secureAppConfig().mac == mkCombined
-    check archiveConfig().mac == mkCombined
 
   # {.testKind: tkUnit.}
   test "a database written with SHA3 throughout reopens and reads":

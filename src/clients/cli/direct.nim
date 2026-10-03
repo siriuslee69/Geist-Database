@@ -47,6 +47,19 @@ proc cmdInspect*(o: Options) {.role: actor,
       alignLeft((if e.rowBytes == 0'u32: "offsets" else: "arithmetic"), 12),
       $e.auxLen, " B"
 
+proc cmdVerify*(o: Options) {.role: actor,
+    tag: "cli|cryptoBoundary|read|status".} =
+  ## o: options. Recomputes every sealed batch's Gimli digest -- no
+  ## password, no lease, nothing changed. Works on a keyring folder too.
+  ## Exit code 1 when any batch is damaged.
+  var
+    R: IntegrityReport = verifyStoreIntegrity(o.path)
+  for p in R.problems:
+    echo "  ", p
+  echo (if R.ok: "intact" else: "DAMAGED"), ": ", R.batches, " sealed batch(es) checked"
+  if not R.ok:
+    quit(1)
+
 proc cmdSchema*(o: Options) {.role: actor,
     tag: "cli|read|status".} =
   ## o: options. The schema block is stored in clear, so this needs no key.
@@ -407,7 +420,7 @@ proc cmdInfo*(o: Options) {.role: actor,
   echo "addressing:    ", (if db.entries.schema.isDense():
     "arithmetic (" & $db.entries.schema.rowBytes() & " B rows)"
     else: "row offset table")
-  echo "cipher:        ", db.config.cipher, "   mac: ", db.config.mac
+  echo "cipher:        ", db.config.cipher, "   batch checks: Gimli digest + BLAKE3 tag"
   echo "sealMeta:      ", db.config.sealMeta,
     "   sealJournal: ", db.config.sealJournal
   echo "batchRows:     ", db.config.batchRows
