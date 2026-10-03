@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Geist-Android"
 include(":geistkeystore")
+include(":geistvault")

@@ -18,6 +18,7 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- android/geistvault: keyrings on Android. The Nim bridge (src/main/nim) exports its two JNI functions itself (no C, no CMake); requests and answers are UTF-8 JSON bytes. Kotlin `GeistVault` (rings) and `GeistProfiles` (public profile list, sealed backup export/import refusing paths outside the vault). 3 instrumented tests pass on an Infinix X6871; test_vault_bridge covers the JSON layer on the desktop.
 - Keyrings (src/geist/keyring.nim): a folder of sealed stores, each with its own password; unlock one at a time; save rewrites only changed open rings (locked rings stay byte-identical, tested). Exported from `geist`; tests in test_keyrings (testCrypto).
 - `geist-forwardd` (src/geist/forward.nim): the VPS end of Client -> VPS ->
   Home on Bifrost's `UdpForwarder`. Bytes untouched, so ONE handshake, made
