@@ -28,6 +28,10 @@ suite "vault bridge":
     (code, a) = ask(%*{"op": "rows", "handle": h, "ring": "s1"})
     check a["rows"][0]["body"].getStr() == "ᚠ ✓ 🗝"
     check ask(%*{"op": "rows", "handle": h, "ring": "s2"})[0] == -1
+    (code, a) = ask(%*{"op": "sealed", "handle": h, "ring": "s1", "rowKey": "c1"})
+    check code == 0 and a["hex"].getStr().len > 40
+    (code, a) = ask(%*{"op": "sealed", "handle": h, "ring": "s2", "rowKey": "c1"})
+    check code == 0 and a["hex"].getStr().len == 0
     check ask(%*{"op": "close", "handle": h})[0] == 0
 
   # {.testKind: tkEdgeCase, covers: "vaultCall".}

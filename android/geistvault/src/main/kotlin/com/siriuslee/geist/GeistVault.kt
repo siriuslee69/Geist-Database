@@ -76,6 +76,11 @@ class GeistVault private constructor(private val handle: Int, val rings: List<St
     // {.role: actor.}
     // Forgets one ring's rows and key; unsaved changes to it are discarded.
     fun lock(ring: String) { call("lock", ring) }
+    // {.role: dataFetcher.}
+    // One row's stored bytes as hex, STILL SEALED - works on a locked ring.
+    // Empty when the ring holds no row with that key.
+    fun sealedHex(ring: String, rowKey: String): String =
+        call("sealed", ring) { put("rowKey", rowKey) }.getString("hex")
     // {.role: actor.}
     override fun close() {
         if (closed) return

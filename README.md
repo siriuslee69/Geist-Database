@@ -1161,6 +1161,31 @@ file on the next save; its rows and master secret stay as they are.
 Android reaches the same rings through `android/geistvault` (`GeistVault`,
 `GeistProfiles`).
 
+**Seeing a locked row without opening it.** Every save also writes a small
+public **row map** beside the ring: which row key sits at which row
+position in the file. With it, a locked ring can hand out one row's stored
+bytes exactly as they are on disk -- still sealed, so they show THAT
+something is stored, never what.
+
+```text
+  vault/stage4/rowmap        (plain text, no secrets but the row keys)
+    7                        <- generation the map belongs to
+    card-9<TAB>0             <- row key, row position
+    card-3<TAB>1
+
+  sealedRow(K, "stage4", "card-9")
+    rowmap generation == live generation?   no  -> empty (map is stale)
+    find card-9 -> position 0
+    read the entry cluster, cut out row 0   -> its sealed bytes
+```
+
+```nim
+echo K.sealedRow("stage4", "card-9").len   # works while stage4 is locked
+```
+
+The map reveals the row keys and how many rows a ring has. Both were
+already guessable from the file sizes; the row contents stay sealed.
+
 ## 1.10 Watching a store you do not own
 
 No password, no lease, no row bodies — only "which blocks moved":

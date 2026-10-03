@@ -55,10 +55,16 @@ import ./config
 import ./keys
 import ./sessionopen
 import ./sessioncore
+import ./store
 
 const
   ringListName* = "rings"
     ## The public list of ring names. It names rings; it holds no secret.
+  rowMapName* = "rowmap"
+    ## Per ring, written on each save: which visible row (by rowKey) sits at
+    ## which position of the sealed file. Public, like the ledger: it reveals
+    ## the rowKeys and row count, never content. It is what lets `sealedRow`
+    ## hand out a LOCKED ring's sealed bytes without any key.
 
 type
   RingRow* {.role: preparedData, expectedCount: [0, 100000],
@@ -250,6 +256,53 @@ proc changePassword*(K: var Keyrings, name, password: string) {.role: actor,
   K.rings[i].session.password = password
   K.rings[i].dirty = true
 
+proc writeRowMap(K: Keyrings, i: int) {.role: dataWriter,
+    tag: "keyring|storageIo|write".} =
+  ## K/i: an open ring just saved. Its row map: the generation on the first
+  ## line, then one "rowKey<TAB>position" line per visible row.
+  template S: untyped = K.rings[i].session
+  var
+    t: string = $S.generation & "\n"
+    j: uint32 = 0'u32
+  while j < S.entryCount():
+    t.add get[RingRow](S, j).rowKey & "\t" & $S.livePosition(j) & "\n"
+    j = j + 1'u32
+  writeFile(K.root / K.rings[i].name / rowMapName, t)
+
+proc sealedRow*(K: Keyrings, name, rowKey: string): seq[uint8] {.role: dataFetcher,
+    tag: "appApi|keyring|read|storageIo".} =
+  ## K/name/rowKey: the SEALED bytes of one row, read without any key, so a
+  ## locked ring can show what is stored for a row without opening it.
+  ## Empty when the ring has no such row, or its map is from another
+  ## generation than the live file.
+  var
+    dir: string = K.root / name
+    lines: seq[string] = @[]
+    parts: seq[string] = @[]
+    pos: int = -1
+    idx: tuple[ok: bool, f: GeistFile, err: string] = (false, default(GeistFile), "")
+    at: int = -1
+    C: ClusterBuild = default(ClusterBuild)
+  if not fileExists(dir / rowMapName):
+    return @[]
+  lines = readFile(dir / rowMapName).splitLines()
+  if lines.len == 0 or lines[0] != $liveGeneration(dir):
+    return @[]
+  for line in lines[1 .. ^1]:
+    parts = line.split('\t')
+    if parts.len == 2 and parts[0] == rowKey:
+      pos = parseInt(parts[1])
+  idx = readIndex(generationPaths(dir, "main", liveGeneration(dir)).dataPath)
+  if pos < 0 or not idx.ok:
+    return @[]
+  at = idx.f.findIndex(crEntry)
+  if at < 0:
+    return @[]
+  C = readCluster(generationPaths(dir, "main", liveGeneration(dir)).dataPath, idx.f.index[at])
+  if pos + 1 >= C.rowOffsets.len or int(C.rowOffsets[pos + 1]) > C.rows.len:
+    return @[]
+  result = C.rows[int(C.rowOffsets[pos]) ..< int(C.rowOffsets[pos + 1])]
+
 proc save*(K: var Keyrings): tuple[ok: bool, err: string] {.role: orchestrator,
     tag: "appApi|keyring|storageIo|write".} =
   ## K: writes every unlocked ring that changed, and only those. A ring
@@ -266,6 +319,7 @@ proc save*(K: var Keyrings): tuple[ok: bool, err: string] {.role: orchestrator,
       r = K.rings[i].session.save()
       if not r.ok:
         return (false, "ring " & K.rings[i].name & ": " & r.err)
+      K.writeRowMap(i)
       K.rings[i].dirty = false
     i = i + 1
 

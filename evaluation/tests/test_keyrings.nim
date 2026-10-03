@@ -105,3 +105,23 @@ suite "keyrings":
     K.close()
     expect IOError:
       discard createKeyrings(root, ["a"], ["pw"])
+
+  # {.testKind: tkIntegration, covers: "sealedRow|writeRowMap".}
+  test "a locked ring hands out a row's sealed bytes, never its content":
+    var
+      root = getTempDir() / "geist_t_rings_sealed"
+      K = default(Keyrings)
+      sealed: seq[uint8] = @[]
+    removeDir(root)
+    K = createKeyrings(root, ["s1", "s4"], ["a", "b"])
+    K.upsert("s4", RingRow(rowKey: "card-9", kind: "accounts", body: "{\"pw\":\"hunter2-sentinel\"}"))
+    K.upsert("s4", RingRow(rowKey: "card-3", kind: "accounts", body: "{\"pw\":\"other\"}"))
+    check K.save().ok
+    K.close()
+    K = openKeyrings(root)                      # every ring locked
+    sealed = K.sealedRow("s4", "card-9")
+    check sealed.len > 20
+    check "hunter2-sentinel" notin cast[string](sealed)
+    check K.sealedRow("s4", "card-3") != sealed
+    check K.sealedRow("s4", "no-such-card").len == 0
+    check K.sealedRow("s1", "card-9").len == 0

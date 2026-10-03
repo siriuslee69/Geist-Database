@@ -38,7 +38,7 @@
 ## that to matter. Build with -d:useMalloc: Nim's own allocator is per
 ## thread and a JVM thread never set one up (see the build script).
 
-import std/[json, locks]
+import std/[json, locks, strutils]
 
 import runePragmas
 import geist
@@ -120,6 +120,9 @@ proc onRing(q: JsonNode, o: Opened): int32 {.role: orchestrator.} =
   of "lock":
     o.rings.lock(ring)
     result = reply(0, newJObject())
+  of "sealed":
+    # Works on a locked ring: the row's stored bytes, still sealed.
+    result = reply(0, %*{"hex": toHex(cast[string](o.rings.sealedRow(ring, q{"rowKey"}.getStr())))})
   else:
     result = failure(-1, "unknown op " & q{"op"}.getStr())
 
