@@ -103,9 +103,11 @@ proc buildProgram(entry, name: string) =
 
 proc runTestFiles(A: openArray[string]) =
   ## A: test file names below evaluation/tests, run in order.
+  ## -d:release as in Nimble-Tasks' `test`: checks and asserts stay on, and
+  ## Argon2id runs ~19x faster than in a debug build.
   mkDir("build/evaluation")
   for f in A:
-    exec "nim c -r --hints:off -o:build/evaluation/" & f & " evaluation/tests/" &
+    exec "nim c -r -d:release --hints:off -o:build/evaluation/" & f & " evaluation/tests/" &
       f & ".nim"
 
 proc leakedStorage(cacheDir: string, extra: openArray[string] = []):
