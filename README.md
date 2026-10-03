@@ -1092,6 +1092,43 @@ Meta and journal clusters are sealed too, under the same rules and with
 their own ledger rows. Turn that off only when a tool must read those
 clusters without the password.
 
+### Keyrings: parts that open with different passwords
+
+A store has ONE password. A **keyring set** is several sealed stores in one
+folder, each with its own password, opened one at a time. A ring that was
+never unlocked is never read and never written.
+
+```text
+  vault/
+    rings          public list of ring names, one per line
+    stage1/        a sealed store   (password A)
+    stage2/        a sealed store   (password B)
+
+  unlocked   stage1             locked   stage2
+  changed    yes                         --
+  on save    written                     untouched, byte for byte
+```
+
+```nim
+var K = createKeyrings("vault", ["stage1", "stage2"], ["A", "B"])
+K.upsert("stage1", RingRow(rowKey: "card-7", kind: "accounts", body: "..."))
+discard K.save()                # writes only rings that changed
+K.close()
+
+K = openKeyrings("vault")       # every ring locked
+discard K.unlock("stage1", "A") # stage2 stays closed
+echo K.rows("stage1").len
+```
+
+Rows are `(rowKey, kind, body)`; the body is the caller's and Geist never
+reads it. Why separate stores rather than one key per column group: a
+store with text columns seals whole rows (section 1.9), so a column group
+cannot split a row between two passwords. Separate stores can, and need
+nothing new in the sealing code. `changePassword` re-seals one ring's key
+file on the next save; its rows and master secret stay as they are.
+Android reaches the same rings through `android/geistvault` (`GeistVault`,
+`GeistProfiles`).
+
 ## 1.10 Watching a store you do not own
 
 No password, no lease, no row bodies — only "which blocks moved":

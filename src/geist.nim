@@ -84,6 +84,7 @@ import ./geist/collection
 import ./geist/seek
 import ./geist/crypto/hashing
 import ./geist/seal
+import ./geist/keyring
 
 export types, secret, config, backup, session
 export toml_read, settings
@@ -91,6 +92,8 @@ export doc, reconcile, address, route, keystore, layout
 ## The one crypto surface an application needs, so nothing outside Geist
 ## has to import Tyr to hash a password or unlock a store.
 export secrets, users, seal
+## Several sealed stores opened one password at a time (staged vaults).
+export keyring
 export mapper
 export rowid
 export durable

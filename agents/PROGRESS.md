@@ -18,6 +18,7 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- Keyrings (src/geist/keyring.nim): a folder of sealed stores, each with its own password; unlock one at a time; save rewrites only changed open rings (locked rings stay byte-identical, tested). Exported from `geist`; tests in test_keyrings (testCrypto).
 - `geist-forwardd` (src/geist/forward.nim): the VPS end of Client -> VPS ->
   Home on Bifrost's `UdpForwarder`. Bytes untouched, so ONE handshake, made
   client <-> home (0.22 s per call direct and forwarded). Answers must come

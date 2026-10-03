@@ -251,8 +251,8 @@ task checkForward, "Prove the forwarder moves bytes without a store or a handsha
 task testCore, "Run the mapper and format tests only":
   runTestFiles(["test_mapper_roundtrip", "test_format_partial"])
 
-task testCrypto, "Run the crypto, key lifecycle and backup tests":
-  runTestFiles(["test_crypto_batch", "test_keys_backup"])
+task testCrypto, "Run the crypto, key lifecycle, keyring and backup tests":
+  runTestFiles(["test_crypto_batch", "test_keys_backup", "test_keyrings"])
 
 task testApi, "Run the session, transport and settings tests":
   runTestFiles(["test_session_api", "test_masks_transport", "test_settings"])
