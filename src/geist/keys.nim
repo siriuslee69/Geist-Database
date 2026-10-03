@@ -47,13 +47,27 @@ const
   keyFileMagic* = "GEKEY\x02"
 
 type
+  KeySealing* {.role: memory, tag: "cryptoBoundary|keyLifecycle|types".} = object
+    ## The Argon2id result for one password, kept from the last read or
+    ## write of the key file so a save does not pay for it again.
+    ##   password      what it was derived from
+    ##   salt/fileKey  the salt in the file and the key Argon2id made of it
+    ##   sealedMaster  the master as sealed with that key: a save reuses the
+    ##                 key ONLY while the master still seals to these bytes
+    password: string
+    salt: ByteSeq
+    fileKey: Secret
+    sealedMaster: ByteSeq
+
   KeySet* {.role: truthState, tag: "cryptoBoundary|keyLifecycle|types".} = object
     ## master: the root secret every batch key derives from.
     ## records: the public key ledger rows.
     ## nextKeyRef: monotonic allocator for per-batch key references.
+    ## sealing: see KeySealing; empty until the key file is read or sealed.
     master*: Secret
     records*: seq[KeyRecord]
     nextKeyRef*: KeyId
+    sealing*: KeySealing
 
   Generation* {.role: truthState, tag: "keyLifecycle|storageIo|types".} = object
     ## The manifest contents: which generation is live, and since when.
@@ -228,24 +242,21 @@ proc allocKeyRef*(K: var KeySet, label: string): KeyId {.role: actor,
   r.createdAt = 0'u64
   K.records.add r
 
-proc writeKeyFile*(path, password: string, K: KeySet): tuple[ok: bool,
-    err: string] {.role: dataWriter, tag: "cryptoBoundary|keyLifecycle|storageIo|write".} =
-  ## path: `<name>.keys` destination.
-  ## password: credential whose Argon2id output seals the master secret.
-  ## K: key set being persisted.
+proc sealedMasterWith(fileKey: Secret, salt: ByteSeq, K: KeySet): ByteSeq {.
+    role: encryptor, tag: "cryptoBoundary|keyLifecycle".} =
+  ## fileKey/salt: an Argon2id result and its salt. K: whose master is sealed.
+  result = applyKeystream(ckCascade, deriveStreamKeys(fileKey, salt), 0'u64,
+    K.master.use())
+
+proc encodeKeyFile(salt: ByteSeq, fileKey: Secret, K: KeySet): ByteSeq {.
+    role: encryptor, tag: "cryptoBoundary|keyLifecycle|write".} =
+  ## salt/fileKey: the Argon2id result sealing this file. K: what it holds.
   var
-    salt: ByteSeq = @[]
-    fileKey: Secret = default(Secret)
-    keys: StreamKeys = default(StreamKeys)
     body: ByteSeq = @[]
-    sealedMaster: ByteSeq = @[]
+    sealedMaster: ByteSeq = sealedMasterWith(fileKey, salt, K)
     tag: ByteSeq = @[]
     buf: ByteSeq = @[]
     i: int = 0
-  salt = @(cryptoRandomBytes(16))
-  fileKey = deriveFileKey(password, salt)
-  keys = deriveStreamKeys(fileKey, salt)
-  sealedMaster = applyKeystream(ckCascade, keys, 0'u64, K.master.use())
   body.addU64(K.nextKeyRef)
   body.addU32(uint32(K.records.len))
   while i < K.records.len:
@@ -261,7 +272,42 @@ proc writeKeyFile*(path, password: string, K: KeySet): tuple[ok: bool,
   buf.addU32(uint32(sealedMaster.len));buf.addBytes(sealedMaster)
   buf.addU32(uint32(tag.len));         buf.addBytes(tag)
   buf.addU32(uint32(body.len));        buf.addBytes(body)
-  result = writeDurable(path, buf)
+  result = buf
+
+proc writeKeyFile*(path, password: string, K: KeySet): tuple[ok: bool,
+    err: string] {.role: dataWriter, tag: "cryptoBoundary|keyLifecycle|storageIo|write".} =
+  ## path: `<name>.keys` destination.
+  ## password: credential whose Argon2id output seals the master secret.
+  ## K: key set being persisted. Always a fresh salt and a fresh Argon2id
+  ## run; `sealKeyFile` is the variant that may reuse the last one.
+  var
+    salt: ByteSeq = @(cryptoRandomBytes(16))
+    fileKey: Secret = deriveFileKey(password, salt)
+  result = writeDurable(path, encodeKeyFile(salt, fileKey, K))
+
+proc sealKeyFile*(path, password: string, K: var KeySet): tuple[ok: bool,
+    err: string] {.role: dataWriter, tag: "cryptoBoundary|keyLifecycle|storageIo|write".} =
+  ## path/password: as for `writeKeyFile`.
+  ## K: key set being persisted; its `sealing` is reused or refreshed.
+  ##
+  ##   same password, master still seals to the remembered bytes
+  ##     -> same salt, same key: no Argon2id run (~1 s on a phone)
+  ##   anything else
+  ##     -> fresh salt, fresh Argon2id, remembered for next time
+  ##
+  ## Reusing a key while the master CHANGED would seal two different
+  ## masters with the same keystream; the sealed-bytes comparison is what
+  ## rules that out.
+  var
+    reuse: bool = K.sealing.salt.len > 0 and K.sealing.password == password
+  if reuse:
+    reuse = sealedMasterWith(K.sealing.fileKey, K.sealing.salt, K) == K.sealing.sealedMaster
+  if not reuse:
+    K.sealing.password = password
+    K.sealing.salt = @(cryptoRandomBytes(16))
+    K.sealing.fileKey = deriveFileKey(password, K.sealing.salt)
+    K.sealing.sealedMaster = sealedMasterWith(K.sealing.fileKey, K.sealing.salt, K)
+  result = writeDurable(path, encodeKeyFile(K.sealing.salt, K.sealing.fileKey, K))
 
 proc readKeyFile*(path, password: string): tuple[ok: bool, keys: KeySet,
     err: string] {.role: dataFetcher, tag: "cryptoBoundary|keyLifecycle|read|storageIo".} =
@@ -317,6 +363,11 @@ proc readKeyFile*(path, password: string): tuple[ok: bool, keys: KeySet,
     r.retiredAt = body.getU64(bo); bo = bo + 8
     result.keys.records.add r
     i = i + 1
+  # Remember the Argon2id result: the next save of this key set reuses it.
+  result.keys.sealing.password = password
+  result.keys.sealing.salt = salt
+  result.keys.sealing.sealedMaster = sealedMaster
+  result.keys.sealing.fileKey = move(fileKey)
   result.ok = true
 
 ## ----------------------------- ledger -------------------------------

@@ -605,7 +605,7 @@ proc save*(S: var Session): tuple[ok: bool, err: string] =
   written = writeGeistFile(staging.dataPath,
     @[metaDisk, journalDisk, onDisk], next)
   if written.ok and S.encrypted:
-    written = writeKeyFile(staging.keyPath, S.password, S.keySet)
+    written = sealKeyFile(staging.keyPath, S.password, S.keySet)
     if written.ok:
       written = writeLedgerFile(staging.ledgerPath,
         @[S.ledger, S.metaLedger, S.journalLedger])

@@ -17,6 +17,27 @@ suite "keys":
     check r.keys.master.use() == K.master.use()
     check not readKeyFile(g.keyPath, "nope").ok
 
+  # {.testKind: tkRegression, covers: "sealKeyFile|readKeyFile", pins: "a save must not re-run Argon2id, and must never reuse a key for a different master".}
+  test "sealKeyFile reuses the derived key only for the same password and master":
+    var
+      root = getTempDir() / "geist_t_seal_reuse"
+      K = newKeySet()
+    removeDir(root); createDir(root)
+    proc saltOf(p: string): string = readFile(p)[10 ..< 26]   # magic(6) + len(4) + salt(16)
+    check sealKeyFile(root / "a.keys", "pw", K).ok
+    check sealKeyFile(root / "b.keys", "pw", K).ok
+    check saltOf(root / "a.keys") == saltOf(root / "b.keys")
+    K.master = initSecret(newSeq[uint8](32))   # a different master: all zero bytes
+    check sealKeyFile(root / "c.keys", "pw", K).ok
+    check saltOf(root / "c.keys") != saltOf(root / "b.keys")
+    check sealKeyFile(root / "d.keys", "other", K).ok
+    check saltOf(root / "d.keys") != saltOf(root / "c.keys")
+    var r = readKeyFile(root / "c.keys", "pw")
+    check r.ok and r.keys.master.use() == K.master.use()
+    check not readKeyFile(root / "d.keys", "pw").ok
+    check sealKeyFile(root / "e.keys", "pw", r.keys).ok
+    check saltOf(root / "e.keys") == saltOf(root / "c.keys")
+
   # {.testKind: tkEdgeCase.}
   test "the ledger is integrity-checked, not encrypted":
     var
