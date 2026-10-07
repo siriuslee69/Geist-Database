@@ -1631,6 +1631,54 @@ decision, and Geist does not make it for you.
 A daemon with no pin refuses to start: with nobody to trust, every
 handshake would be rejected anyway.
 
+### The key folder: `geist keys`
+
+Instead of naming files by hand, keys can live in one folder
+(`--keys <dir>`, default `~/.config/geist/keys`):
+
+```text
+  geist keys new-pair server     # signing pair: Bifrost hello + server identity
+  geist keys new-sym backup      # 32 random bytes, sealed with the password
+  geist keys list                #  1 pair server / 2 symmetric backup / 3 peer ...
+  geist keys show                # prints the list, asks for a number
+  geist keys show server         # 12 fingerprint words (public)
+  geist keys show 2 --secret     # 24 secret words (whoever has them owns the key)
+  geist keys drop 2
+```
+
+Def. 1: **words** -- 32 key bytes written as 24 English words (BIP-39
+list and checksum). A typo is refused, never turned into another key.
+
+Def. 2: **fingerprint** -- 12 words from a hash of a pin. A pin is ~5 KB
+of public keys, too long for words, so the pin travels as a file and the
+fingerprint travels by a channel you trust (read aloud, on paper):
+
+```text
+  server                                  client
+  ------                                  ------
+  geist keys new-pair server
+  geist keys show server  -> 12 words ~~~> (read aloud)
+  pairs/server.pin  ----- any channel ---> geist keys trust server \
+                                             --pin server.pin --words "..."
+                                           (wrong words -> NOT trusted)
+```
+
+Moving a key to another Geist (same machine identity on a second box, or
+one shared symmetric key):
+
+```text
+  here:   geist keys show backup --secret
+  there:  geist keys import backup --kind sym  --words "<24 words>"
+          geist keys import server --kind pair --words "<24 words>"
+```
+
+A pair rebuilt from its words is byte-for-byte the same pair (every slot
+key grows from the one seed), so peers that trust its pin keep trusting
+it. Leave `--words` out and the words are asked for, which keeps them out
+of the shell history. The files plug into the options above:
+`<keys>/pairs/<name>.id` is an `--identity`, `<keys>/peers/<name>.pin`
+is a `--peer-pin` / `--trust`.
+
 In Nim the same conversation is four calls (identities and cursors come
 from the steps above):
 

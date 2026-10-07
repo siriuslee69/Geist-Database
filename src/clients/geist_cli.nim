@@ -37,6 +37,7 @@ import ../geist/network
 import ./cli/common
 import ./cli/direct
 import ./cli/remote
+import ./cli/keys
 
 export common
 
@@ -78,6 +79,9 @@ proc dispatchCli(argv: seq[string]): int {.role: metaOrchestrator,
     return 0
   if o.command == "keygen":
     cmdKeygen(o)
+    return 0
+  if o.command == "keys":
+    cmdKeys(o)
     return 0
   # `sync` is the one command that is BOTH: it reads a peer and writes this
   # database, so it belongs to neither dispatch and is answered before the

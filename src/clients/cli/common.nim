@@ -43,6 +43,11 @@ type
     peerPin*: string
     pinOut*: string
     subject*: string
+    keysDir*: string
+    words*: string
+    pinFile*: string
+    kind*: string
+    showSecret*: bool
     json*: bool
     ## transposed: show the answer with the axes swapped -- one line per
     ##   field. What the column copy looks like, and the shape that fits a
@@ -70,6 +75,11 @@ geist <command> [options]
   --peer-pin <file>       the daemon's public pin (required for --remote)
   --pin-out <file>        where `keygen` writes the shareable pin
   --subject <name>        identity subject for `keygen`, default geist-cli
+  --keys <dir>            key folder for `keys`
+  --words "w1 w2 ..."     words for `keys import` and `keys trust`
+  --pin <file>            pin file for `keys trust`
+  --kind pair|sym         what `keys import` rebuilds
+  --secret                `keys show` also prints the secret words
   --json                  machine-readable output
   --transposed            show the answer with the axes swapped: one line
                           per field instead of one line per row
@@ -111,6 +121,17 @@ commands
   restore                 restore from --slot
   rekey                   re-key every batch at its epoch high-water mark
   keygen                  create --identity and --pin-out, then exit
+  keys <what> [name]      the key folder (--keys, default ~/.config/geist/keys):
+                            list                 every pair, symmetric key, peer
+                            new-pair <name>      signing pair (Bifrost hello,
+                                                 server identity)
+                            new-sym <name>       32-byte symmetric key
+                            show [name|number]   fingerprint words; with
+                                                 --secret the 24 secret words.
+                                                 No name: pick from the list
+                            import <name> --kind pair|sym [--words "..."]
+                            trust <name> --pin <file> [--words "<12 words>"]
+                            drop <name|number>
   convert <in> <out>      JSON <-> TOML by file extension; refuses what
                           the target format cannot hold, naming where
   presets                 list configuration presets
@@ -145,7 +166,8 @@ proc resolvePassword*(o: Options): string {.role: sanitizer,
   result = o.password
 
 const
-  cliFlags*: array[5, string] = ["json", "transposed", "t", "help", "h"]
+  cliFlags*: array[6, string] = ["json", "transposed", "t", "help", "h",
+    "secret"]
     ## The options that take NO value; every other option takes one.
 
 proc addWord*(o: var Options, word: string) {.role: truthBuilder, inline,
@@ -194,6 +216,11 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     of "peer-pin": result.peerPin = value
     of "pin-out": result.pinOut = value
     of "subject": result.subject = value
+    of "keys": result.keysDir = value
+    of "words": result.words = value
+    of "pin": result.pinFile = value
+    of "kind": result.kind = value
+    of "secret": result.showSecret = true
     of "json": result.json = true
     of "transposed", "t": result.transposed = true
     of "config": result.config = value

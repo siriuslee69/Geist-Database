@@ -1,8 +1,9 @@
 # Progress
 
-Commit Message: Keyrings: public row map so a locked ring can hand out one row's sealed bytes
+Commit Message: geist keys: key folder with signing pairs, symmetric keys, peers, and BIP-39 words
 
 Features (Planned):
+- Wire symmetric keys into the handshake: Bifrost has AM1P (PSK) and AM1P+S (PSK + pin); Geist hard-codes pin-only in transport.nim / serve.nim.
 - A NixOS VM test for services.geist-forward (the module is only parsed).
 - Forwarding to a home that no one can reach INTO (strict NAT) is not
   possible with a blind forwarder; the mailbox way (docs/forwarding.md,
@@ -18,6 +19,7 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- `geist keys` (src/geist/keyfolder.nim, words.nim, src/clients/cli/keys.nim): one folder for signing pairs (seeded: 24 words rebuild the identical pair), 32-byte symmetric keys and trusted peer pins. list, show (pick by number), --secret words, import --kind pair|sym, trust --pin with 12-word fingerprint check, drop. BIP-39 English list + checksum (vectors tested). Tests in test_keyfolder (testCrypto).
 - Row map (keyring.nim): each ring save writes `rowmap` (generation, then rowKey<TAB>position). `sealedRow(K, ring, rowKey)` returns one row's sealed bytes without any key; empty when the map is stale or the row is missing. Bridge op `sealed` / Kotlin `GeistVault.sealedHex`. Avalon Cards shows locked fields as their real ciphertext with it.
 - Per-batch checks (crypto/batch.nim): unkeyed Gimli digest (no key needed: damage) and keyed BLAKE3 tag (own MAC key: tampering), both over the sealed bytes plus position, row lengths and a cluster binding (schema + total row count). openBatch refuses before decrypting. Keyless `verifyStoreIntegrity` / `geist verify` checks every batch, cluster index hashes and missing clusters, for a store or a keyring folder. Sealed clusters the ledger lists cannot be dropped through the index. Ledger files carry a version marker; older, untagged ledgers are refused. config.mac/macBytes removed. Damaged files no longer crash parsers (checked enum bytes, offset spans). Byte-flip fuzz test: with the key no flip ever yields altered rows.
 - sealKeyFile (keys.nim): Session.save reuses the derived key-file key (KeySet.sealing, filled by readKeyFile) while the password is the same and the master still seals to the same bytes; otherwise a fresh salt. Saves no longer cost an Argon2id run (~1.15 s on a phone). Pinned by a test in test_keys_backup.

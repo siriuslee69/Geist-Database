@@ -254,7 +254,8 @@ task testCore, "Run the mapper and format tests only":
   runTestFiles(["test_mapper_roundtrip", "test_format_partial"])
 
 task testCrypto, "Run the crypto, key lifecycle, keyring and backup tests":
-  runTestFiles(["test_crypto_batch", "test_keys_backup", "test_keyrings", "test_vault_bridge"])
+  runTestFiles(["test_crypto_batch", "test_keys_backup", "test_keyrings",
+    "test_vault_bridge", "test_keyfolder"])
 
 task testApi, "Run the session, transport and settings tests":
   runTestFiles(["test_session_api", "test_masks_transport", "test_settings"])

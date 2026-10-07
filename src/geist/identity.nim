@@ -274,3 +274,17 @@ proc describePin*(p: bfx.AmePinnedPeerIdentity): string {.role: helper,
       j = j + 1
     result.add "  " & alignLeft($p.signingKeys[i].algorithm, 26) & line & "\n"
     i = i + 1
+
+proc pinFingerprint*(p: bfx.AmePinnedPeerIdentity): seq[uint8] {.
+    role: helper, tag: "cryptoBoundary|networkSurface".} =
+  ## p: pin -> 16 bytes that change when anything in the pin changes.
+  ##
+  ## A pin is several kilobytes of public keys; nobody can type that. Its
+  ## fingerprint, shown as 12 words, is short enough to read over the
+  ## phone, so the side receiving the .pin file can check it is the one
+  ## that was sent.
+  var
+    buf: ByteSeq = @[]
+  buf.addText(p.subject)
+  buf.addBytes(encodeSigningKeys(p.signingKeys))
+  result = blake3TyrHash(buf, 16)
