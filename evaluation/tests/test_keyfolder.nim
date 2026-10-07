@@ -51,7 +51,7 @@ suite "key folder":
     e = a.findKey("1").entry
     check e.kind == kkPair
     check b.importWords("server", kkPair, a.secretWords(e).words).ok
-    check readFile(a.pairPinPath("server")) == readFile(b.pairPinPath("server"))
+    check readFile(a.keyFile("server", kfPairPin)) == readFile(b.keyFile("server", kfPairPin))
     e = a.findKey("backup").entry
     check b.importWords("backup", kkSymmetric, a.secretWords(e).words).ok
     check b.secretWords(e).words == a.secretWords(e).words
@@ -64,9 +64,9 @@ suite "key folder":
       fp: string = ""
     check a.newPair("server").ok
     fp = a.publicWords(a.findKey("server").entry).words
-    check not b.trustPin("bad", a.pairPinPath("server"),
+    check not b.trustPin("bad", a.keyFile("server", kfPairPin),
       toWords(newSeq[uint8](16))).ok
-    check b.trustPin("server", a.pairPinPath("server"), fp).ok
+    check b.trustPin("server", a.keyFile("server", kfPairPin), fp).ok
     check b.findKey("server").entry.kind == kkPeer
 
   # {.testKind: tkEdgeCase.}

@@ -70,6 +70,11 @@ type
   KeyKind* {.role: configurator, tag: "cryptoBoundary|types".} = enum
     kkPair, kkSymmetric, kkPeer
 
+  KeyFile* {.role: configurator, tag: "storageIo|types".} = enum
+    ## Which file of a key: a pair's sealed secret half, a pair's pin,
+    ## or a trusted peer's pin.
+    kfPairSecret, kfPairPin, kfPeerPin
+
   KeyEntry* {.role: truthState, tag: "cryptoBoundary|types".} = object
     ## One line of `listKeys`.
     name*: string
@@ -97,20 +102,13 @@ proc openKeyFolder*(dir, password: string): KeyFolder {.role: configurator,
   result.password = password
   result.store = openKeystore(dir / secretDir, password)
 
-proc pairIdPath*(f: KeyFolder, name: string): string {.role: helper,
+proc keyFile*(f: KeyFolder, name: string, w: KeyFile): string {.role: helper,
     tag: "storageIo".} =
-  ## f/name: where a pair's sealed secret half lives.
-  result = f.dir / pairDir / name & ".id"
-
-proc pairPinPath*(f: KeyFolder, name: string): string {.role: helper,
-    tag: "storageIo".} =
-  ## f/name: where a pair's public pin lives.
-  result = f.dir / pairDir / name & ".pin"
-
-proc peerPinPath*(f: KeyFolder, name: string): string {.role: helper,
-    tag: "storageIo".} =
-  ## f/name: where a trusted peer's pin lives.
-  result = f.dir / peerDir / name & ".pin"
+  ## f/name: one key. w: which of its files -> where that file lives.
+  case w
+  of kfPairSecret: result = f.dir / pairDir / name & ".id"
+  of kfPairPin: result = f.dir / pairDir / name & ".pin"
+  of kfPeerPin: result = f.dir / peerDir / name & ".pin"
 
 proc slotSeedBytes(a: bfx.AmeSignatureAlgorithm): int {.role: helper,
     tag: "cryptoBoundary".} =
@@ -206,10 +204,10 @@ proc savePair(S: var KeyFolder, name: string,
   result = S.store.put(pairPrefix & name, seed)
   if not result.ok:
     return
-  result = saveIdentity(S.pairIdPath(name), S.password, k)
+  result = saveIdentity(S.keyFile(name, kfPairSecret), S.password, k)
   if not result.ok:
     return
-  result = savePin(S.pairPinPath(name), pinOf(k))
+  result = savePin(S.keyFile(name, kfPairPin), pinOf(k))
 
 proc newPair*(S: var KeyFolder, name: string): tuple[ok: bool,
     err: string] {.role: orchestrator, tag: "appApi|cryptoBoundary|write".} =
@@ -272,7 +270,7 @@ proc trustPin*(S: var KeyFolder, name, pinPath, fingerprint: string): tuple[
       toWords(pinFingerprint(pin.pin)):
     return (false, "the pin's fingerprint does not match the words: " &
       "this is not the pin that was read out. NOT trusted")
-  result = savePin(S.peerPinPath(name), pin.pin)
+  result = savePin(S.keyFile(name, kfPeerPin), pin.pin)
 
 proc dropKey*(S: var KeyFolder, e: KeyEntry): tuple[ok: bool, err: string] {.
     role: actor, tag: "appApi|cryptoBoundary|delete".} =
@@ -280,13 +278,13 @@ proc dropKey*(S: var KeyFolder, e: KeyEntry): tuple[ok: bool, err: string] {.
   try:
     case e.kind
     of kkPair:
-      removeFile(S.pairIdPath(e.name))
-      removeFile(S.pairPinPath(e.name))
+      removeFile(S.keyFile(e.name, kfPairSecret))
+      removeFile(S.keyFile(e.name, kfPairPin))
       result = S.store.drop(pairPrefix & e.name)
     of kkSymmetric:
       result = S.store.drop(symPrefix & e.name)
     of kkPeer:
-      removeFile(S.peerPinPath(e.name))
+      removeFile(S.keyFile(e.name, kfPeerPin))
       result = (true, "")
   except CatchableError as exc:
     result = (false, exc.msg)
@@ -299,8 +297,8 @@ proc publicWords*(f: KeyFolder, e: KeyEntry): tuple[ok: bool, words: string,
     pin: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string] =
       (false, bfx.AmePinnedPeerIdentity(), "")
   case e.kind
-  of kkPair: pin = loadPin(f.pairPinPath(e.name))
-  of kkPeer: pin = loadPin(f.peerPinPath(e.name))
+  of kkPair: pin = loadPin(f.keyFile(e.name, kfPairPin))
+  of kkPeer: pin = loadPin(f.keyFile(e.name, kfPeerPin))
   of kkSymmetric:
     return (false, "", "a symmetric key has no public side")
   if not pin.ok:

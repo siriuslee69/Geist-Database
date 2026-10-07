@@ -570,3 +570,16 @@ proc cmdPresets*() {.role: actor, tag: "cli|config|read".} =
     ## no gap at all before its purpose.
     echo alignLeft(p.name, 18), p.purpose
 
+
+proc cmdConvert*(o: Options) {.role: orchestrator,
+    tag: "cli|config|storageIo".} =
+  ## o: two file arguments; the format of each comes from its extension.
+  ## Needs no database, no password and no peer.
+  var
+    done: tuple[ok: bool, err: string] = (false, "")
+  if o.args.len != 2:
+    fail("convert needs two files: geist convert in.json out.toml")
+  done = convertFile(o.args[0], o.args[1])
+  if not done.ok:
+    fail(done.err)
+  echo "wrote ", o.args[1]

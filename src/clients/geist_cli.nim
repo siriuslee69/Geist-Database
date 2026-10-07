@@ -43,19 +43,6 @@ export common
 
 ## ------------------------------ entry -------------------------------
 
-proc cmdConvert(o: Options) {.role: orchestrator,
-    tag: "cli|config|storageIo".} =
-  ## o: two file arguments; the format of each comes from its extension.
-  ## Needs no database, no password and no peer.
-  var
-    done: tuple[ok: bool, err: string] = (false, "")
-  if o.args.len != 2:
-    fail("convert needs two files: geist convert in.json out.toml")
-  done = convertFile(o.args[0], o.args[1])
-  if not done.ok:
-    fail(done.err)
-  echo "wrote ", o.args[1]
-
 proc dispatchCli(argv: seq[string]): int {.role: metaOrchestrator,
     tag: "cli|entrypoint|orchestrator".} =
   ## argv: command line without the executable name.

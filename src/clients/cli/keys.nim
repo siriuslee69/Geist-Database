@@ -108,10 +108,10 @@ proc showKey(f: KeyFolder, o: Options) {.role: actor,
   echo "kind:   ", kindName(e.kind)
   case e.kind
   of kkPair:
-    echo "secret: ", f.pairIdPath(e.name), "   (--identity)"
-    echo "pin:    ", f.pairPinPath(e.name), "  <- hand this to peers"
+    echo "secret: ", f.keyFile(e.name, kfPairSecret), "   (--identity)"
+    echo "pin:    ", f.keyFile(e.name, kfPairPin), "  <- hand this to peers"
   of kkPeer:
-    echo "pin:    ", f.peerPinPath(e.name), "  (--peer-pin, --trust)"
+    echo "pin:    ", f.keyFile(e.name, kfPeerPin), "  (--peer-pin, --trust)"
   of kkSymmetric:
     discard
   pub = f.publicWords(e)
@@ -165,7 +165,7 @@ proc cmdKeys*(o: Options) {.role: orchestrator,
       fail("keys trust needs --pin <file>")
     mustDo(f.trustPin(nameArg(o), o.pinFile,
       wordsArg(o, "12 fingerprint words (empty = skip the check)")))
-    echo "trusting '", nameArg(o), "': ", f.peerPinPath(nameArg(o))
+    echo "trusting '", nameArg(o), "': ", f.keyFile(nameArg(o), kfPeerPin)
   of "drop":
     mustDo(f.dropKey(f.pickKey(o)))
     echo "dropped"

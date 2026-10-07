@@ -60,6 +60,25 @@ proc bitAt(A: openArray[uint8], i: int): int {.role: helper, inline,
   ## A/i: bit i of A, counting from the top bit of the first byte.
   result = int((A[i shr 3] shr (7 - (i and 7))) and 1'u8)
 
+proc addWord(s: var string, w: string) {.role: helper, inline,
+    tag: "formatting|words".} =
+  ## s/w: w appended, one space before it unless s is empty.
+  if s.len > 0:
+    s.add ' '
+  s.add w
+
+proc setBits(A: var seq[uint8], at, v: int) {.role: helper, inline,
+    tag: "words".} =
+  ## A: bit buffer. at: first bit position. v: 11-bit value written there.
+  var
+    j: int = 0
+    n: int = 0
+  while j < wordBits:
+    n = at + j
+    if ((v shr (wordBits - 1 - j)) and 1) == 1:
+      A[n shr 3] = A[n shr 3] or (1'u8 shl (7 - (n and 7)))
+    j = j + 1
+
 proc toWords*(A: openArray[uint8]): string {.role: helper,
     tag: "formatting|words".} =
   ## A: 16, 20, 24, 28 or 32 key bytes -> words separated by one space.
@@ -77,9 +96,7 @@ proc toWords*(A: openArray[uint8]): string {.role: helper,
     v = (v shl 1) or bitAt(bits, i)
     i = i + 1
     if i mod wordBits == 0:
-      if result.len > 0:
-        result.add ' '
-      result.add wordList[v]
+      result.addWord(wordList[v])
       v = 0
 
 proc fromWords*(text: string): tuple[ok: bool, bytes: seq[uint8],
@@ -90,7 +107,6 @@ proc fromWords*(text: string): tuple[ok: bool, bytes: seq[uint8],
     bits: seq[uint8] = @[]
     n: int = 0
     i: int = 0
-    j: int = 0
     v: int = 0
     digest: Sha256Digest = default(Sha256Digest)
   if W.len notin [12, 15, 18, 21, 24]:
@@ -101,12 +117,7 @@ proc fromWords*(text: string): tuple[ok: bool, bytes: seq[uint8],
     if v < 0:
       return (false, @[], "word " & $(i + 1) & " ('" & W[i] &
         "') is not in the list")
-    j = 0
-    while j < wordBits:
-      if ((v shr (wordBits - 1 - j)) and 1) == 1:
-        n = i * wordBits + j
-        bits[n shr 3] = bits[n shr 3] or (1'u8 shl (7 - (n and 7)))
-      j = j + 1
+    bits.setBits(i * wordBits, v)
     i = i + 1
   n = W.len * wordBits * 32 div 33 div 8
   result.bytes = bits[0 ..< n]
