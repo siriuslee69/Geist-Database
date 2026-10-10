@@ -10,7 +10,7 @@
 ## reachable from here, which is what makes the generation manifest the
 ## single atomic commit point.
 ##
-## The Session is one type in five modules, gathered here so a caller
+## The Session is one type in six modules, gathered here so a caller
 ## imports one name:
 ##
 ##   sessioncore   open, put / set / delete, read, save, close, restore
@@ -18,13 +18,16 @@
 ##   observe       observe, observeStore, followStore
 ##   sessionsweep  sweepSidecar, sidecarRefs
 ##   sessionview   show, visibleRow, the transposed search copy
+##   sessiontable  exportTable, importTable: the rows as a JSON or TOML file
 ##
-## The core never calls the other four; they build on it.
+## The core never calls the other five; they build on it.
 
 import ./sessioncore
 import ./replicate
 import ./observe
 import ./sessionsweep
 import ./sessionview
+import ./sessiontable
 
-export sessioncore, replicate, observe, sessionsweep, sessionview
+export sessioncore, replicate, observe, sessionsweep, sessionview,
+  sessiontable

@@ -472,3 +472,23 @@ proc keepFirst*(err: var string, msg: string) {.role: helper, inline,
   ## usually its consequences.
   if err.len == 0:
     err = msg
+
+proc textBytes*(s: string): ByteSeq {.role: parser, inline,
+    tag: "codecBoundary".} =
+  ## s: text -> the same bytes, unchanged. "hé" -> 68 C3 A9.
+  var
+    i: int = 0
+  result = newSeq[uint8](s.len)
+  while i < s.len:
+    result[i] = uint8(s[i])
+    i = i + 1
+
+proc bytesText*(A: openArray[uint8]): string {.role: parser, inline,
+    tag: "codecBoundary".} =
+  ## A: bytes -> the same bytes as text. The reverse of `textBytes`.
+  var
+    i: int = 0
+  result = newString(A.len)
+  while i < A.len:
+    result[i] = char(A[i])
+    i = i + 1

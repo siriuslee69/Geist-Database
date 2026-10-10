@@ -109,7 +109,9 @@ and below, never sideways within its own level, and never upward.
             |  the store itself and what protects it
             v
   level 3   sessionopen -> sessioncore -> replicate / observe /
-            sessionsweep / sessionview  (session.nim gathers them)
+            sessionsweep / sessionview / sessiontable
+            (session.nim gathers them)
+            tabletext.nim -> tableread.nim  (a table as JSON or TOML)
             collection.nim  seek.nim  backup.nim
             |  what a caller actually holds and asks
             v

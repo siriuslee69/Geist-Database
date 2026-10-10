@@ -35,7 +35,7 @@ import runePragmas
 import ../../geist/keyfolder
 import ./common
 
-proc keysDirOf(o: Options): string {.role: parser, tag: "cli|config".} =
+proc keysDirOf*(o: Options): string {.role: parser, tag: "cli|config".} =
   ## o: --keys, or ~/.config/geist/keys when it was not given.
   result = if o.keysDir.len > 0: o.keysDir
            else: getConfigDir() / "geist" / "keys"

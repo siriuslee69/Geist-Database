@@ -64,13 +64,14 @@ const
     ## whatever its master branch holds today.
   cliEntry: string = "src/clients/geist_cli.nim"
   serverEntry: string = "src/server/geistd.nim"
-  storageModules: array[22, string] = ["geist", "geist@ssession",
+  storageModules: array[25, string] = ["geist", "geist@ssession",
     "geist@ssessionopen", "geist@ssessioncore", "geist@sreplicate",
     "geist@sobserve", "geist@ssessionsweep", "geist@ssessionview",
     "geist@sstore", "geist@srow", "geist@srowid", "geist@skeys",
     "geist@sconfig", "geist@sbackup", "geist@slease", "geist@ssidecar",
     "geist@scollection", "geist@sseek", "geist@sdurable", "geist@smapper",
-    "geist@sdynamic", "geist@ssettings"]
+    "geist@sdynamic", "geist@ssettings", "geist@ssessiontable",
+    "geist@stabletext", "geist@stableread"]
     ## The C files a program has compiled the DATABASE half into. The relay
     ## and the router must produce none of them.
   forwardForbidden: array[6, string] = ["geist@stransport", "geist@sserve",
@@ -266,9 +267,9 @@ task testDurability, "Run the generation-swap, lease and restore tests":
 task testExchange, "Run the live-socket daemon and identity tests":
   runTestFiles(["test_daemon_live", "test_row_identity", "test_forward"])
 
-task testApiSurface, "Run the collection, seek and column storage tests":
+task testApiSurface, "Run the collection, seek, column storage and table file tests":
   runTestFiles(["test_collection_seek", "test_hash_agility",
-    "test_column_storage"])
+    "test_column_storage", "test_tabletext"])
 
 # ---------------------------------------------------------------------
 # One benchmark group (`nimble runBenchmarks` runs all of them)

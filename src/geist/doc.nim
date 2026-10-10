@@ -85,9 +85,16 @@ proc noteFor(style: DocStyle, path: string): string {.role: parser,
     i = i + 1
   result = ""
 
-proc quoteToml(s: string): string {.role: helper,
+proc quoteToml*(s: string): string {.role: helper,
     tag: "config|formatting".} =
-  ## s: a string as a TOML basic string.
+  ## s: a string as a TOML basic string -- which is also a valid JSON
+  ## string, so the table writer (./tabletext) uses it for both.
+  ##
+  ##   say "hi"<TAB><0x01>   ->   "say \"hi\"\t\u0001"
+  ##
+  ## Every other control character becomes `\u00HH`. Written raw, one of
+  ## them made a file no TOML or JSON reader would accept. Bytes from 0x80
+  ## up are UTF-8 and stay as they are.
   var
     i: int = 0
     t: string = "\""
@@ -98,6 +105,8 @@ proc quoteToml(s: string): string {.role: helper,
     of '\n': t = t & "\\n"
     of '\t': t = t & "\\t"
     of '\r': t = t & "\\r"
+    of '\x00' .. '\x08', '\x0B', '\x0C', '\x0E' .. '\x1F', '\x7F':
+      t = t & "\\u00" & toHex(ord(s[i]), 2).toLowerAscii()
     else: t = t & s[i]
     i = i + 1
   result = t & "\""
@@ -115,7 +124,7 @@ proc bareKey(s: string): bool {.role: parser,
     i = i + 1
   result = true
 
-proc tomlKey(s: string): string {.role: helper, inline,
+proc tomlKey*(s: string): string {.role: helper, inline,
     tag: "config|formatting".} =
   ## s: one key, quoted only when it has to be.
   result = if bareKey(s): s else: quoteToml(s)

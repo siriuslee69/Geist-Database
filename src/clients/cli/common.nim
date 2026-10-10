@@ -53,6 +53,15 @@ type
     ##   field. What the column copy looks like, and the shape that fits a
     ##   terminal when the schema is wide and the answer is short.
     transposed*: bool
+    ## seal/sealKey/sealPasswordFile/binary/freshIds: `export` and
+    ##   `import` only. Which columns are sealed, by a symmetric key from
+    ##   the key folder or by a password; how bytes are written; whether
+    ##   imported rows get new ids.
+    seal*: string
+    sealKey*: string
+    sealPasswordFile*: string
+    binary*: string
+    freshIds*: bool
     config*: string
     args*: seq[string]
     command*: string
@@ -83,6 +92,14 @@ geist <command> [options]
   --json                  machine-readable output
   --transposed            show the answer with the axes swapped: one line
                           per field instead of one line per row
+  --seal "a,b"            `export`: encrypt these columns, value by value
+  --seal-key <name>       `export`/`import`: the symmetric key that seals
+                          and opens them, from the key folder (--keys;
+                          opened with --password, like `keys`)
+  --seal-password-file <file>  ... or a password instead of a key
+  --binary hex|escaped    `export`: how bytes and sealed values are written,
+                          "486900ff" or "Hi\u0000ÿ"; default hex
+  --fresh-ids             `import`: new ids instead of the file's
   --config <file>         userconfig.toml to read; defaults to the one in
                           the working directory, then ~/.config/geist
 
@@ -134,6 +151,13 @@ commands
                             drop <name|number>
   convert <in> <out>      JSON <-> TOML by file extension; refuses what
                           the target format cannot hold, naming where
+  export <file>           every visible row to a .json or .toml file;
+                          --transposed writes one list per column instead
+                          of one block per row
+  import <file>           the rows of such a file back in; creates the
+                          database from the file's schema when there is
+                          none. A row keeps the file's id, so importing
+                          twice replaces rather than doubles
   presets                 list configuration presets
   help                    this text
 
@@ -166,8 +190,8 @@ proc resolvePassword*(o: Options): string {.role: sanitizer,
   result = o.password
 
 const
-  cliFlags*: array[6, string] = ["json", "transposed", "t", "help", "h",
-    "secret"]
+  cliFlags*: array[7, string] = ["json", "transposed", "t", "help", "h",
+    "secret", "fresh-ids"]
     ## The options that take NO value; every other option takes one.
 
 proc addWord*(o: var Options, word: string) {.role: truthBuilder, inline,
@@ -223,6 +247,11 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     of "secret": result.showSecret = true
     of "json": result.json = true
     of "transposed", "t": result.transposed = true
+    of "seal": result.seal = value
+    of "seal-key": result.sealKey = value
+    of "seal-password-file": result.sealPasswordFile = value
+    of "binary": result.binary = value
+    of "fresh-ids": result.freshIds = true
     of "config": result.config = value
     of "help", "h": result.command = "help"
     else: fail("unknown option --" & key)

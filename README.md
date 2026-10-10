@@ -78,6 +78,7 @@ Start the daemon on one machine and read it from another:
   sync with another store    needLocal/offerLocal, needRemote/...    geist_sync
   a background sync node     serveStore + tick, or geistd            geist_sync
   convert JSON <-> TOML      convertDoc, convertFile, toDocText      geist_convert
+  a store as JSON or TOML    exportTable, importTable, tableText     geist_tables
   encrypt one object         sealObject / openObject                 geist_seal
 ```
 
@@ -1534,6 +1535,135 @@ opened. `aad` is context the blob is bound to: sealed for `vault/alice`,
 it will not open as `vault/bob`. A wrong key, a changed byte and a wrong
 context are one answer, never garbage. `sealObjectWithPassword` does the
 key step per call (Argon2) -- right for one object, wrong for thousands.
+
+## 1.14 A whole table as JSON or TOML
+
+To hand the rows to another program, keep a copy in git, or fix one
+value in an editor, a store is written out as an ordinary file and read
+back in:
+
+```nim
+discard db.exportTable("notes.toml")                  # one block per row
+var style = defaultTableTextStyle()
+style.shape = shColumns                               # turned on its side
+style.binary = bfEscaped                              # bytes as \u00HH
+style.sealed = @["body"]                              # body encrypted
+discard db.exportTable("notes.json", style, key)      # key: newSealKey()
+discard db.exportTable("notes.json", style, "pw")     # ... or a password
+var done = copy.importTable("notes.json", key)        # (ok, added, err)
+```
+
+```text
+geist --path data/notes export notes.toml
+geist --path data/notes export notes.json --transposed
+geist --path data/notes export notes.toml --seal body --seal-key notes --binary escaped
+geist --path data/copy  import notes.toml --seal-key notes
+```
+
+**Def. 14.1 — shape.** Which way round the table is written. `shRows`
+is one block per row, the way `geist list` shows it. `shColumns` is the
+**transposed** form: one list per column, rows and columns swapped.
+
+```text
+  shRows (TOML)                    shColumns (TOML)
+  ------------------------------   ---------------------------------
+  [[rows]]                         [columns]
+  __rowId = "17"                   __rowId = ["17", "18"]
+  __flags = "0"                    __flags = ["0", "0"]
+  title = "groceries"              title = ["groceries", "diary"]
+  body = "milk, eggs"              body = ["milk, eggs", "dear ..."]
+  stars = 2                        stars = [2, 5]
+
+  [[rows]]
+  __rowId = "18"
+  ...
+```
+
+In JSON the same two shapes are `"rows": [ {...}, {...} ]` and
+`"columns": { "title": [...], ... }`.
+
+**Def. 14.2 — binary form.** JSON and TOML hold text. A `bytes` column,
+and every sealed value (Def. 14.3), is bytes from 00 to FF, so it is
+written one of two ways:
+
+```text
+  the bytes   48 69 00 FF
+
+  bfHex       "486900ff"            two letters per byte
+  bfEscaped   "Hi\u0000ÿ"      a readable byte stays itself; every
+                                    other byte HH becomes \u00HH
+```
+
+`\u00HH` is an escape JSON and TOML both already have, so any reader
+opens the file. Geist turns the character U+00HH back into the byte HH.
+A character above U+00FF in an escaped field is refused, because it
+cannot be a byte.
+
+**Def. 14.3 — sealed column.** Each value of the column is encrypted on
+its own (1.13's `GSK1` blob), then written in the binary form:
+
+```text
+  "dear diary"  --seal(key, context "geist-table/body")-->  GSK1 | 24 |
+                                         nonce | t | tag | ciphertext
+                --bfHex-->  body = "47534b3118..."
+```
+
+The context ties a value to its column: a sealed `body` pasted into
+`title` will not open. A password is turned into a key once per file,
+and its salt is written into the file (`salt = "..."`), so the same
+password opens it again. `__rowId` and `__flags` cannot be sealed: a
+reader needs them to tell the rows apart.
+
+**The file, top to bottom:**
+
+```text
+  geist = "table"         marks a table file
+  version = 1             this layout
+  type = "Note"           the schema's type name
+  shape = "rows"          Def. 14.1
+  binary = "hex"          Def. 14.2
+  collapse = false        the schema's autoCollapse
+  sealed = ["body"]       Def. 14.3; [] when nothing is sealed
+  salt = "..."            only when a password sealed it
+
+  [[schema]]              one per column, in order
+  name = "title"
+  kind = "text"           int | float | text | bytes | sealed | ref
+  column = "variable"     fixed | capped | variable
+  width = 0
+  overflow = "error"      error | truncate
+
+  [[rows]] ...  or  [columns] ...
+```
+
+`__rowId` and `__flags` are written as quoted numbers: an id carries the
+machine's tag in its high bits and is often bigger than the largest
+integer TOML can hold.
+
+**Reading back.** A missing cell is the column's zero, like a collapsed
+value in the store. An unknown field, a value of the wrong kind, or
+columns of different lengths are refused, naming the row and the field.
+A value that left its row for the sidecar is written as the value
+itself, not as a reference into this machine's folder.
+
+**Importing.** A row keeps the id the file gives it, so importing the
+same file twice replaces the rows instead of doubling them;
+`freshIds = true` (`--fresh-ids`) gives them new ids instead. Every row
+is checked before any is stored: one bad cell stops the import with
+nothing written. `geist import` into a path with no database creates one
+from the file's schema.
+
+```text
+  file __rowId   database has ids   freshIds   stored as
+  ------------   ----------------   --------   ------------------------
+  "17"           yes                no         row 17 (new or replaced)
+  "17"           yes                yes        the next free id
+  (none)         yes                either     the next free id
+  any            no                 either     appended, no id
+```
+
+See `examples/geist_tables.nim`, and `src/geist/tabletext.nim` for the
+full definitions.
 
 ---
 

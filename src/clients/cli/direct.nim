@@ -563,7 +563,10 @@ proc cmdKeygen*(o: Options) {.role: actor,
   echo ""
   echo describePin(pinOf(mine.key))
 
-proc cmdPresets*() {.role: actor, tag: "cli|config|read".} =
+proc cmdPresets*(o: Options) {.role: actor, tag: "cli|config|read".} =
+  ## o: unused; every command takes the options, so the table in
+  ## geist_cli.nim can hold them all.
+  ##
   ## The public preset catalog.
   for p in geistConfigPresets():
     ## 18, not 16: `secure-collapsed` is 16 characters and would leave

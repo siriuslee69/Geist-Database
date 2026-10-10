@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: geist keys: key folder with signing pairs, symmetric keys, peers, and BIP-39 words
+Commit Message: Tables as JSON and TOML: rows or transposed, bytes as hex or \u00HH escapes, columns sealed one value at a time
 
 Features (Planned):
 - Wire symmetric keys into the handshake: Bifrost has AM1P (PSK) and AM1P+S (PSK + pin); Geist hard-codes pin-only in transport.nim / serve.nim.
@@ -19,6 +19,7 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- Tables as JSON / TOML (src/geist/tabletext.nim writes, tableread.nim reads, sessiontable.nim exportTable / importTable, src/clients/cli/tables.nim `geist export` / `geist import`): shape rows or columns (transposed), bytes and sealed values as hex or `\u00HH` escapes, chosen columns sealed per value with a key (`--seal-key`, from `geist keys new-sym`) or a password (salt kept in the file). Import keeps ids (twice = replace), `--fresh-ids` adds; all rows are checked before any is stored. Tests in test_tabletext (testApiSurface), example geist_tables, README 1.14.
 - `geist keys` (src/geist/keyfolder.nim, words.nim, src/clients/cli/keys.nim): one folder for signing pairs (seeded: 24 words rebuild the identical pair), 32-byte symmetric keys and trusted peer pins. list, show (pick by number), --secret words, import --kind pair|sym, trust --pin with 12-word fingerprint check, drop. BIP-39 English list + checksum (vectors tested). Tests in test_keyfolder (testCrypto).
 - Row map (keyring.nim): each ring save writes `rowmap` (generation, then rowKey<TAB>position). `sealedRow(K, ring, rowKey)` returns one row's sealed bytes without any key; empty when the map is stale or the row is missing. Bridge op `sealed` / Kotlin `GeistVault.sealedHex`. Avalon Cards shows locked fields as their real ciphertext with it.
 - Per-batch checks (crypto/batch.nim): unkeyed Gimli digest (no key needed: damage) and keyed BLAKE3 tag (own MAC key: tampering), both over the sealed bytes plus position, row lengths and a cluster binding (schema + total row count). openBatch refuses before decrypting. Keyless `verifyStoreIntegrity` / `geist verify` checks every batch, cluster index hashes and missing clusters, for a store or a keyring folder. Sealed clusters the ledger lists cannot be dropped through the index. Ledger files carry a version marker; older, untagged ledgers are refused. config.mac/macBytes removed. Damaged files no longer crash parsers (checked enum bytes, offset spans). Byte-flip fuzz test: with the key no flip ever yields altered rows.
@@ -61,6 +62,41 @@ Notes:
   benchmark and prototype entry points). Fixed: only the two above, plus
   the CLI, which ignored `[storage] preset` from configs/default.toml
   because it started from a hardcoded "app".
+
+## 2026-10-10 Tables As JSON And TOML
+
+What changed, and where it now lives:
+
+```text
+  src/geist/tabletext.nim      schema + rows -> text. Shape (rows | columns),
+                               binary form (hex | escaped), sealed columns
+  src/geist/tableread.nim      text -> schema + plain cells, every cell
+                               checked against its column's kind
+  src/geist/sessiontable.nim   exportTable / importTable on a Session
+  src/clients/cli/tables.nim   geist export <file> / geist import <file>
+  src/clients/geist_cli.nim    the command `case` is now two tables
+                               (anyMode, directOnly) and one lookup
+```
+
+Also: `textBytes` / `bytesText` moved into types.nim (they were copied in
+dynamic.nim and seal.nim); `slotKindName` reads a word table
+(`slotKindWords`) that the table reader uses too; `quoteToml` escapes every
+control character as `\u00HH` (a raw \x01 used to make invalid TOML);
+`keyfolder.symmetricKey` hands out one symmetric key.
+
+Last big change or problem encountered:
+- Fylgia's TOML reader turned `é` into the letter `u` followed by
+  `00e9`. It did not know `\u`, `\U` or `\e` at all, so the escaped
+  binary form could never have been read back from TOML.
+- Fixed in Fylgia-Utils (9381c5b, with tests) and the submodule moved to
+  it. Worked: all 256 byte values round-trip through TOML and JSON.
+
+Verification:
+- `nimble test` (whole suite, 618 checks) green after the final refactor;
+  also run on their own: test_tabletext (23), test_doc, test_show,
+  test_option_precedence, the example, and checkAll / checkModular /
+  checkRelay / checkRouter /
+  checkForward.
 
 ## 2026-09-27 Production Passes
 

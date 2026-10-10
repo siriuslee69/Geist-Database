@@ -319,3 +319,16 @@ proc secretWords*(f: KeyFolder, e: KeyEntry): tuple[ok: bool, words: string,
   if not got.ok:
     return (false, "", got.err)
   result = (true, toWords(got.value.use()), "")
+
+proc symmetricKey*(f: KeyFolder, name: string): KeyResult {.role: decryptor,
+    tag: "appApi|cryptoBoundary|read".} =
+  ## f/name: the 32 bytes of the symmetric key `name` (or its number in
+  ## `listKeys`), to seal with -- `geist export --seal-key name` uses it.
+  var
+    found: tuple[ok: bool, entry: KeyEntry, err: string] = f.findKey(name)
+  if not found.ok:
+    return KeyResult(err: found.err)
+  if found.entry.kind != kkSymmetric:
+    return KeyResult(err: "'" & name & "' is a " &
+      kindName(found.entry.kind) & " key, not a symmetric one")
+  result = f.store.get(symPrefix & found.entry.name)

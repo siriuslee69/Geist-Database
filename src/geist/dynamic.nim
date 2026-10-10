@@ -41,17 +41,16 @@ proc isVariableSlot*(k: SlotKind): bool {.role: parser, inline,
   ## 8-byte fixed slot.
   result = k in {skText, skBytes, skSealed, skRef}
 
-proc slotKindName*(k: SlotKind): string {.role: helper,
+const
+  slotKindWords*: array[SlotKind, string] = ["null", "int", "float", "text",
+    "bytes", "sealed", "ref"]
+    ## Each slot kind's word in `schema` output, error messages and table
+    ## files (./tabletext reads it back with `wordOf`).
+
+proc slotKindName*(k: SlotKind): string {.role: helper, inline,
     tag: "cli|formatting".} =
   ## k: slot kind rendered for `schema` output and error messages.
-  case k
-  of skNull: result = "null"
-  of skInt: result = "int"
-  of skFloat: result = "float"
-  of skText: result = "text"
-  of skBytes: result = "bytes"
-  of skSealed: result = "sealed"
-  of skRef: result = "ref"
+  result = slotKindWords[k]
 
 proc parseSchemaSpec*(typeName, spec: string): tuple[ok: bool, s: Schema,
     err: string] {.role: parser,
@@ -188,16 +187,6 @@ proc numberBits(k: SlotKind, name, text: string): tuple[bits: uint64,
     result.err = "field '" & name & "' expects " &
       (if k == skFloat: "a number" else: "an integer") & ", got '" & text &
       "'"
-
-proc textBytes(text: string): ByteSeq {.role: parser, inline,
-    tag: "cli|db|parsing".} =
-  ## text: typed text -> its raw bytes, unchanged.
-  var
-    j: int = 0
-  result = newSeq[uint8](text.len)
-  while j < text.len:
-    result[j] = uint8(text[j])
-    j = j + 1
 
 proc buildRow*(s: Schema, values: Table[string, string],
     store: SidecarStore = SidecarStore(), id: RowId = 0'u64,

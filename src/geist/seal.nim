@@ -38,20 +38,6 @@ import ./secret
 import ./secrets
 import ./doc
 
-proc textBytes(s: string): ByteSeq {.role: parser, inline,
-    tag: "codecBoundary|cryptoBoundary".} =
-  ## s: text -> its bytes, unchanged.
-  result = newSeq[uint8](s.len)
-  for i, c in s:
-    result[i] = uint8(c)
-
-proc bytesText(A: openArray[uint8]): string {.role: parser, inline,
-    tag: "codecBoundary|cryptoBoundary".} =
-  ## A: bytes -> the same bytes as text.
-  result = newString(A.len)
-  for i, b in A:
-    result[i] = char(b)
-
 proc objectBytes[T](x: T): ByteSeq {.role: truthBuilder,
     tag: "codecBoundary|cryptoBoundary".} =
   ## x: the object as compact JSON bytes -- what gets sealed.
