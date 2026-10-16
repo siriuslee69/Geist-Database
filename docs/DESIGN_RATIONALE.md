@@ -379,15 +379,15 @@ Slot order was chosen for a practical reason:
 
 | slots | algorithms | public key size | frame |
 |---|---|---:|---|
-| 0..3 | Kyber1024, NTRU-HPS4096821, FireSaber, Saber | 992–1568 B | fits one 65507 B DAC frame |
-| 4..7 | McEliece8192, McEliece6960, Kyber768, NTRU-HPS2048677 | ~1.3 MB (code-based) | needs DAC package transfer |
+| 0..3 | ML-KEM-1024, NTRU-HPS4096821, FireSaber, Saber | 992–1568 B | fits one 65507 B DAC frame |
+| 4..7 | McEliece8192, McEliece6960, ML-KEM-768, NTRU-HPS2048677 | ~1.3 MB (code-based) | needs DAC package transfer |
 
 Putting McEliece at slot 0 — the obvious "strongest first" choice — would
 force **every** handshake at **every** tier through package transfer,
 including a telemetry sensor's. Tiers 0–3 therefore use only slots 0–3;
 only `gtArchive` and `gtRecovery` reach the code-based KEMs.
 
-Families are mixed on purpose: lattice (Kyber), NTRU and code-based
+Families are mixed on purpose: lattice (ML-KEM), NTRU and code-based
 (McEliece) are structurally distinct, so one broken family does not
 collapse a tier.
 

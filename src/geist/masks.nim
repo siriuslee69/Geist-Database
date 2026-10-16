@@ -60,7 +60,7 @@ proc geistKemSlots*(): bfx.AmeKemAlgorithms {.role: configurator,
     tag: "ame|cryptoBoundary|networkSurface".} =
   ## Masks are MSB-first, so bit 7 selects slot 0.
   ##
-  ## Slots 0..3 are FRAME-SIZED: Kyber1024 (1568 B), NTRU-HPS4096821
+  ## Slots 0..3 are FRAME-SIZED: ML-KEM-1024 (1568 B), NTRU-HPS4096821
   ## (1230 B), FireSaber (1312 B) and Saber (992 B) public keys all fit a
   ## client hello inside one 65507-byte DAC frame. Slots 4..7 are the
   ## code-based KEMs, whose public keys run to roughly 1.3 MB and therefore
@@ -70,17 +70,17 @@ proc geistKemSlots*(): bfx.AmeKemAlgorithms {.role: configurator,
   ## it at slot 0 would force every handshake at every tier through package
   ## transfer, including a telemetry sensor's.
   ##
-  ## Families are deliberately mixed -- lattice (Kyber), NTRU and
+  ## Families are deliberately mixed -- lattice (ML-KEM), NTRU and
   ## code-based (McEliece) are structurally distinct, so a break in one
   ## does not collapse a whole tier.
   result = bfx.initAmeKemAlgorithms([
-    bfx.akaKyber1024,
+    bfx.akaMlKem1024,
     bfx.akaNtruHps4096821,
     bfx.akaFireSaber,
     bfx.akaSaber,
     bfx.akaMcEliece8192,
     bfx.akaMcEliece6960,
-    bfx.akaKyber768,
+    bfx.akaMlKem768,
     bfx.akaNtruHps2048677])
 
 proc geistSignatureSlots*(): bfx.AmeSignatureAlgorithms {.role: configurator,

@@ -16,7 +16,7 @@
 ##   registry  which of MANY stores an address means
 ##
 ## WHY THE SPLIT EXISTS. Bifrost brings a post-quantum handshake with it --
-## Falcon, Kyber, the DAC transport. A program that embeds Geist as a local
+## Falcon, ML-KEM, the DAC transport. A program that embeds Geist as a local
 ## disk backend and never speaks to anything was compiling all of it: 83 C
 ## modules where 45 would do. The line is drawn where the first socket is,
 ## which is also where the first algorithm choice is, so it is one line

@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: Tables as JSON and TOML: rows or transposed, bytes as hex or \u00HH escapes, columns sealed one value at a time
+Commit Message: Pin Tyr (ML-KEM, X-Wing, flat nesting) and Bifrost (ML-KEM slots)
 
 Features (Planned):
 - Wire symmetric keys into the handshake: Bifrost has AM1P (PSK) and AM1P+S (PSK + pin); Geist hard-codes pin-only in transport.nim / serve.nim.
