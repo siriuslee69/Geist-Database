@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: Pin Tyr (ML-KEM, X-Wing, flat nesting) and Bifrost (ML-KEM slots)
+Commit Message: KEM slots 4-5: FrodoKEM-1344 and HQC-5 replace Classic McEliece
 
 Features (Planned):
 - Wire symmetric keys into the handshake: Bifrost has AM1P (PSK) and AM1P+S (PSK + pin); Geist hard-codes pin-only in transport.nim / serve.nim.

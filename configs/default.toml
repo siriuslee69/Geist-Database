@@ -153,9 +153,9 @@ startTier = "standard"
 # loopback, or a link that is already inside something else.
 requireCookie = true
 
-# Mebibytes transferred before climbing. archive and recovery need DAC
-# package transfer for the handshake itself: their code-based KEM public
-# keys run to ~1.3 MB, well past one frame.
+# Mebibytes transferred before climbing. archive and recovery add the large
+# KEMs (FrodoKEM-1344, 21 KB public key; HQC-5, 7 KB), so their handshake
+# may need DAC package transfer instead of one frame.
 secretAtMiB = 64
 archiveAtMiB = 1024
 

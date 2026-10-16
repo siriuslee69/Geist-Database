@@ -1,5 +1,5 @@
 ## Masks and the Query/Reply wire codec.
-import std/[bitops, unittest]
+import std/[bitops, strutils, unittest]
 import geist/network
 import bifrost_exchange_protocols as bfx except ByteSeq
 
@@ -33,11 +33,38 @@ suite "masks":
       prev = bits
 
   # {.testKind: tkUnit.}
-  test "tiers 0..3 use only frame-sized KEM slots":
-    # Slots 4..7 are the code-based KEMs (~1.3 MB public keys) and need DAC
-    # package transfer; the lower tiers must stay inside one 65507 B frame.
+  test "tiers 0..3 use only the small KEM slots":
+    # Slots 4..7 hold the large keys (FrodoKEM-1344, HQC-5); the lower tiers
+    # must stay inside one 65507 B frame.
     for t in [gtTelemetry, gtUserData, gtStandard, gtSecret]:
       check (tierMasks(t).kem and 0x0F'u8) == 0'u8
+
+  # {.testKind: tkRegression, covers: "geistKemSlots", pins: "Frodo slot once derived mismatched secrets".}
+  test "every declared KEM slot agrees on a secret through Bifrost":
+    ## Keypair, seal and open each slot exactly as a handshake would. An
+    ## older pinned stack gave the two sides different Frodo secrets.
+    var
+      S = geistKemSlots()
+      a: bfx.AmeKemAlgorithm = bfx.akaX25519
+      kp: bfx.AmeKemKeypair = default(bfx.AmeKemKeypair)
+      c: bfx.AmeKemCipher = default(bfx.AmeKemCipher)
+      i: int = 0
+    while i < int(S.length):
+      a = S[i]
+      kp = bfx.ameKemKeypair(a)
+      c = bfx.sealAmeKem(a, kp.publicKey)
+      check bfx.openAmeKem(a, c, kp.secretKey) == c.sharedSecret
+      i = i + 1
+
+  # {.testKind: tkUnit.}
+  test "no declared KEM slot is Classic McEliece":
+    ## Replaced 2026-10-16 after the Goppa-code key-recovery papers.
+    var
+      S = geistKemSlots()
+      i: int = 0
+    while i < int(S.length):
+      check bfx.ameKemName(S[i]).find("McEliece") < 0
+      i = i + 1
 
   # {.testKind: tkUnit.}
   test "every tier signs with at least one algorithm":

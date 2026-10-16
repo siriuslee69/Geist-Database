@@ -2080,8 +2080,8 @@ secretAtMiB = 64
   userData      1               2            yes
   standard      2               2            yes   (default)
   secret        3               3            yes
-  archive       5               3            no — needs package transfer
-  recovery      6               3            no — needs package transfer
+  archive       5               3            maybe — may need package transfer
+  recovery      6               3            maybe — may need package transfer
 ```
 
 Large public keys only appear from `archive` up, so a small sensor never
@@ -2620,9 +2620,6 @@ nix build .#checks.x86_64-linux.relay-pipe -L
 ```text
   problem                                              what to do
   ---------------------------------------------------  ------------------------------------------
-  recovery-strength handshake fails at Frodo           use archive strength or below; the Frodo
-                                                       path in the pinned stack is known bad and
-                                                       is excluded here on purpose
   forwarded link never opens (geist-forwardd)          check that the VPS can reach home: try
                                                        `nc -u` to home from the VPS. A home behind
                                                        a router that lets nothing in cannot be
@@ -2631,8 +2628,12 @@ nix build .#checks.x86_64-linux.relay-pipe -L
                                                        spell; the client gets a new place and the
                                                        next call re-shakes hands. Raise it or ask
                                                        more often
-  handshake too big for one frame                      expected at archive/recovery; those levels
-                                                       need package transfer
+  handshake too big for one frame                      can happen at archive/recovery (FrodoKEM
+                                                       and HQC keys); those levels use package
+                                                       transfer
+  test_daemon_live "a reply too large for one frame"   seen once under full-suite load (0 of 12
+  fails                                                standalone runs, 2026-10-16); local UDP
+                                                       drops a package part. Re-run the test
   lost .ledger, still have data + keys                 unrecoverable by design; always back up
                                                        artifactSet() as one unit
   compile error: Secret is move-only                   call clone() — copies of key bytes must

@@ -16,15 +16,17 @@
 ##   tier 1  userdata    1 KEM, 2 signatures      one DAC frame
 ##   tier 2  standard    2 KEMs, 2 signatures     one DAC frame, default
 ##   tier 3  secret      3 KEMs, 3 signatures     one DAC frame
-##   tier 4  archive     5 KEMs, 3 signatures     needs package transfer
-##   tier 5  recovery    6 KEMs, 3 signatures     needs package transfer
+##   tier 4  archive     5 KEMs, 3 signatures     may need package transfer
+##   tier 5  recovery    6 KEMs, 3 signatures     may need package transfer
 ##
 ## Masks are MSB-first over the declared slot order, which is why the slot
 ## lists below are ordered strongest-first: bit 7 is slot 0.
 ##
-## Tier 5 deliberately stops short of Frodo1344Aes. The pinned Bifrost/Tyr
-## Frodo backend derives mismatched sender and receiver secrets, so Geist
-## fails closed rather than silently substituting an algorithm.
+## Until 2026-10-16 slots 4 and 5 held Classic McEliece. Key-recovery papers
+## that year (ePrint 2026/1630, 2026/1984; BSI note 29 Sep 2026) cut its
+## cost from ~2^256 to an estimated ~2^99..2^148, so it was replaced by
+## FrodoKEM-1344 (plain LWE) and HQC-5 (quasi-cyclic codes), neither touched
+## by those papers. `test_masks_transport` checks every slot round-trips.
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
@@ -60,26 +62,32 @@ proc geistKemSlots*(): bfx.AmeKemAlgorithms {.role: configurator,
     tag: "ame|cryptoBoundary|networkSurface".} =
   ## Masks are MSB-first, so bit 7 selects slot 0.
   ##
-  ## Slots 0..3 are FRAME-SIZED: ML-KEM-1024 (1568 B), NTRU-HPS4096821
-  ## (1230 B), FireSaber (1312 B) and Saber (992 B) public keys all fit a
-  ## client hello inside one 65507-byte DAC frame. Slots 4..7 are the
-  ## code-based KEMs, whose public keys run to roughly 1.3 MB and therefore
-  ## require DAC package transfer rather than a single frame.
+  ## Slots 0..3 are SMALL: ML-KEM-1024 (1568 B), NTRU-HPS4096821 (1230 B),
+  ## FireSaber (1312 B) and Saber (992 B) public keys, so a client hello
+  ## of the lower tiers fits one 65507-byte DAC frame. Slots 4..5 are the
+  ## LARGE ones -- FrodoKEM-1344 (21520 B public key, 21632 B ciphertext)
+  ## and HQC-5 (7237 B, 14421 B) -- and only gtArchive and up use them, so
+  ## a telemetry sensor never pays for them.
   ##
-  ## That split is why McEliece appears only from gtArchive upward: putting
-  ## it at slot 0 would force every handshake at every tier through package
-  ## transfer, including a telemetry sensor's.
+  ##   slot  algorithm           family                     tiers
+  ##   0     ML-KEM-1024         structured lattice (MLWE)  all
+  ##   1     NTRU-HPS-4096-821   NTRU lattice               standard+
+  ##   2     FireSaber           structured lattice (MLWR)  secret+
+  ##   3     Saber               structured lattice (MLWR)  archive+
+  ##   4     FrodoKEM-1344-AES   plain LWE, no structure    archive+
+  ##   5     HQC-5               quasi-cyclic codes         recovery
+  ##   6..7  ML-KEM-768, NTRU-HPS-2048-677   (declared, unused by masks)
   ##
-  ## Families are deliberately mixed -- lattice (ML-KEM), NTRU and
-  ## code-based (McEliece) are structurally distinct, so a break in one
-  ## does not collapse a whole tier.
+  ## Families are deliberately mixed -- structured lattices, NTRU, plain
+  ## LWE and codes are structurally distinct, so a break in one does not
+  ## collapse a whole tier.
   result = bfx.initAmeKemAlgorithms([
     bfx.akaMlKem1024,
     bfx.akaNtruHps4096821,
     bfx.akaFireSaber,
     bfx.akaSaber,
-    bfx.akaMcEliece8192,
-    bfx.akaMcEliece6960,
+    bfx.akaFrodo1344Aes,
+    bfx.akaHqc5,
     bfx.akaMlKem768,
     bfx.akaNtruHps2048677])
 

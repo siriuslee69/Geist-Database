@@ -19,8 +19,8 @@ import ./format
 const
   geistDacFrameMaxBytes* = 65_507
     ## One DAC datagram. Bifrost exposes no such constant, so Geist pins it
-    ## here. Handshakes at gtArchive and above exceed this because the
-    ## code-based KEM public keys are ~1.3 MB; those tiers must use DAC
+    ## here. Handshakes at gtArchive and above carry the large KEM keys
+    ## (FrodoKEM-1344, HQC-5) and may exceed it; those tiers then use DAC
     ## package transfer. `./masks.nim` says which tiers those are and why.
 
 type

@@ -380,25 +380,31 @@ Slot order was chosen for a practical reason:
 | slots | algorithms | public key size | frame |
 |---|---|---:|---|
 | 0..3 | ML-KEM-1024, NTRU-HPS4096821, FireSaber, Saber | 992–1568 B | fits one 65507 B DAC frame |
-| 4..7 | McEliece8192, McEliece6960, ML-KEM-768, NTRU-HPS2048677 | ~1.3 MB (code-based) | needs DAC package transfer |
+| 4..5 | FrodoKEM-1344-AES, HQC-5 | 21520 B / 7237 B | may need DAC package transfer |
+| 6..7 | ML-KEM-768, NTRU-HPS2048677 | 1184 B / 930 B | declared, no tier uses them |
 
-Putting McEliece at slot 0 — the obvious "strongest first" choice — would
-force **every** handshake at **every** tier through package transfer,
-including a telemetry sensor's. Tiers 0–3 therefore use only slots 0–3;
-only `gtArchive` and `gtRecovery` reach the code-based KEMs.
+Putting the large KEMs at slot 0 — the obvious "strongest first" choice —
+would make **every** handshake at **every** tier pay for them, including a
+telemetry sensor's. Tiers 0–3 therefore use only slots 0–3; only
+`gtArchive` and `gtRecovery` reach slots 4 and 5.
 
-Families are mixed on purpose: lattice (ML-KEM), NTRU and code-based
-(McEliece) are structurally distinct, so one broken family does not
-collapse a tier.
+Families are mixed on purpose: structured lattices (ML-KEM, Saber), NTRU,
+plain LWE (FrodoKEM, no ring structure to exploit) and codes (HQC) are
+structurally distinct, so one broken family does not collapse a tier.
+
+Until 2026-10-16 slots 4 and 5 held Classic McEliece. That year's
+Goppa-code key-recovery papers (ePrint 2026/1630, 2026/1984) and the BSI
+note of 29 Sep 2026 moved its estimated cost from ~2^256 to ~2^99..2^148,
+so it was replaced. Neither FrodoKEM nor HQC is affected by those papers.
 
 Signature slots are Geist's too — `defaultAmeLayout` is deliberately not
 used, because it fixes signatures to Ed25519 + Falcon512. Geist declares
 SPHINCS+ (hash-based, survives a lattice break), Dilithium87, Falcon1024
 and Ed25519, and every tier selects at least one.
 
-`gtRecovery` stops short of Frodo1344Aes: the pinned Bifrost/Tyr Frodo
-backend derives mismatched sender and receiver secrets, so Geist fails
-closed rather than substituting an algorithm.
+An earlier pinned Bifrost/Tyr stack derived mismatched Frodo secrets, so
+Frodo was kept out of the masks. That is fixed; `test_masks_transport`
+now round-trips every declared KEM slot through Bifrost to keep it so.
 
 ---
 
