@@ -91,6 +91,9 @@ Problems found and fixed:
 - WebUI's bridge must load before DOMContentLoaded; it is now a blocking
   desktop-only head script. Desktop WebUI, like JNI, enters Nim on foreign
   threads, so the device-monitor preset uses useMalloc.
+- A longer WebUI run exposed ORC state moving across WebUI's new C thread
+  for every callback. The desktop now owns all client state on one Nim
+  worker thread; callbacks exchange only plain strings through channels.
 
 Verification:
 - Full Geist suite: 621 checks pass, including new real-socket dual-factor
