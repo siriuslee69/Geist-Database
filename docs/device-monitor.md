@@ -28,7 +28,7 @@ the application's private `files/monitor/` folder. Both need this public
 endpoint file as `config.json`:
 
 ```json
-{"subject":"pc","relay":"dac://VPS_ADDRESS:47656","store":"dac://VPS_ADDRESS:47655"}
+{"subject":"pc","relay":"dac://VPS_ADDRESS:47656","store":"dac://VPS_ADDRESS:47655","overlayCallers":["pc","phone"]}
 ```
 
 Use `phone` for the phone's subject. The client pins are named
@@ -53,6 +53,15 @@ the private roots; none are included in the repository or debug events.
 
 The monitor uses Geist's public APIs for keys, connections, messages and
 storage. Bifrost and Tyr stay behind those APIs.
+
+The current monitor sends by a public relay endpoint plus a local alias
+(for example `phone.geist` or `10.76.0.3:8080`). Its native worker renews
+the identity even while the page is hidden. Each PC/phone config must list
+`overlayCallers`, such as `["pc","phone"]`; the relay assigns aliases in
+`overlay-grants.json`, and the store checks in using `overlay-service.json`.
+See [the overlay setup and APIs](overlay.md). The old relay mailbox API
+remains available to other applications; the monitor uses the named
+request path without falling back to mailboxes or another carrier.
 
 ```nim
 import geist/network
@@ -80,9 +89,10 @@ Each device creates its own signing identity with Geist. Only public pins
 are exchanged. A shared symmetric key is generated once with Geist and
 imported into the other devices' sealed Geist key folders.
 
-The relay holds a bounded mailbox in memory; each recipient polls its own
-stream. It needs no inbound connection to the PC or phone. The store writes
-messages to a Geist database before acknowledging them and returns an echo.
+The relay holds a bounded request queue in memory. Each named owner polls
+its own work, and each caller polls its own result tickets. It needs no
+inbound connection to the PC or phone. The store writes messages to a Geist
+database before acknowledging them and returns an echo.
 
 Network observers report handshake steps, authentication mode, masks,
 session identifiers, peers, byte counts and failures. They never receive

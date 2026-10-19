@@ -1,49 +1,18 @@
 ## Desktop monitor <- Nim WebUI renders the shared page; Geist carries messages.
-import std/[os, locks]
+import std/[os, json]
 import webui
 from webui/bindings import WebuiBrowser
 import runePragmas
-import ./monitor/[client, page]
-
-type
-  WorkerArgs {.role: configurator.} = object
-    root: string
-
-var
-  gate: Lock = default(Lock)
-  commands: Channel[string] = default(Channel[string])
-  answers: Channel[string] = default(Channel[string])
-  stopping: bool = false
-
-proc monitorWorker(A: ptr WorkerArgs) {.thread, role: orchestrator.} =
-  ## A: this Nim thread owns the entire client, its closures and its key state.
-  ## WebUI makes a new C thread per callback; managed client state never visits it.
-  {.cast(gcsafe).}:
-    var
-      monitor: MonitorClient = nil
-      command: string = ""
-    try:
-      monitor = openMonitor(A.root)
-      answers.send("")
-      while true:
-        command = commands.recv()
-        if command == "\x00stop": break
-        answers.send(monitor.monitorCall(command))
-      monitor.disconnect()
-    except CatchableError as exc:
-      answers.send(exc.msg)
+import ./monitor/[runtime, page]
 
 proc request(e: Event) {.role: orchestrator.} =
   ## e: C-owned callback; only plain request/answer strings cross the channels.
   var
     answer: string = ""
-  acquire(gate)
-  defer: release(gate)
-  if stopping:
-    e.returnString("{\"ok\":false,\"error\":\"monitor is closing\"}")
-    return
-  commands.send(e.getString())
-  answer = answers.recv()
+  try:
+    answer = monitorRuntimeCall(e.getString())
+  except CatchableError as exc:
+    answer = $(%*{"ok": false, "error": exc.msg})
   e.returnString(answer)
 
 proc runMonitorWebui*() {.role: metaOrchestrator.} =
@@ -51,25 +20,8 @@ proc runMonitorWebui*() {.role: metaOrchestrator.} =
   var
     root: string = if paramCount() > 0: paramStr(1) else: getConfigDir() / "geist-monitor"
     window: Window = newWindow()
-    args: WorkerArgs = WorkerArgs(root: root)
-    worker: Thread[ptr WorkerArgs] = default(Thread[ptr WorkerArgs])
-    error: string = ""
-  initLock(gate)
-  commands.open()
-  answers.open()
-  createThread(worker, monitorWorker, addr args)
-  error = answers.recv()
-  if error.len > 0:
-    joinThread(worker)
-    raise newException(IOError, error)
-  defer:
-    acquire(gate)
-    stopping = true
-    commands.send("\x00stop")
-    joinThread(worker)
-    release(gate)
-    commands.close()
-    answers.close()
+  startMonitorRuntime(root)
+  defer: closeMonitorRuntime()
   createDir(root / "ui")
   window.rootFolder = root / "ui"
   window.public = false

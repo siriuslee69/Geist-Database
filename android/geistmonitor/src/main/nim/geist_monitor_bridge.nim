@@ -1,11 +1,10 @@
 ## Android bridge <- native Geist API calls, byte arrays preserve UTF-8.
 import std/[json, locks]
 import runePragmas
-import ../../../../../src/clients/monitor/[client, provision, page]
+import ../../../../../src/clients/monitor/[runtime, provision, page]
 
 var
   gate: Lock = default(Lock)
-  monitor: MonitorClient = nil
 
 initLock(gate)
 
@@ -26,8 +25,8 @@ proc nativeRequest*(root, request: string): string {.role: orchestrator.} =
       importSharedKey(root, root & "/shared.words")
       return "{\"ok\":true}"
     else: discard
-    if monitor == nil: monitor = openMonitor(root)
-    result = monitor.monitorCall(request)
+    startMonitorRuntime(root)
+    result = monitorRuntimeCall(request)
   except CatchableError as exc:
     result = $(%*{"ok": false, "error": exc.msg})
 

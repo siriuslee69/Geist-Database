@@ -4,6 +4,7 @@ import std/[os, json, times, strutils]
 import runePragmas
 import geist/network
 import ../clients/monitor/[provision, events]
+import ../clients/monitor/connection
 import ../geist/stop
 
 type
@@ -13,10 +14,17 @@ type
     body: string
     at: int64
 
-  MonitorStore {.role: truthState, expectedCount: 1, lifeCycle: lcForever.} = object
+  MonitorStore {.role: truthState, expectedCount: 1, lifeCycle: lcForever.} = ref object
     db: Session
 
-proc storeMessage(S: var MonitorStore, q: Query, p: PeerContext): Reply {.
+  StoreOverlay {.role: truthState, expectedCount: 1, lifeCycle: lcForever.} = object
+    endpoint: string
+    link: GeistLink
+    service: OverlayService
+    retryAt: int64
+    nextSession: uint64
+
+proc storeMessage(S: MonitorStore, q: Query, p: PeerContext): Reply {.
     role: actor.} =
   ## S/q/p: save before acknowledging; the echo is the sender's reply.
   var
@@ -54,13 +62,53 @@ proc readMessages(S: MonitorStore, q: Query, p: PeerContext): Reply {.
     result.rows.add asRow(RelayMessage(sender: msg.sender, stream: msg.stream,
       body: asBytes(msg.body), at: msg.at, ordinal: uint64(i)))
 
-proc answerStore(S: var MonitorStore, q: Query, p: PeerContext): Reply {.
+proc answerStore(S: MonitorStore, q: Query, p: PeerContext): Reply {.
     role: orchestrator.} =
   ## S/q/p: only the monitor's append and history operations are supported.
   case q.op
   of qoPut: result = S.storeMessage(q, p)
   of qoSync: result = S.readMessages(q, p)
   else: result = Reply(err: "store accepts qoPut and qoSync")
+
+proc pollStoreOverlay(S: var StoreOverlay, store: MonitorStore,
+    root: string) {.role: orchestrator.} =
+  ## S/store/root: the storage identity checks in through its own outgoing link.
+  var
+    step: OverlayServiceStep = default(OverlayServiceStep)
+  if S.endpoint.len == 0 or overlayNow() < S.retryAt: return
+  S.retryAt = overlayNow() + 1
+  try:
+    if not S.link.open:
+      inc S.nextSession
+      S.link = openDeviceLink(root, "vps-store", S.endpoint, "vps-relay", S.nextSession,
+        observer = proc(e: GeistNetworkEvent) {.gcsafe.} =
+          {.cast(gcsafe).}: writeDebug(root, eventJson(e)))
+    step = serveOverlayOnce(S.link, S.service,
+      proc(q: Query, p: PeerContext): Reply {.gcsafe.} =
+        {.cast(gcsafe).}: result = answerStore(store, q, p))
+    if step.renewed or step.served:
+      writeDebug(root, %*{"at": getTime().toUnix(), "step": "overlay.service",
+        "renewed": step.renewed, "served": step.served, "alias": step.alias,
+        "caller": step.caller, "observedEndpoint": step.observedEndpoint})
+  except CatchableError as exc:
+    S.retryAt = overlayNow() + 5
+    writeDebug(root, %*{"at": getTime().toUnix(), "step": "overlay.error", "error": exc.msg})
+
+proc answerNamed(S: var OverlayRelay, q: Query, p: PeerContext,
+    root: string): Reply {.role: orchestrator.} =
+  ## S/q/p/root: keep directory changes and failures in the VPS debug history.
+  var
+    n: JsonNode = nil
+    op: string = "invalid"
+  result = S.answerOverlay(q, p)
+  try:
+    if q.payload.len <= maxOverlayControlBytes: n = parseJson(asText(q.payload))
+    if not n.isNil: op = n{"op"}.getStr("invalid")
+  except CatchableError: discard
+  if op notin ["renew", "submit", "finish"] and result.ok: return
+  writeDebug(root, %*{"at": getTime().toUnix(), "step": "overlay." & op,
+    "subject": p.subject, "observedEndpoint": p.address,
+    "alias": if n.isNil: "" else: n{"alias"}.getStr(), "error": result.err})
 
 proc runMonitorDaemon*(root, mode, endpoint: string): int {.
     role: metaOrchestrator.} =
@@ -74,7 +122,10 @@ proc runMonitorDaemon*(root, mode, endpoint: string): int {.
     server: tuple[ok: bool, server: GeistServer, err: string] =
       (false, default(GeistServer), "")
     desk = initRelayDesk()
-    store: MonitorStore = default(MonitorStore)
+    store: MonitorStore = MonitorStore()
+    overlay: OverlayRelay = initOverlayRelay([])
+    overlayStore: StoreOverlay = default(StoreOverlay)
+    overlayConfig: JsonNode = nil
     step: tuple[ok: bool, served: bool, err: string] = (false, false, "")
     loaded: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
       (false, default(AmePinnedPeerIdentity), "")
@@ -94,6 +145,13 @@ proc runMonitorDaemon*(root, mode, endpoint: string): int {.
   checked((server.ok, server.err))
   if mode == "store":
     store.db = openGeist[StoredMessage](root / "messages", appConfig())
+    if fileExists(root / "overlay-service.json"):
+      overlayConfig = parseFile(root / "overlay-service.json")
+      overlayStore.endpoint = overlayConfig{"relay"}.getStr()
+      overlayStore.service.allowedCallers = overlayAccess(overlayConfig{"overlayCallers"})
+      overlayStore.nextSession = uint64(getTime().toUnix())
+  if mode == "relay" and fileExists(root / "overlay-grants.json"):
+    overlay = initOverlayRelay(overlayGrants(parseFile(root / "overlay-grants.json")))
   installSignalHandlers()
   writeDebug(root, %*{"at": getTime().toUnix(), "step": "daemon.started", "mode": mode,
     "subject": subject, "endpoint": endpoint, "auth": "AM1P+S",
@@ -102,14 +160,18 @@ proc runMonitorDaemon*(root, mode, endpoint: string): int {.
     step = serveOnce(server.server,
       proc(q: Query, p: PeerContext): Reply {.gcsafe.} =
         {.cast(gcsafe).}:
+          if mode == "relay" and q.collection == overlayControl:
+            return answerNamed(overlay, q, p, root)
           if mode == "relay": return answerRelay(desk, q, p)
           result = answerStore(store, q, p), 200)
     if not step.ok:
       writeDebug(root, %*{"at": getTime().toUnix(), "step": "daemon.error",
         "error": step.err})
+    if mode == "store": pollStoreOverlay(overlayStore, store, root)
   server.server.closeServer()
   desk.closeRelay()
   if mode == "store": store.db.close()
+  overlayStore.link.close()
   result = 0
 
 when isMainModule:

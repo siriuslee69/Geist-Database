@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: Deploy Geist device monitor with strict AM1P+S, recovery masks and persistent VPS logs
+Commit Message: Add identity-bound Geist overlay aliases, renewable endpoints and reverse Query/Reply
 
 Features (Planned):
 - A NixOS VM test for services.geist-forward (the module is only parsed).
@@ -18,6 +18,17 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- Relay-local naming (2026-10-19): multiple domain/IP aliases per pinned
+  subject, including separate owners at the same IP with different ports.
+  Authenticated outbound renewal records the observed full IP:port; leases
+  expire without surrendering alias ownership. Public APIs are exported
+  from geist/wire and geist/network; no direct Bifrost path is used.
+- Bounded reverse Query/Reply through the existing relay: exact alias
+  resolution, per-caller result tickets, owner-only dispatch/completion,
+  local service rights intersection, no automatic write replay. PC and
+  Android share a native worker that checks in independently of the UI.
+  The VPS store is an outbound service too. docs/overlay.md documents
+  setup, limits, trust boundary and the future browser request path.
 - PC / Android / VPS device monitor (2026-10-19): public Geist APIs only;
   shared-key plus pinned-signature authentication (AM1P+S), recovery mask
   FC/F0, native DAC handshake packages, two separate VPS relay/store
@@ -62,6 +73,38 @@ Features (Done):
 
 Features (In Progress):
 - None.
+
+## 2026-10-19 Identity-bound overlay
+
+- `overlay_aliases`, `overlay_directory`, `overlay_codec`, `overlay_relay`
+  and `overlay` keep parsing, ownership/leases, framing, relay state and
+  public client/service calls separate. No new carrier, cryptographic
+  primitive or dependency pin was introduced.
+- The existing device relay accepts the reserved `geist-overlay-v1`
+  control collection. Ownership is read from private administrator grants;
+  `PeerContext` supplies the authenticated subject and observed IP:port.
+  Routed `as` claims cannot enter that control collection.
+- PC/Android native workers own all managed state on one Nim thread.
+  UI/JNI callers transfer only strings. Heartbeats run without a visible
+  page. The store checks in through a pinned AM1P+S loopback Geist link.
+- Validation: complete `nimble test` passed 633 tests. `nimble testOverlay`
+  passed again after fixture cleanup (11 directory/queue cases plus a
+  real-socket recovery/AM1P+S integration test). `nimble checkRelay` proved
+  that the wire API still compiles without database modules. Desktop,
+  headless and Android builds passed; JavaScript syntax and diff checks
+  passed. Live PC/phone alias delivery worked both directions, including
+  delivery receipts. PC used a virtual IP:port for the persistent store;
+  phone used `archive.geist` and received its stored echo.
+  Delivery to the phone's virtual IP also succeeded while its window was
+  hidden. Both native UIs were opened; phone rendering and the separate
+  relay/local-target fields were visually checked.
+- Otter checked every changed Nim path and measured the whole repository.
+  New triple nesting was removed and the network fixture was split.
+  Its earlier `forgetOverlay` placeholder candidate was a real discarded
+  network call, now additionally validating the relay's acknowledgement.
+  Remaining repository candidates are existing fixtures, exports, old
+  nesting and multiline-initializer heuristics; no deployment secret was
+  added to the source tree.
 
 ## 2026-10-19 Device monitor deployment
 

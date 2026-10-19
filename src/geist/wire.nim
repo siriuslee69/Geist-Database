@@ -48,12 +48,14 @@ import ./transport
 import ./serve
 import ./identity
 import ./relay
+import ./overlay
 import ./transport_settings
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
 export types, format, toml_read, doc, reconcile, address, route, link, layout
 export masks, transport, serve, identity, relay, transport_settings
+export overlay
 
 ## The transport surface a CLI or daemon needs, re-exported so callers do
 ## not have to import Bifrost directly just to name an address or a key.

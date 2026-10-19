@@ -1,5 +1,5 @@
 /* The browser renders only. Every request enters the local Nim Geist client. */
-let busy=false,ready=false,lastMessages='',lastEvents='';
+let busy=false,ready=false,lastMessages='',lastEvents='',defaultTarget='';
 const $=id=>document.getElementById(id);
 // {.role: orchestrator.}
 async function nativeCall(q){
@@ -26,12 +26,15 @@ function renderEvents(rows){
 async function perform(q){
   if(busy)return false;busy=true;$('send').disabled=true;
   if(q.op!=='status'&&q.op!=='poll')$('connection').textContent='Geist arbeitet …';
-  try{const r=await nativeCall(q);$('error').textContent=r.error||'';if(r.subject)$('device').textContent=r.subject;if(r.messages)renderMessages(r.messages);if(r.events)renderEvents(r.events);$('connection').textContent=r.ok?(r.relay&&r.store?'Relay + VPS verbunden':'Bereit'):'Verbindungsfehler';return r.ok;}catch(e){$('error').textContent=String(e);return false;}finally{busy=false;$('send').disabled=false;}
+  try{const r=await nativeCall(q);$('error').textContent=r.error||'';if(r.subject)$('device').textContent=r.subject;if(r.relayEndpoint&&!$('relay').value)$('relay').value=r.relayEndpoint;if(r.target){defaultTarget=r.target;if(!$('target').value)$('target').value=r.target;}if(r.resolution)$('error').textContent=`${r.resolution.alias} → ${r.resolution.subject} · ${r.resolution.observedEndpoint} · ${r.resolution.remainingSeconds}s`;if(r.messages)renderMessages(r.messages);if(r.events)renderEvents(r.events);$('connection').textContent=r.ok?(r.pending?`${r.pending} wartet auf Antwort`:r.relay&&r.store?'Relay + VPS verbunden':'Bereit'):'Verbindungsfehler';return r.ok;}catch(e){$('error').textContent=String(e);return false;}finally{busy=false;$('send').disabled=false;}
 }
 // {.role: orchestrator.}
-async function send(){const input=$('body'),body=input.value;if(!body.trim())return;if(await perform({op:'send',channel:$('channel').value,body}))input.value='';}
+async function send(){const input=$('body'),body=input.value;if(!body.trim())return;if(await perform({op:'send',relay:$('relay').value,target:$('target').value,channel:$('channel').value,body}))input.value='';}
+$('resolve').onclick=()=>perform({op:'resolve',relay:$('relay').value,target:$('target').value});
+$('clearRelay').onclick=()=>{$('relay').value='';$('relay').focus();};$('clearTarget').onclick=()=>{$('target').value='';$('target').focus();};
+$('channel').onchange=()=>{$('target').value=$('channel').value==='store'?'store.geist':defaultTarget;};
 $('send').onclick=send;$('body').onkeydown=e=>{if(e.key==='Enter')send();};$('clear').onclick=()=>{$('body').value='';$('body').focus();};$('handshake').onclick=()=>perform({op:'handshake'});$('showTrace').onclick=()=>$('trace').classList.toggle('open');
-document.addEventListener('pointerdown',e=>{if(!e.target.closest('#trace,#showTrace'))$('trace').classList.remove('open');if(!e.target.closest('.compose'))$('body').blur();});
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#trace,#showTrace'))$('trace').classList.remove('open');if(!e.target.closest('.compose,.route')&&document.activeElement instanceof HTMLInputElement)document.activeElement.blur();});
 // {.role: orchestrator.}
 async function start(){ready=true;await perform({op:'status'});setInterval(()=>{if(ready&&!document.hidden)perform({op:'poll'});},1500);}
 if(window.GeistNative)start();else{const connected=setInterval(()=>{if(window.webui&&window.webui.isConnected()){clearInterval(connected);start();}},50);}

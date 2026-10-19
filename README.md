@@ -4,6 +4,9 @@
 
 For the PC / Android / VPS monitor with AM1P+S, both VPS daemon roles and
 handshake echoes, see [the device deployment](docs/device-monitor.md).
+For relay-local domains, IP aliases and authenticated address renewal,
+see [the Geist overlay](docs/overlay.md). Each destination is a public
+relay endpoint plus a local alias; each identity can own several aliases.
 Geist reserves [UDP 47650–47659](docs/ports.md) within this workspace.
 
 ### ❄ NixOS — the programs (`geist`, `geistd`, `geist-relay`, `geist-relayd`, `geist-routed`, `geist-forwardd`)
