@@ -64,6 +64,7 @@ const
     ## whatever its master branch holds today.
   cliEntry: string = "src/clients/geist_cli.nim"
   serverEntry: string = "src/server/geistd.nim"
+  webuiEntry: string = "src/clients/geist_monitor_webui.nim"
   storageModules: array[25, string] = ["geist", "geist@ssession",
     "geist@ssessionopen", "geist@ssessioncore", "geist@sreplicate",
     "geist@sobserve", "geist@ssessionsweep", "geist@ssessionview",
@@ -154,6 +155,12 @@ task buildServerRouted, "Build geist-routed, the request router":
 
 task buildServerForwardd, "Build geist-forwardd, the VPS datagram forwarder":
   buildProgram("src/server/geist_forwardd.nim", "geist_database_server_forwardd")
+
+task buildServerMonitor, "Build the two-role AM1P+S device monitor daemon":
+  buildProgram("src/server/geist_monitord.nim", "geist-monitord")
+
+task buildCliMonitor, "Build the device monitor provisioning and check CLI":
+  buildProgram("src/clients/geist_monitor_cli.nim", "geist-monitor-cli")
 
 task buildAll, "Build every Geist program for release":
   buildProgram(cliEntry, "geist_database_cli")

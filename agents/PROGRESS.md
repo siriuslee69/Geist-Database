@@ -1,9 +1,8 @@
 # Progress
 
-Commit Message: KEM slots 4-5: FrodoKEM-1344 and HQC-5 replace Classic McEliece
+Commit Message: Deploy Geist device monitor with strict AM1P+S, recovery masks and persistent VPS logs
 
 Features (Planned):
-- Wire symmetric keys into the handshake: Bifrost has AM1P (PSK) and AM1P+S (PSK + pin); Geist hard-codes pin-only in transport.nim / serve.nim.
 - A NixOS VM test for services.geist-forward (the module is only parsed).
 - Forwarding to a home that no one can reach INTO (strict NAT) is not
   possible with a blind forwarder; the mailbox way (docs/forwarding.md,
@@ -19,6 +18,15 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- PC / Android / VPS device monitor (2026-10-19): public Geist APIs only;
+  shared-key plus pinned-signature authentication (AM1P+S), recovery mask
+  FC/F0, native DAC handshake packages, two separate VPS relay/store
+  daemons, persistent bounded debug logs and local handshake echoes.
+  docs/device-monitor.md has builds, provisioning, services and paths.
+- Initial handshakes enforce Geist's exact layout and configured minimum
+  tier. A peer cannot submit a weaker mask under a server's stronger policy.
+- Project port allocation 47650–47659, docs/ports.md. Deployed UDP ports
+  remain 47655 (store) and 47656 (relay); no whole-range firewall opening.
 - Tables as JSON / TOML (src/geist/tabletext.nim writes, tableread.nim reads, sessiontable.nim exportTable / importTable, src/clients/cli/tables.nim `geist export` / `geist import`): shape rows or columns (transposed), bytes and sealed values as hex or `\u00HH` escapes, chosen columns sealed per value with a key (`--seal-key`, from `geist keys new-sym`) or a password (salt kept in the file). Import keeps ids (twice = replace), `--fresh-ids` adds; all rows are checked before any is stored. Tests in test_tabletext (testApiSurface), example geist_tables, README 1.14.
 - `geist keys` (src/geist/keyfolder.nim, words.nim, src/clients/cli/keys.nim): one folder for signing pairs (seeded: 24 words rebuild the identical pair), 32-byte symmetric keys and trusted peer pins. list, show (pick by number), --secret words, import --kind pair|sym, trust --pin with 12-word fingerprint check, drop. BIP-39 English list + checksum (vectors tested). Tests in test_keyfolder (testCrypto).
 - Row map (keyring.nim): each ring save writes `rowmap` (generation, then rowKey<TAB>position). `sealedRow(K, ring, rowKey)` returns one row's sealed bytes without any key; empty when the map is stale or the row is missing. Bridge op `sealed` / Kotlin `GeistVault.sealedHex`. Avalon Cards shows locked fields as their real ciphertext with it.
@@ -54,6 +62,55 @@ Features (Done):
 
 Features (In Progress):
 - None.
+
+## 2026-10-19 Device monitor deployment
+
+Architecture:
+- src/geist/authentication.nim: optional shared key selects AM1P+S;
+  a missing factor fails explicitly in strict builds. No protocol retry.
+- network_events.nim + connectGeist / initGeistServer observer: metadata
+  only, including masks, mode, endpoint, session, steps, bytes and failures.
+- src/clients/monitor/: public Geist calls shared by WebUI, CLI and JNI.
+  Android app: android/geistmonitor; shared Gradle tasks use its :app alias.
+- geist_monitord.nim: relay mailbox or durable Geist message store with
+  an echo after save. nix/device-monitor-module.nix creates both services.
+
+Problems found and fixed:
+- The recovery server hello is about 69 KB, larger than a UDP datagram.
+  Added native DAC handshake package support to Bifrost (8268c72), with
+  1200-byte chunks, parity, source/session/step binding and allocation limits.
+- Leftover parity packets must not enter the established data decoder.
+- Bifrost's general minimum allows layouts outside Geist's tier schedule;
+  Geist now checks its own full layout and allowed masks before answering.
+- Android's broad Eir import compiled an unrelated video/SIMD symbol;
+  Bifrost now imports only RLE and Reed-Solomon.
+- The VPS also needed the provider firewall rules; NixOS rules alone were
+  insufficient. The phone's Wi-Fi was enabled while retaining airplane mode.
+- The cached Nimble parallel helper used an obsolete glibc. Rebuilt the
+  generated helper; the full suite then passed without changing shared tools.
+- WebUI's bridge must load before DOMContentLoaded; it is now a blocking
+  desktop-only head script. Desktop WebUI, like JNI, enters Nim on foreign
+  threads, so the device-monitor preset uses useMalloc.
+
+Verification:
+- Full Geist suite: 621 checks pass, including new real-socket dual-factor
+  recovery checks: wrong PSK, absent PSK, wrong signature pin and lower mask
+  are refused; a valid connection carries the actual encrypted echo.
+- Bifrost: 7 native package checks; existing PSK (13), handshake/package
+  (33), session (50) checks pass.
+- Android instrumented checks on the connected phone: PSK import,
+  connections, PC -> phone, phone -> PC, and persistent VPS echo.
+- Both deployed daemons restart under systemd; saved VPS messages survive
+  the deployment restart. Desktop/Android use the same UI and client code.
+- nim-check and forced Otter checks reviewed. Reported key strings are test
+  fixtures or the WebUI version; the two multiline var-init findings have
+  actual initializers. Existing structural candidates are outside this work;
+  serve dispatch was split to keep the new networking steps readable.
+
+Dependency pins:
+- Bifrost 8268c7263c014baf61c59e80b12688285ff24375.
+- Tyr ab76527e3dc7765e7c40ee97b187f0f50db5aaa5, both directly and in Bifrost.
+- Tyr and Bifrost main/nightly are synchronized and published.
 
 Notes:
 - Last problem encountered: Otter lists ~50 "dead" configurator fields

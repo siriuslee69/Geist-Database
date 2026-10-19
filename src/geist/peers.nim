@@ -81,6 +81,7 @@ type
     rights*: set[PeerRight]
     lastSeenAt*: int64
     requests*: int
+    sessionId*: uint64
     ## inbox: half-received request package, if this peer is sending one.
     ## nextPackage: identity counter for packages sent BACK to it.
     inbox*: PackageAssembly
@@ -108,6 +109,9 @@ type
     handshakes*: int
     refused*: int
     idleSeconds*: int64
+    shared*: GeistSharedKey
+    observer*: GeistNetworkObserver
+    handshakePackages*: bfx.AmeHandshakePackages
 
 const
   defaultPeerIdleSeconds* = 900'i64
@@ -118,7 +122,8 @@ const
 proc initGeistServer*(a: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     trusted: openArray[TrustedPeer], policy: TriggerPolicy,
     idleSeconds: int64 = defaultPeerIdleSeconds,
-    requireCookie: bool = true): tuple[ok: bool,
+    requireCookie: bool = true, shared: GeistSharedKey = nil,
+    observer: GeistNetworkObserver = nil): tuple[ok: bool,
     server: GeistServer, err: string] {.role: orchestrator,
     tag: "ame|networkSurface|orchestrator|server".} =
   ## a: local endpoint, bound ONCE for the life of the server.
@@ -150,6 +155,8 @@ proc initGeistServer*(a: bfx.DacAddress, identity: bfx.AmeIdentityKey,
   result.server.requireCookie = requireCookie
   result.server.peers = initTable[string, PeerLink]()
   result.server.idleSeconds = idleSeconds
+  result.server.shared = shared
+  result.server.observer = observer
   try:
     result.server.descriptor = geistDescriptor(identity, now)
     result.server.cookieSecret = bfx.initAmeCookieSecret()

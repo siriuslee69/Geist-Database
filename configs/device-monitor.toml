@@ -1,0 +1,11 @@
+# Strict device deployment: Geist's native DAC carrier and AM1P+S only.
+[preset]
+name = "device-monitor"
+description = "PC/VPS device monitor; no protocol or authentication fallback."
+[define]
+hasLibsodium = false
+bifrostHandshakes = "am1ps"
+bifrostCarriers = "dac"
+useMalloc = true # WebUI enters Nim on C-owned threads, as Android JNI does.
+[runtime.transport]
+startTier = "recovery"

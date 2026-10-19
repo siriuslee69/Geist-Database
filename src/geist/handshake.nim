@@ -22,6 +22,8 @@ import runePragmas
 import ./types
 import ./masks
 import ./peers
+import ./authentication
+import ./network_events
 
 type
   AnsweredHello {.tag: "ame|server|types".} = tuple
@@ -69,8 +71,23 @@ proc challengePeer(S: var GeistServer, hello: bfx.AmeClientHello,
   retry.sessionId = hello.sessionId
   retry.cookie = bfx.issueAmeCookie(S.cookieSecret, peerIdOf(key), now,
     hello.sessionId)
-  bfx.sendDacFrameBytes(S.sock, remote, bfx.encodeAmeHelloRetryFrame(retry))
+  bfx.sendAmeHandshakeDac(S.sock, remote, bfx.encodeAmeHelloRetryFrame(retry))
+  reportNetwork(S.observer, "handshake.cookie", key, "",
+    S.shared.authenticationName(), S.policy.startTier, hello.sessionId)
   result = (true, "")
+
+proc allowsHelloMask(S: GeistServer, hello: bfx.AmeClientHello): bool {.
+    role: sanitizer.} =
+  ## S/hello: only Geist's exact layout and configured-or-stronger tier masks.
+  var
+    candidate: GeistTier = S.policy.startTier
+  if not bfx.layoutsEquivalent(hello.layout, geistLayout()): return false
+  while true:
+    if (candidate == S.policy.startTier or S.policy.rows[candidate].kind != tkDisabled) and
+        bfx.tiersEquivalent(hello.initialTier, tierOf(hello.layout, candidate)):
+      return true
+    if candidate == gtRecovery: break
+    candidate = succ(candidate)
 
 proc beginPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
     remote: bfx.DacAddress, key: string): tuple[ok: bool, err: string] {.
@@ -100,24 +117,36 @@ proc beginPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
       not bfx.ameCookieValid(S.cookieSecret, peerIdOf(key), now,
         hello.sessionId, hello.cookie):
     return S.challengePeer(hello, remote, key, now)
+  if not S.allowsHelloMask(hello):
+    S.refused = S.refused + 1
+    reportNetwork(S.observer, "handshake.refused", key, "",
+      S.shared.authenticationName(), S.policy.startTier, hello.sessionId,
+      error = "client mask is below the configured tier or differs from Geist masks")
+    return (false, "client mask is below the configured tier or differs from Geist masks")
   # `initAmePinnedAuthentication` needs one pin, and answering needs only
   # the MODE it carries -- AM1S adds nothing to the key schedule, and the
   # expected peer is read at the finish, not here. The first pin therefore
   # stands in for "we speak pinned-key"; every pin is tried in `finishPeer`.
   answered = bfx.answerAmeHandshake(hello, [supportedTierPath(S.policy)],
-    bfx.initAmePinnedAuthentication(S.trusted[0].pin), S.descriptor,
+    S.shared.authenticationFor(S.trusted[0].pin), S.descriptor,
     S.identity, handshakeParams())
   if not answered.ok:
     S.refused = S.refused + 1
+    reportNetwork(S.observer, "handshake.refused", key, "",
+      S.shared.authenticationName(), S.policy.startTier, hello.sessionId,
+      error = answered.err)
     return (false, "handshake refused from " & key & ": " & answered.err)
   link.answer = bfx.encodeAmeServerHelloFrame(hello.sessionId,
     answered.state.serverHello)
-  bfx.sendDacFrameBytes(S.sock, remote, link.answer)
+  bfx.sendAmeHandshakeDac(S.sock, remote, link.answer)
   link.address = key
   link.phase = ppHandshaking
   link.pending = answered.state
   link.lastSeenAt = now
   S.peers[key] = link
+  reportNetwork(S.observer, "handshake.answer", key, "",
+    S.shared.authenticationName(), S.policy.startTier, hello.sessionId,
+    bytes = link.answer.len)
   result = (true, "")
 
 proc judgeFinish(S: var GeistServer, link: var PeerLink,
@@ -143,7 +172,7 @@ proc judgeFinish(S: var GeistServer, link: var PeerLink,
     # Bifrost opens the finish with the authentication the answer stored.
     # The answer stored the FIRST pin as a stand-in, so each attempt's copy
     # is given the pin it is testing instead.
-    attempt.authentication = bfx.initAmePinnedAuthentication(S.trusted[i].pin)
+    attempt.authentication = S.shared.authenticationFor(S.trusted[i].pin)
     result.accepted = bfx.acceptAmeHandshake(attempt, finish, now)
     if result.accepted.ok:
       return (true, i, result.accepted)
@@ -173,6 +202,9 @@ proc finishPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
   if not judged.ok:
     S.peers.del(key)
     S.refused = S.refused + 1
+    reportNetwork(S.observer, "handshake.refused", key, "",
+      S.shared.authenticationName(), S.policy.startTier,
+      error = judged.accepted.err)
     return (false, "no pinned peer matched the identity sent from " & key &
       "; add its .pin to the trusted list (last reason: " &
       judged.accepted.err & ")")
@@ -180,6 +212,7 @@ proc finishPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
   link.rights = S.trusted[judged.at].rights
   link.peerTrust = judged.accepted.peerTrust
   sessionId = link.pending.clientHello.sessionId
+  link.sessionId = sessionId
   # The handshake's trust result must ride into the session: initAmeSession
   # requires trust, and dropping it here fails every request AFTER a
   # handshake that actually succeeded.
@@ -200,5 +233,7 @@ proc finishPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
   link.lastSeenAt = now
   S.peers[key] = link
   S.handshakes = S.handshakes + 1
+  reportNetwork(S.observer, "handshake.accepted", key, link.subject,
+    S.shared.authenticationName(), S.policy.startTier, sessionId)
   result = (true, "")
 

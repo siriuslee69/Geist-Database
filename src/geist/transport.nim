@@ -53,6 +53,10 @@ import ./format
 import ./masks
 import ./bytecheck
 import ./payload
+import ./authentication
+import ./network_events
+
+export authentication, network_events
 
 export payload.geistDacFrameMaxBytes, payload.geistWholeMaxBytes
 
@@ -65,6 +69,11 @@ type
     tier*: GeistTier
     open*: bool
     nextPackage*: uint64
+    observer*: GeistNetworkObserver
+    mode*: string
+    subject*: string
+    sessionId*: uint64
+    confirmed*: bool
 
 ## A handler type without a peer context used to live here. It is gone:
 ## anything deciding what a request MAY do has to know who is asking, and
@@ -255,14 +264,15 @@ proc helloAgain(sock: bfx.DacSocket, remote: bfx.DacAddress,
   ## server's next frame.
   bfx.clearAmeClientHandshake(hs)
   hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, retry.cookie, auth)
-  bfx.sendDacFrameBytes(sock, remote,
+  bfx.sendAmeHandshakeDac(sock, remote,
     bfx.encodeAmeClientHelloFrame(hs.hello, retried = true))
-  result = bfx.recvDacFrameBytes(sock, geistDacFrameMaxBytes, timeoutMs)
+  result = bfx.recvAmeHandshakeDac(sock, remote, timeoutMs)
 
 proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     peer: bfx.AmePinnedPeerIdentity, policy: TriggerPolicy,
     sessionId: uint64 = 1'u64,
-    timeoutMs: int = 4000): tuple[ok: bool, link: GeistLink, err: string] {.
+    timeoutMs: int = 4000, shared: GeistSharedKey = nil,
+    observer: GeistNetworkObserver = nil): tuple[ok: bool, link: GeistLink, err: string] {.
     role: orchestrator, tag: "ame|networkSurface|orchestrator".} =
   ## remote: `dac://host:port` peer endpoint.
   ## identity/peer: local signing identity and the pinned remote key.
@@ -287,18 +297,27 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
   L = geistLayout()
   start = tierOf(L, policy.startTier)
   now = getTime().toUnix()
+  defer:
+    bfx.clearAmeClientHandshake(hs)
+    if not result.ok:
+      reportNetwork(observer, "handshake.failed", bfx.formatDacAddress(remote),
+        peer.subject, shared.authenticationName(), policy.startTier,
+        sessionId, error = result.err)
   try:
-    # AM1S: we believe exactly one public key, provisioned out of band.
-    auth = bfx.initAmePinnedAuthentication(peer)
+    auth = shared.authenticationFor(peer)
+    reportNetwork(observer, "handshake.begin", bfx.formatDacAddress(remote),
+      peer.subject, shared.authenticationName(), policy.startTier, sessionId)
     hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, [], auth)
     sock = bfx.openDacPeer(remote, timeoutMs)
-    bfx.sendDacFrameBytes(sock, remote, bfx.encodeAmeClientHelloFrame(hs.hello))
-    got = bfx.recvDacFrameBytes(sock, geistDacFrameMaxBytes, timeoutMs)
+    bfx.sendAmeHandshakeDac(sock, remote, bfx.encodeAmeClientHelloFrame(hs.hello))
+    got = bfx.recvAmeHandshakeDac(sock, remote, timeoutMs)
     if not got.ok:
       bfx.closeDac(sock)
       return (false, GeistLink(), got.err)
     frame = bfx.decodeAmeHandshakeFrame(got.payload)
     if frame.kind == bfx.ampkHelloRetry:
+      reportNetwork(observer, "handshake.cookie", bfx.formatDacAddress(remote),
+        peer.subject, shared.authenticationName(), policy.startTier, sessionId)
       got = helloAgain(sock, remote, hs, bfx.decodeAmeHelloRetry(frame.record),
         sessionId, L, start, auth, timeoutMs)
       if not got.ok:
@@ -308,6 +327,9 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     bfx.requireHandshakeFrame(frame, bfx.ampkServerHello,
       bfx.ameHandshakeStepServerHello, sessionId)
     serverHello = bfx.decodeAmeServerHello(L, frame.record)
+    reportNetwork(observer, "handshake.answer", bfx.formatDacAddress(remote),
+      peer.subject, shared.authenticationName(), policy.startTier, sessionId,
+      bytes = got.payload.len)
     # Who we are travels HERE, sealed, not in the hello. `finishAmeHandshake`
     # erases the client's KEM secrets whatever the outcome.
     finished = bfx.finishAmeHandshake(hs, serverHello, auth,
@@ -315,7 +337,7 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     if not finished.ok:
       bfx.closeDac(sock)
       return (false, GeistLink(), finished.err)
-    bfx.sendDacFrameBytes(sock, remote,
+    bfx.sendAmeHandshakeDac(sock, remote,
       bfx.encodeAmeClientFinishFrame(sessionId, finished.finish))
     # The handshake's peerTrust must ride into the session: initAmeSession
     # requires trust by default, and dropping it here fails every request
@@ -332,7 +354,13 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     result.link.client.remote = remote
     result.link.tier = policy.startTier
     result.link.open = true
+    result.link.observer = observer
+    result.link.mode = shared.authenticationName()
+    result.link.subject = peer.subject
+    result.link.sessionId = sessionId
     result.ok = true
+    reportNetwork(observer, "handshake.finish.sent", bfx.formatDacAddress(remote),
+      peer.subject, result.link.mode, policy.startTier, sessionId)
   except CatchableError as exc:
     if sock != nil:
       bfx.closeDac(sock)
@@ -359,10 +387,24 @@ proc awaitReply(S: var GeistLink, timeoutMs: int): tuple[ok: bool,
     fed: FeedOutcome = (false, false, @[], "")
     inbox: PackageAssembly = PackageAssembly()
     frames: int = 0
+    raw: bfx.DacFrameBytesResult = default(bfx.DacFrameBytesResult)
+    header: bfx.AmeFrameHeader = default(bfx.AmeFrameHeader)
+    deadline: float = epochTime() + float(timeoutMs) / 1000.0
+    remaining: int = 0
   # A package whose chunks never finish arriving must not spin here. The
   # count is generous: a megabyte at MTU-sized chunks is ~900.
   while frames <= 65_536:
-    got = bfx.receive(S.client, timeoutMs)
+    remaining = int((deadline - epochTime()) * 1000)
+    if remaining <= 0:
+      return (false, Reply(), "Geist reply deadline expired")
+    raw = bfx.recvDacFrameBytes(S.client.socket, geistDacFrameMaxBytes, remaining)
+    if not raw.ok: return (false, Reply(), raw.err)
+    frames = frames + 1
+    if bfx.formatDacAddress(raw.remote) != bfx.formatDacAddress(S.client.remote): continue
+    header = bfx.decodeAmeFrameHeader(raw.payload)
+    if header.packetKind == bfx.ampkHandshakePackage or
+        bfx.ameHandshakeKindValid(header.packetKind): continue
+    got = bfx.openAmeDacFrame(S.client.connection, raw.payload, raw.remote)
     if not got.ok:
       return (false, Reply(), got.err)
     fed = feedPayload(inbox, got.packet.payload)
@@ -370,7 +412,6 @@ proc awaitReply(S: var GeistLink, timeoutMs: int): tuple[ok: bool,
       return (false, Reply(), fed.err)
     if fed.done:
       return replyFrom(fed.payload)
-    frames = frames + 1
   result = (false, Reply(), "package never completed")
 
 proc send*(S: var GeistLink, q: Query,
@@ -387,6 +428,10 @@ proc send*(S: var GeistLink, q: Query,
     sent: SendOutcome = (false, 0, "")
   if not S.open:
     return (false, Reply(), "link is closed")
+  defer:
+    reportNetwork(S.observer, if result.ok: "reply.received" else: "request.failed",
+      bfx.formatDacAddress(S.client.remote), S.subject, S.mode, S.tier,
+      S.sessionId, bytes = q.payload.len, error = result.err)
   try:
     S.nextPackage = S.nextPackage + 1'u64
     sent = sendPayload(S.client.socket, S.client.remote, S.client.connection,
@@ -394,6 +439,10 @@ proc send*(S: var GeistLink, q: Query,
     if not sent.ok:
       return (false, Reply(), sent.err)
     result = S.awaitReply(timeoutMs)
+    if result.ok and not S.confirmed:
+      S.confirmed = true
+      reportNetwork(S.observer, "handshake.confirmed", bfx.formatDacAddress(S.client.remote),
+        S.subject, S.mode, S.tier, S.sessionId)
   except CatchableError as exc:
     result = (false, Reply(), exc.msg)
 

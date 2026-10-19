@@ -110,6 +110,38 @@ proc answerPeer(S: var GeistServer, payload: openArray[uint8],
     return (false, false, "reply to " & key & " failed: " & sent.err)
   S.served = S.served + 1
   result = (true, true, "")
+  reportNetwork(S.observer, "request.served", key, link.subject,
+    S.shared.authenticationName(), S.policy.startTier,
+    sessionId = link.sessionId, bytes = fed.payload.len, error = reply.err)
+
+proc dispatchFrame(S: var GeistServer, payload: ByteSeq,
+    remote: bfx.DacAddress, key: string, handler: ServedHandler): tuple[
+    ok: bool, served: bool, err: string] {.role: orchestrator.} =
+  ## S/payload/remote/key/handler: one complete handshake record or session frame.
+  var
+    frame: bfx.AmeHandshakeFrame = default(bfx.AmeHandshakeFrame)
+    step: tuple[ok: bool, err: string] = (false, "")
+    isHandshake: bool = false
+  try:
+    frame = bfx.decodeAmeHandshakeFrame(payload)
+    isHandshake = true
+  except CatchableError:
+    isHandshake = false
+  if not isHandshake:
+    if not S.peers.hasKey(key) or S.peers[key].phase != ppOpen:
+      return (false, false, "data frame from " & key & " with no session")
+    return S.answerPeer(payload, remote, key, handler)
+  if frame.kind == bfx.ampkClientHello:
+    S.peers.del(key)
+    step = S.beginPeer(frame, remote, key)
+    return (step.ok, false, step.err)
+  if frame.kind == bfx.ampkClientFinish:
+    if not S.peers.hasKey(key) or S.peers[key].phase != ppHandshaking:
+      return (false, false, "handshake finish from " & key &
+        " with no handshake under way")
+    step = S.finishPeer(frame, key)
+    return (step.ok, false, step.err)
+  result = (false, false, "a server does not answer " & $frame.kind & " from " & key)
 
 proc serveOnce*(S: var GeistServer, handler: ServedHandler,
     timeoutMs: int = 1000): tuple[ok: bool, served: bool, err: string] {.
@@ -132,11 +164,8 @@ proc serveOnce*(S: var GeistServer, handler: ServedHandler,
   ##   anything else   -> data, if this address has an open session
   var
     got: bfx.DacFrameBytesResult = default(bfx.DacFrameBytesResult)
-    frame: bfx.AmeHandshakeFrame = default(bfx.AmeHandshakeFrame)
     key: string = ""
-    step: tuple[ok: bool, err: string] = (false, "")
-    answered: tuple[ok: bool, served: bool, err: string] = (false, false, "")
-    isHandshake: bool = false
+    fed: bfx.AmeHandshakeFeed = default(bfx.AmeHandshakeFeed)
   if not S.open:
     return (false, false, "server is not bound")
   S.dropIdlePeers()
@@ -157,28 +186,13 @@ proc serveOnce*(S: var GeistServer, handler: ServedHandler,
         " failed: " & exc.msg)
     return (true, false, "")
   key = bfx.formatDacAddress(got.remote)
+  fed = bfx.feedAmeHandshakeDatagram(S.handshakePackages, got.payload, key)
+  if not fed.ok:
+    return (false, false, fed.err)
+  if not fed.done:
+    return (true, false, "")
   try:
-    frame = bfx.decodeAmeHandshakeFrame(got.payload)
-    isHandshake = true
-  except CatchableError:
-    isHandshake = false
-  if not isHandshake:
-    if not S.peers.hasKey(key) or S.peers[key].phase != ppOpen:
-      return (false, false, "data frame from " & key & " with no session")
-    answered = S.answerPeer(got.payload, got.remote, key, handler)
-    return (answered.ok, answered.served, answered.err)
-  if frame.kind == bfx.ampkClientHello:
-    # A hello from an address we already know is a peer that restarted.
-    # Its old session is gone whatever we think, so drop it and start over.
-    S.peers.del(key)
-    step = S.beginPeer(frame, got.remote, key)
-    return (step.ok, false, step.err)
-  if frame.kind == bfx.ampkClientFinish:
-    if not S.peers.hasKey(key) or S.peers[key].phase != ppHandshaking:
-      return (false, false, "handshake finish from " & key &
-        " with no handshake under way")
-    step = S.finishPeer(frame, key)
-    return (step.ok, false, step.err)
-  result = (false, false, "a server does not answer " & $frame.kind &
-    " from " & key)
+    result = S.dispatchFrame(fed.payload, got.remote, key, handler)
+  except CatchableError as exc:
+    result = (false, false, "frame from " & key & ": " & exc.msg)
 

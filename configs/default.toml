@@ -127,6 +127,8 @@ copies = 2
 everySeconds = 0
 
 [runtime.transport]
+# Project port allocation: 47650..47659 belongs to Geist. Store 47655,
+# relay 47656, router 47657. Open only ports actually used; docs/ports.md.
 # Read by the NETWORK half of the library only (geist/network). A program
 # that imports plain `geist` to write rows to disk never looks at this
 # table, and does not compile the code that would understand it.
