@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: Add identity-bound Geist overlay aliases, renewable endpoints and reverse Query/Reply
+Commit Message: Pin Bifrost af69dc5 (routing, tight key, lane jumps, session key)
 
 Features (Planned):
 - A NixOS VM test for services.geist-forward (the module is only parsed).
