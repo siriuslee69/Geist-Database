@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: Pin Bifrost af69dc5 (routing, tight key, lane jumps, session key)
+Commit Message: Links recover from wide loss bursts by themselves (Bifrost lane jumps)
 
 Features (Planned):
 - A NixOS VM test for services.geist-forward (the module is only parsed).
@@ -18,6 +18,12 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- Lane recovery (2026-10-21, src/geist/lane_recovery.nim): a direction of a
+  link that fell behind a loss burst wider than the reorder window asks for a
+  proved Bifrost lane jump (at most one ask a second) and carries on. A
+  server stuck on the client's lane makes the client answer and resend its
+  request; a client stuck on the server's lane loses that one reply.
+  test_lane_jump (both directions, real sockets); README 2.6.
 - Relay-local naming (2026-10-19): multiple domain/IP aliases per pinned
   subject, including separate owners at the same IP with different ports.
   Authenticated outbound renewal records the observed full IP:port; leases

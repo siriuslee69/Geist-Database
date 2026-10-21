@@ -53,6 +53,7 @@ import ./format
 import ./masks
 import ./bytecheck
 import ./payload
+import ./lane_recovery
 import ./authentication
 import ./network_events
 
@@ -74,6 +75,8 @@ type
     subject*: string
     sessionId*: uint64
     confirmed*: bool
+    lastJumpAskAt*: float
+      ## When this link last asked the server for a lane jump (./lane_recovery).
 
 ## A handler type without a peer context used to live here. It is gone:
 ## anything deciding what a request MAY do has to know who is asking, and
@@ -377,11 +380,52 @@ proc replyFrom(payload: ByteSeq): tuple[ok: bool, reply: Reply,
     return (false, Reply(), "malformed answer: " & complaint)
   result = (true, decodeReply(payload), "")
 
-proc awaitReply(S: var GeistLink, timeoutMs: int): tuple[ok: bool,
-    reply: Reply, err: string] {.role: dataFetcher,
+proc laneFrame(S: var GeistLink, raw: bfx.DacFrameBytesResult,
+    resend: var bool): bool {.role: orchestrator,
+    tag: "ame|networkSurface|read".} =
+  ## S/raw: one datagram from the server. True when it was a lane frame
+  ## (./lane_recovery) and has been dealt with; `resend` is set when the
+  ## server could not follow OUR lane, so the request it was reading is
+  ## lost and must go out again.
+  var
+    lane: LaneOutcome = handleLaneFrame(S.client.connection, raw.payload)
+    endpoint: string = bfx.formatDacAddress(S.client.remote)
+  case lane.step
+  of lsNone:
+    return false
+  of lsAnswered:
+    bfx.sendDacFrameBytes(S.client.socket, S.client.remote, lane.reply)
+    resend = true
+    reportNetwork(S.observer, "lane.jump.answered", endpoint, S.subject,
+      S.mode, S.tier, S.sessionId)
+  of lsJumped:
+    reportNetwork(S.observer, "lane.jump.applied", endpoint, S.subject,
+      S.mode, S.tier, S.sessionId, bytes = int(lane.gaveUp))
+  of lsRefused:
+    reportNetwork(S.observer, "lane.jump.refused", endpoint, S.subject,
+      S.mode, S.tier, S.sessionId, error = lane.err)
+  result = true
+
+proc askJump(S: var GeistLink) {.role: actor, tag: "ame|networkSurface".} =
+  ## S: a link whose last frame did not open. Asks the server to prove where
+  ## its lane is, when the frame looked like a gap and we did not just ask.
+  var
+    ask: ByteSeq = jumpAskIfBehind(S.client.connection, S.lastJumpAskAt,
+      epochTime())
+  if ask.len == 0:
+    return
+  bfx.sendDacFrameBytes(S.client.socket, S.client.remote, ask)
+  reportNetwork(S.observer, "lane.jump.asked",
+    bfx.formatDacAddress(S.client.remote), S.subject, S.mode, S.tier,
+    S.sessionId)
+
+proc awaitReply(S: var GeistLink, timeoutMs: int, resend: var bool): tuple[
+    ok: bool, reply: Reply, err: string] {.role: dataFetcher,
     tag: "ame|networkSurface|read".} =
   ## S/timeoutMs: frames read until one whole answer has arrived -- one
   ## frame, or a package of many -- and that answer checked and decoded.
+  ## resend: set, and the wait ended, when the server asked for a lane
+  ## jump: the request it was reading never arrived whole.
   var
     got: bfx.AmeOpenResult = default(bfx.AmeOpenResult)
     fed: FeedOutcome = (false, false, @[], "")
@@ -391,6 +435,7 @@ proc awaitReply(S: var GeistLink, timeoutMs: int): tuple[ok: bool,
     header: bfx.AmeFrameHeader = default(bfx.AmeFrameHeader)
     deadline: float = epochTime() + float(timeoutMs) / 1000.0
     remaining: int = 0
+    isLane: bool = false
   # A package whose chunks never finish arriving must not spin here. The
   # count is generous: a megabyte at MTU-sized chunks is ~900.
   while frames <= 65_536:
@@ -404,7 +449,17 @@ proc awaitReply(S: var GeistLink, timeoutMs: int): tuple[ok: bool,
     header = bfx.decodeAmeFrameHeader(raw.payload)
     if header.packetKind == bfx.ampkHandshakePackage or
         bfx.ameHandshakeKindValid(header.packetKind): continue
+    isLane = S.laneFrame(raw, resend)
+    if resend:
+      return (false, Reply(), "server could not follow this lane; jump sent")
+    if isLane:
+      continue
     got = bfx.openAmeDacFrame(S.client.connection, raw.payload, raw.remote)
+    if not got.ok and bfx.ameSessionBehind(S.client.connection):
+      # A gap too wide for the reorder window. Ask for a jump and keep
+      # reading: the frames after it will open once the jump is in.
+      S.askJump()
+      continue
     if not got.ok:
       return (false, Reply(), got.err)
     fed = feedPayload(inbox, got.packet.payload)
@@ -426,6 +481,8 @@ proc send*(S: var GeistLink, q: Query,
   ## package note above.
   var
     sent: SendOutcome = (false, 0, "")
+    resend: bool = false
+    attempts: int = 0
   if not S.open:
     return (false, Reply(), "link is closed")
   defer:
@@ -433,12 +490,17 @@ proc send*(S: var GeistLink, q: Query,
       bfx.formatDacAddress(S.client.remote), S.subject, S.mode, S.tier,
       S.sessionId, bytes = q.payload.len, error = result.err)
   try:
-    S.nextPackage = S.nextPackage + 1'u64
-    sent = sendPayload(S.client.socket, S.client.remote, S.client.connection,
-      encodeQuery(q), S.nextPackage)
-    if not sent.ok:
-      return (false, Reply(), sent.err)
-    result = S.awaitReply(timeoutMs)
+    # Twice at most: the second time only when the server proved it could
+    # not read the first (it asked for a lane jump, which we answered).
+    while attempts < 2:
+      resend = false
+      S.nextPackage = S.nextPackage + 1'u64
+      sent = sendPayload(S.client.socket, S.client.remote, S.client.connection,
+        encodeQuery(q), S.nextPackage)
+      if not sent.ok:
+        return (false, Reply(), sent.err)
+      result = S.awaitReply(timeoutMs, resend)
+      attempts = if resend: attempts + 1 else: 2
     if result.ok and not S.confirmed:
       S.confirmed = true
       reportNetwork(S.observer, "handshake.confirmed", bfx.formatDacAddress(S.client.remote),

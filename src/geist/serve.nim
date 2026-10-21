@@ -30,6 +30,7 @@ import ./transport
 import ./peers
 import ./handshake
 import ./ping
+import ./lane_recovery
 
 export peers
 
@@ -65,6 +66,42 @@ proc answerPayload(S: GeistServer, payload: ByteSeq, p: PeerContext,
     ctx = S.delegatedContext(ctx, parsed.a)
   result = handler(q, ctx)
 
+proc laneFrame(S: var GeistServer, link: var PeerLink,
+    payload: openArray[uint8], remote: bfx.DacAddress,
+    key: string): LaneOutcome {.role: orchestrator,
+    tag: "ame|networkSurface|server".} =
+  ## S/link/payload/remote/key: one frame of an open session, handled when it
+  ## is a lane ask or jump (./lane_recovery); lsNone otherwise.
+  result = handleLaneFrame(link.session, payload)
+  case result.step
+  of lsNone:
+    discard
+  of lsAnswered:
+    bfx.sendDacFrameBytes(S.sock, remote, result.reply)
+    reportNetwork(S.observer, "lane.jump.answered", key, link.subject,
+      S.shared.authenticationName(), S.policy.startTier, link.sessionId)
+  of lsJumped:
+    reportNetwork(S.observer, "lane.jump.applied", key, link.subject,
+      S.shared.authenticationName(), S.policy.startTier, link.sessionId,
+      bytes = int(result.gaveUp))
+  of lsRefused:
+    reportNetwork(S.observer, "lane.jump.refused", key, link.subject,
+      S.shared.authenticationName(), S.policy.startTier, link.sessionId,
+      error = result.err)
+
+proc askJump(S: var GeistServer, link: var PeerLink, remote: bfx.DacAddress,
+    key: string) {.role: actor, tag: "ame|networkSurface|server".} =
+  ## S/link/remote/key: the peer's last frame did not open; ask it to prove
+  ## where its lane is, when it looked like a gap and we did not just ask.
+  var
+    ask: ByteSeq = jumpAskIfBehind(link.session, link.lastJumpAskAt,
+      epochTime())
+  if ask.len == 0:
+    return
+  bfx.sendDacFrameBytes(S.sock, remote, ask)
+  reportNetwork(S.observer, "lane.jump.asked", key, link.subject,
+    S.shared.authenticationName(), S.policy.startTier, link.sessionId)
+
 proc answerPeer(S: var GeistServer, payload: openArray[uint8],
     remote: bfx.DacAddress, key: string,
     handler: ServedHandler): tuple[ok: bool, served: bool, err: string] {.
@@ -80,9 +117,16 @@ proc answerPeer(S: var GeistServer, payload: openArray[uint8],
     reply: Reply = Reply()
     fed: FeedOutcome = (false, false, @[], "")
     sent: SendOutcome = (false, 0, "")
+    lane: LaneOutcome = (lsNone, @[], 0'u64, "")
   link = S.peers[key]
+  lane = S.laneFrame(link, payload, remote, key)
+  if lane.step != lsNone:
+    link.lastSeenAt = getTime().toUnix()
+    S.peers[key] = link
+    return (lane.step != lsRefused, false, lane.err)
   opened = bfx.openAmeDacFrame(link.session, payload, remote)
   if not opened.ok:
+    S.askJump(link, remote, key)
     # Keep the session: a single frame failing to open is a replay, a
     # truncated datagram or a stray packet, none of which is a reason to
     # make the peer handshake again.

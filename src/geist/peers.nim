@@ -86,6 +86,9 @@ type
     ## nextPackage: identity counter for packages sent BACK to it.
     inbox*: PackageAssembly
     nextPackage*: uint64
+    lastJumpAskAt*: float
+      ## When this server last asked this peer for a lane jump
+      ## (./lane_recovery), so a stream of bad frames costs one ask a second.
 
   ServedHandler* = proc (q: Query, p: PeerContext): Reply {.gcsafe.}
 

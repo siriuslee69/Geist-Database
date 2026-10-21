@@ -117,7 +117,8 @@ and below, never sideways within its own level, and never upward.
             v
   level 4   ping.nim  stop.nim (tiny, no Bifrost)
             forward.nim  forward_settings.nim (a VPS forwarder)
-            masks.nim  bytecheck.nim  payload.nim -> transport.nim
+            masks.nim  bytecheck.nim  payload.nim  lane_recovery.nim
+            -> transport.nim
             -> peers.nim -> handshake.nim
             -> serve.nim -> network.nim
             |  the wire, which is the only part that knows Bifrost

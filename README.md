@@ -2124,6 +2124,31 @@ On the server side, one socket carries every peer:
   a second socket from the same client arrives as a stranger
 ```
 
+**A link that fell behind recovers by itself.** Each direction of a link
+counts its messages. A burst of lost datagrams wider than the receiver's
+reorder window (16 to 64 messages) used to leave that direction unable to
+open anything again. Now the stuck side asks, the other side proves where
+it is (a "lane jump", Bifrost README, FOMKE Step 8), and the link carries
+on -- no new handshake:
+
+```text
+  stuck side                         other side
+  ----------                         ----------
+  frame does not open, "behind"
+  ask (at most one a second) ──────▶ proves its position
+  lane moves  ◀────────────────────  jump
+  next frame opens
+```
+
+  server stuck on the client's lane   the client answers and sends its
+                                      current request again
+  client stuck on the server's lane   that one reply is lost: the request
+                                      times out, the next one works
+
+Both ends do this on their own (src/geist/lane_recovery.nim). The network
+events are `lane.jump.asked`, `lane.jump.answered`, `lane.jump.applied`
+and `lane.jump.refused`.
+
 ## 2.7 What runs where
 
 ```text
@@ -2635,6 +2660,10 @@ nix build .#checks.x86_64-linux.relay-pipe -L
                                                        spell; the client gets a new place and the
                                                        next call re-shakes hands. Raise it or ask
                                                        more often
+  `lane.jump.*` events in the network log              a burst of lost datagrams; the link
+                                                       recovered by itself. Many of them: size
+                                                       the socket receive queue (Bifrost README,
+                                                       "The one socket setting a server must set")
   handshake too big for one frame                      can happen at archive/recovery (FrodoKEM
                                                        and HQC keys); those levels use package
                                                        transfer
