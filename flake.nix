@@ -76,5 +76,7 @@
       nixosModules.geist-relay = import ./nix/relay-module.nix;
       # The VPS end of Client -> VPS -> Home: no key, no store, no state.
       nixosModules.geist-forward = import ./nix/forward-module.nix;
+      # The router machines link to: holds link keys, reads no payload.
+      nixosModules.geist-hop = import ./nix/hop-module.nix;
     };
 }

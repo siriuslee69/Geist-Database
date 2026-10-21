@@ -207,6 +207,37 @@ services.geist-forward = {
 each bounds is in [forwarding.md](forwarding.md). The module has not been
 run under a NixOS VM test yet -- only parsed.
 
+## `services.geist-hop`
+
+A separate module in `nix/hop-module.nix`, exported as
+`nixosModules.geist-hop`, for the router machines link to
+([hop.md](hop.md)). Its identity lives in `stateDir`
+(`/var/lib/geist-hop`); pins are public and may be store paths.
+
+```nix
+services.geist-hop = {
+  enable = true;
+  openFirewall = true;                 # UDP 47658
+  routeId = 16;
+  peers = [
+    { pin = ./peers/phone.pin; id = 48; }
+    { pin = ./peers/nas.pin;   id = 32; }
+  ];
+  targets = [ { id = 32; name = "nas"; visibleTo = [ "phone" ]; } ];
+};
+
+# on the home machine, behind it:
+services.geistd = {
+  # ...
+  hop = "dac://vps.example:47658";
+  hopPin = ./peers/vps-hop.pin;
+};
+```
+
+Read the router's pin once with `geist-hopd --identity
+/var/lib/geist-hop/hop.id --pin-out hop.pin` after its first start. Like
+`services.geist-forward`, the module is parsed, not yet run under a VM test.
+
 ## The VM tests
 
 ```console

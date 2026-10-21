@@ -32,6 +32,12 @@ type
     mode*: Mode
     path*: string
     remote*: string
+    hop*: string
+    hopPin*: string
+    target*: string
+      ## hop/hopPin/target: reach the daemon THROUGH a geist-hopd router
+      ##   (docs/hop.md): the router, its pin, and the daemon's route id or
+      ##   directory name. --peer-pin is then the DAEMON's pin.
     password*: string
     passwordFile*: string
     preset*: string
@@ -73,6 +79,11 @@ geist <command> [options]
 
   --path <dir>            operate directly on a database directory
   --remote dac://host:port  operate through a running geistd
+  --hop dac://host:port   ... or reach that geistd through a geist-hopd
+                          router (with --hop-pin and --target)
+  --hop-pin <file>        the router's pin
+  --target <id|name>      the geistd's route id or directory name; see
+                          `geist routes`
   --password <text>       at-rest password (prefer --password-file)
   --password-file <file>  read the password from a file
   --preset <name>         config preset, default: [storage] preset in configs/default.toml
@@ -104,6 +115,8 @@ geist <command> [options]
                           the working directory, then ~/.config/geist
 
 commands
+  routes                  the targets a geist-hopd router shows you
+                          (--hop, --hop-pin, --identity)
   inspect                 header + cluster index; no password needed
   verify                  check every sealed batch's integrity digest; no
                           password needed. Proves the bytes are the ones
@@ -229,6 +242,9 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     case key
     of "path": result.path = value
     of "remote": result.remote = value
+    of "hop": result.hop = value
+    of "hop-pin": result.hopPin = value
+    of "target": result.target = value
     of "password": result.password = value
     of "password-file": result.passwordFile = value
     of "preset": result.preset = value
@@ -257,7 +273,8 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     else: fail("unknown option --" & key)
     result.given.add key
     i = i + 1
-  result.mode = if result.remote.len > 0: mRemote else: mDirect
+  result.mode = if result.remote.len > 0 or result.hop.len > 0: mRemote
+    else: mDirect
 
 proc withUserConfig*(o: Options): Options {.role: configurator,
     tag: "cli|config|parsing".} =
@@ -295,7 +312,8 @@ proc withUserConfig*(o: Options): Options {.role: configurator,
     result.peerPin = loaded.user.peerPin
   if "limit" notin result.given and loaded.user.limit > 0:
     result.limit = loaded.user.limit
-  result.mode = if result.remote.len > 0: mRemote else: mDirect
+  result.mode = if result.remote.len > 0 or result.hop.len > 0: mRemote
+    else: mDirect
 
 proc storePaths*(o: Options): tuple[dir, name: string] {.role: parser,
     tag: "cli|parsing|storageIo".} =

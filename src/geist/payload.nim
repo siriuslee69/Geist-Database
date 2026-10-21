@@ -101,6 +101,31 @@ proc packageDefaults(): bfx.DacScenarioDefaults {.role: configurator,
   ## an argument rather than part of the call.
   result = bfx.dacDefaultsFor(bfx.dscCleanLan)
 
+proc payloadBodies*(payload: openArray[uint8],
+    packageId: uint64): seq[ByteSeq] {.role: truthBuilder,
+    tag: "ame|networkSurface|write".} =
+  ## payload: the encoded Query or Reply.
+  ## packageId: nonzero, distinct per package on this session.
+  ## The envelope bodies, in order: one whole frame, or a manifest and its
+  ## chunks (see the package note above). Not yet sealed.
+  var
+    body: ByteSeq = @[]
+    plan: bfx.DacPackagePlan = default(bfx.DacPackagePlan)
+    i: int = 0
+  if payload.len <= geistWholeMaxBytes:
+    body = @[envWhole]
+    body.addBytes(payload)
+    return @[body]
+  plan = bfx.planDacPackage(packageId, payload, packageDefaults())
+  body = @[envManifest]
+  body.addBytes(bfx.encodeDacPackageManifest(plan.manifest))
+  result.add(body)
+  while i < plan.chunks.len:
+    body = @[envChunk]
+    body.addBytes(bfx.encodeDacPackageChunk(plan.chunks[i]))
+    result.add(body)
+    i = i + 1
+
 proc sendPayload*(sock: bfx.DacSocket, remote: bfx.DacAddress,
     session: var bfx.AmeSession, payload: openArray[uint8],
     packageId: uint64): SendOutcome {.
@@ -108,30 +133,22 @@ proc sendPayload*(sock: bfx.DacSocket, remote: bfx.DacAddress,
   ## sock/remote/session: an established AME session.
   ## payload: the encoded Query or Reply.
   ## packageId: nonzero, distinct per package on this session.
-  var
-    body: ByteSeq = @[]
-    plan: bfx.DacPackagePlan = default(bfx.DacPackagePlan)
-    i: int = 0
   try:
-    if payload.len <= geistWholeMaxBytes:
-      body = @[envWhole]
-      body.addBytes(payload)
-      bfx.sendAmeDac(sock, remote, session, body)
-      return (true, 1, "")
-    plan = bfx.planDacPackage(packageId, payload, packageDefaults())
-    body = @[envManifest]
-    body.addBytes(bfx.encodeDacPackageManifest(plan.manifest))
-    bfx.sendAmeDac(sock, remote, session, body)
-    result.frames = 1
-    while i < plan.chunks.len:
-      body = @[envChunk]
-      body.addBytes(bfx.encodeDacPackageChunk(plan.chunks[i]))
+    for body in payloadBodies(payload, packageId):
       bfx.sendAmeDac(sock, remote, session, body)
       result.frames = result.frames + 1
-      i = i + 1
     result.ok = true
   except CatchableError as exc:
     result = (false, result.frames, exc.msg)
+
+proc sealPayloadFrames*(session: var bfx.AmeSession,
+    payload: openArray[uint8], packageId: uint64): seq[ByteSeq] {.
+    role: encryptor, tag: "ame|networkSurface|write".} =
+  ## session/payload/packageId: as for `sendPayload`, but the frames are
+  ## only SEALED and handed back -- for a link that does not own a socket
+  ## (one through a router, ./hop_link), which sends them its own way.
+  for body in payloadBodies(payload, packageId):
+    result.add(bfx.sealAmeDacFrame(session, body))
 
 proc feedPayload*(A: var PackageAssembly,
     frame: openArray[uint8]): FeedOutcome {.role: parser,

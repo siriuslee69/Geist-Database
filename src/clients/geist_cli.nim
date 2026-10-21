@@ -59,12 +59,13 @@ type
     run: proc(o: Options) {.nimcall.}
 
 const
-  anyMode: array[5, Command] = [
+  anyMode: array[6, Command] = [
     Command(name: "convert", run: cmdConvert),
     Command(name: "presets", run: cmdPresets),
     Command(name: "keygen", run: cmdKeygen),
     Command(name: "keys", run: cmdKeys),
-    Command(name: "sync", run: cmdSync)]
+    Command(name: "sync", run: cmdSync),
+    Command(name: "routes", run: cmdRoutes)]
   directOnly: array[22, Command] = [
     Command(name: "inspect", run: cmdInspect),
     Command(name: "verify", run: cmdVerify),

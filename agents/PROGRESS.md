@@ -1,8 +1,11 @@
 # Progress
 
-Commit Message: Session keys (SK) per peer for AM1P+S links; device monitor keeps them
+Commit Message: geist-hopd: a router machines link to, end-to-end Geist links through it
 
 Features (Planned):
+- geist-hopd: a NixOS VM test for services.geist-hop; directory exchange
+  between routers instead of `via` lines; a dial that does not block the
+  router's turn.
 - A NixOS VM test for services.geist-forward (the module is only parsed).
 - Forwarding to a home that no one can reach INTO (strict NAT) is not
   possible with a blind forwarder; the mailbox way (docs/forwarding.md,
@@ -18,6 +21,19 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- geist-hopd (2026-10-21, docs/hop.md): machines make ONE link to a router
+  and open ordinary end-to-end Geist links THROUGH it (Bifrost ART route
+  frames; the router seals only the 16-byte address per link and reads no
+  payload). hop_link.nim (connectHop, routeDirectory, connectGeistVia),
+  hop_router.nim (HopNode: handshakes via GeistServer, sessions in Bifrost's
+  AmeRouter, routers dialling routers, idle sweep), geistd --hop/--hop-pin
+  (serveAnyOnce over its socket + the hop link, relinks after 3 min of
+  silence), geist --hop/--hop-pin/--target and `geist routes`. Transport
+  refactor: a link's frames go through a LinkPath (own socket or router);
+  payloadBodies/sealPayloadFrames. Port 47658. nix/hop-module.nix
+  (services.geist-hop; parsed only), services.geistd.hop/hopPin.
+  test_hop_router (one router, two routers with a dial), checkHop, and a
+  three-process run (hopd + geistd --hop + geist list --hop) that worked.
 - Session keys (2026-10-21, src/geist/session_keys.nim): a shared key may
   carry a SessionKeyStore; every AM1P+S session hands out an SK the next
   handshake needs. Kept per PEER (one group key, many devices): server C+P,

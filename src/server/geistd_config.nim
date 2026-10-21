@@ -51,6 +51,10 @@ type
       ##   `<pin file>@dac://host:port`. Repeatable flags.
     syncEvery*: int
       ## seconds between two visits to every sync peer.
+    hop*: string
+    hopPin*: string
+      ## hop/hopPin: a geist-hopd router to link to, and its pin. Peers then
+      ## reach this daemon THROUGH the router too (docs/hop.md).
     configFile*: string
     oneshot*: bool
     quiet*: bool
@@ -91,6 +95,10 @@ geistd --path <dir> [options]
                             list this daemon under --allow-write)
   --sync <pin>@dac://h:p    both; each of the three is repeatable
   --sync-every <seconds>    default 60
+
+  reachable through a router -- this daemon links to it and stays linked:
+  --hop dac://h:p           a geist-hopd router (needs --trust too)
+  --hop-pin <file>          that router's pin
 
   --config <file>           userconfig.toml to read; defaults to the one in
                             the working directory, then ~/.config/geist
@@ -145,6 +153,8 @@ proc parseArgs*(argv: openArray[string]): DaemonConfig {.role: parser,
     of "push": result.push.add value
     of "sync": result.sync.add value
     of "sync-every": result.syncEvery = parseInt(value)
+    of "hop": result.hop = value
+    of "hop-pin": result.hopPin = value
     of "config": result.configFile = value
     of "oneshot": result.oneshot = true
     of "quiet": result.quiet = true
@@ -200,6 +210,10 @@ proc withUserConfig(c: DaemonConfig): DaemonConfig {.role: configurator,
     result.sync = loaded.user.sync
   if "sync-every" notin result.given and loaded.user.syncEverySeconds > 0:
     result.syncEvery = loaded.user.syncEverySeconds
+  if "hop" notin result.given:
+    result.hop = loaded.user.hop
+  if "hop-pin" notin result.given:
+    result.hopPin = loaded.user.hopPin
 
 proc isServer*(c: DaemonConfig): bool {.role: parser, inline,
     tag: "config|server".} =

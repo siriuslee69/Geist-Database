@@ -71,7 +71,7 @@ proc challengePeer(S: var GeistServer, hello: bfx.AmeClientHello,
   retry.sessionId = hello.sessionId
   retry.cookie = bfx.issueAmeCookie(S.cookieSecret, peerIdOf(key), now,
     hello.sessionId)
-  bfx.sendAmeHandshakeDac(S.sock, remote, bfx.encodeAmeHelloRetryFrame(retry))
+  S.emitRecordTo(key, remote, bfx.encodeAmeHelloRetryFrame(retry))
   reportNetwork(S.observer, "handshake.cookie", key, "",
     S.shared.authenticationName(), S.policy.startTier, hello.sessionId)
   result = (true, "")
@@ -188,7 +188,7 @@ proc beginPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
     return (false, "handshake refused from " & key & ": " & answered.err)
   link.answer = bfx.encodeAmeServerHelloFrame(hello.sessionId,
     answered.state.serverHello)
-  bfx.sendAmeHandshakeDac(S.sock, remote, link.answer)
+  S.emitRecordTo(key, remote, link.answer)
   link.address = key
   link.phase = ppHandshaking
   link.pending = answered.state

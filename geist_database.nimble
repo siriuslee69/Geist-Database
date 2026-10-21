@@ -143,6 +143,7 @@ proc runBench(group: string) =
 #   geist-relayd   buildServerRelayd   src/server/geist_relayd.nim
 #   geist-routed   buildServerRouted   src/server/geist_routed.nim
 #   geist-forwardd buildServerForwardd src/server/geist_forwardd.nim
+#   geist-hopd     buildServerHopd     src/server/geist_hopd.nim
 
 task buildCliRelay, "Build geist-relay, the relay's command line client":
   buildProgram("src/clients/geist_relay.nim", "geist_database_cli_relay")
@@ -155,6 +156,9 @@ task buildServerRouted, "Build geist-routed, the request router":
 
 task buildServerForwardd, "Build geist-forwardd, the VPS datagram forwarder":
   buildProgram("src/server/geist_forwardd.nim", "geist_database_server_forwardd")
+
+task buildServerHopd, "Build geist-hopd, the router machines link to (docs/hop.md)":
+  buildProgram("src/server/geist_hopd.nim", "geist_database_server_hopd")
 
 task buildServerMonitor, "Build the two-role AM1P+S device monitor daemon":
   buildProgram("src/server/geist_monitord.nim", "geist-monitord")
@@ -169,6 +173,7 @@ task buildAll, "Build every Geist program for release":
   buildProgram("src/server/geist_relayd.nim", "geist_database_server_relayd")
   buildProgram("src/server/geist_routed.nim", "geist_database_server_routed")
   buildProgram("src/server/geist_forwardd.nim", "geist_database_server_forwardd")
+  buildProgram("src/server/geist_hopd.nim", "geist_database_server_hopd")
 
 # ---------------------------------------------------------------------
 # Compile checks
@@ -239,6 +244,20 @@ task checkRouter, "Prove the router forwards without compiling a store":
     quit(1)
   echo "router build: no database module compiled"
 
+task checkHop, "Prove the hop router hands links on without compiling a store":
+  ## Same proof as checkRouter, for geist-hopd: it reads no payload and
+  ## must not be able to open a database either.
+  var
+    leaked: seq[string] = @[]
+  exec "nim c --hints:off --warnings:off " &
+    "--nimcache:build/nimcache-hop -o:build/hop-only " &
+    "src/server/geist_hopd.nim"
+  leaked = leakedStorage("build/nimcache-hop")
+  if leaked.len > 0:
+    echo "The hop router build pulled in the database: " & leaked.join(", ")
+    quit(1)
+  echo "hop router build: no database module compiled"
+
 task checkForward, "Prove the forwarder moves bytes without a store or a handshake":
   ## The forwarder holds no key. If a database module OR the handshake
   ## (the answering end, the asking end, the tiers, identities) ever
@@ -273,7 +292,7 @@ task testDurability, "Run the generation-swap, lease and restore tests":
 
 task testExchange, "Run the live-socket daemon and identity tests":
   runTestFiles(["test_daemon_live", "test_row_identity", "test_forward",
-    "test_lane_jump", "test_session_keys"])
+    "test_lane_jump", "test_session_keys", "test_hop_router"])
 
 task testOverlay, "Run local names, identity leases and real AM1P+S return connections":
   runTestFiles(["test_overlay", "test_overlay_network"])

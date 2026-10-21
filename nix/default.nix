@@ -132,6 +132,7 @@ pkgs.stdenv.mkDerivation {
     nim c -d:release --hints:off --out:geist-relay src/clients/geist_relay.nim
     nim c -d:release --hints:off --out:geist-routed src/server/geist_routed.nim
     nim c -d:release --hints:off --out:geist-forwardd src/server/geist_forwardd.nim
+    nim c -d:release --hints:off --out:geist-hopd src/server/geist_hopd.nim
   '';
 
   installPhase = ''
@@ -142,7 +143,8 @@ pkgs.stdenv.mkDerivation {
     cp geist-relay $out/bin/geist-relay
     cp geist-routed $out/bin/geist-routed
     cp geist-forwardd $out/bin/geist-forwardd
-    for prog in geistd geist geist-relayd geist-relay geist-routed geist-forwardd; do
+    cp geist-hopd $out/bin/geist-hopd
+    for prog in geistd geist geist-relayd geist-relay geist-routed geist-forwardd geist-hopd; do
       wrapProgram $out/bin/$prog \
         --set LIBSODIUM_LIB_DIRS ${pkgs.libsodium}/lib \
         --prefix LD_LIBRARY_PATH : ${pkgs.libsodium}/lib

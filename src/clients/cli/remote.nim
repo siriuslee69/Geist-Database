@@ -56,6 +56,96 @@ proc remotePut*(o: Options, link: var GeistLink) {.role: actor,
   stored = mustAnswer(link.pushRemote(@[Row(data: built.data)]), "put")
   echo "stored ", stored.matched, " row(s) remotely"
 
+proc cliIdentity(o: Options): AmeIdentityKey {.role: dataFetcher,
+    tag: "cli|cryptoBoundary".} =
+  ## o: this side's signing identity, from --identity.
+  var
+    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
+      (false, default(AmeIdentityKey), false, "")
+  if o.identity.len == 0:
+    fail("--identity is required: the other side pins this key")
+  mine = loadOrCreateIdentity(o.identity, resolvePassword(o), o.subject,
+    geistSignatureSlots())
+  if not mine.ok:
+    fail(mine.err)
+  result = mine.key
+
+proc connectRouter(o: Options, key: AmeIdentityKey): HopLink {.
+    role: orchestrator, tag: "ame|cli|networkSurface".} =
+  ## o/key: the hop link to the router named by --hop and --hop-pin.
+  var
+    parsed: tuple[ok: bool, a: GeistDacAddress] = parseDacAddress(o.hop)
+    router: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
+    got: tuple[ok: bool, hop: HopLink, err: string] = (false, nil, "")
+  if not parsed.ok:
+    fail("--hop must be dac://host:port, got '" & o.hop & "'")
+  if o.hopPin.len == 0:
+    fail("--hop needs --hop-pin: the router's public pin")
+  router = loadPin(o.hopPin)
+  if not router.ok:
+    fail(router.err)
+  got = connectHop(parsed.a, key, router.pin, defaultTierPolicy())
+  if not got.ok:
+    fail("router " & o.hop & ": " & got.err)
+  result = got.hop
+
+proc targetId(o: Options, hop: HopLink): uint64 {.role: parser,
+    tag: "cli|networkSurface".} =
+  ## o/hop: --target as a route id: a number as it is ("32", "0x20"), a
+  ## name looked up in the router's directory.
+  var
+    dir: tuple[ok: bool, entries: seq[AmeRouteEntry], err: string] =
+      (false, @[], "")
+  if o.target.len == 0:
+    fail("--hop needs --target: the daemon's route id or name (geist routes)")
+  try:
+    return uint64(parseBiggestUInt(o.target))
+  except ValueError:
+    discard
+  dir = hop.routeDirectory()
+  if not dir.ok:
+    fail("router directory: " & dir.err)
+  for e in dir.entries:
+    if e.name == o.target:
+      return e.id
+  fail("the router shows no target called '" & o.target & "'")
+
+proc connectRemoteVia(o: Options): GeistLink {.role: orchestrator,
+    tag: "ame|cli|networkSurface|orchestrator".} =
+  ## o: --hop, --hop-pin, --target, and --peer-pin naming the DAEMON (the
+  ## link runs end to end with it; the router only hands frames on).
+  var
+    key: AmeIdentityKey = cliIdentity(o)
+    hop: HopLink = connectRouter(o, key)
+    peer: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      loadPin(o.peerPin)
+    got: tuple[ok: bool, link: GeistLink, err: string] =
+      (false, default(GeistLink), "")
+  if not peer.ok:
+    fail("--peer-pin (the daemon behind the router): " & peer.err)
+  got = connectGeistVia(hop, targetId(o, hop), key, peer.pin,
+    defaultTierPolicy())
+  if not got.ok:
+    hop.closeHop()
+    fail("connect through " & o.hop & " failed: " & got.err)
+  got.link.ownsHop = true
+  result = got.link
+
+proc cmdRoutes*(o: Options) {.role: orchestrator,
+    tag: "ame|cli|networkSurface".} =
+  ## o: --hop, --hop-pin, --identity. Prints every target the router shows
+  ## this identity: route id and name.
+  var
+    hop: HopLink = connectRouter(o, cliIdentity(o))
+    dir: tuple[ok: bool, entries: seq[AmeRouteEntry], err: string] =
+      hop.routeDirectory()
+  hop.closeHop()
+  if not dir.ok:
+    fail("router directory: " & dir.err)
+  for e in dir.entries:
+    echo "0x", toHex(e.id, 4), "  ", e.name
+
 proc connectRemote*(o: Options): GeistLink {.role: orchestrator,
     tag: "ame|cli|networkSurface|orchestrator".} =
   ## o: options naming the peer, this side's identity and the peer's pin.
@@ -72,6 +162,8 @@ proc connectRemote*(o: Options): GeistLink {.role: orchestrator,
       (false, default(AmePinnedPeerIdentity), "")
     got: tuple[ok: bool, link: GeistLink, err: string] =
       (false, default(GeistLink), "")
+  if o.hop.len > 0:
+    return connectRemoteVia(o)
   parsed = parseDacAddress(o.remote)
   if not parsed.ok:
     fail("--remote must be dac://host:port, got '" & o.remote & "'")

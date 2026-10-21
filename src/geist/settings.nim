@@ -79,6 +79,10 @@ type
       ## pull/push/sync: peers the daemon visits ITSELF, each written
       ##   `<pin file>@dac://host:port` (see `parseSyncSpec` in agent.nim).
     syncEverySeconds*: int
+    hop*: string
+    hopPin*: string
+      ## hop/hopPin: a geist-hopd router this daemon links to (dials out),
+      ## so peers can reach it through that router. Empty: none.
     remote*: string
     peerPin*: string
     limit*: int
@@ -286,7 +290,8 @@ proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
     return (false, UserConfig(), complaint)
   complaint = checkKeys(daemon,
     ["listen", "identity", "identityPasswordFile", "trust", "allowWrite",
-     "pull", "push", "sync", "syncEverySeconds"], "[daemon]")
+     "pull", "push", "sync", "syncEverySeconds", "hop", "hopPin"],
+    "[daemon]")
   if complaint.len > 0:
     return (false, UserConfig(), complaint)
   complaint = checkKeys(client, ["remote", "peerPin", "limit"], "[client]")
@@ -304,6 +309,8 @@ proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
   result.user.push = daemon.setting("push", newSeq[string]())
   result.user.sync = daemon.setting("sync", newSeq[string]())
   result.user.syncEverySeconds = daemon.setting("syncEverySeconds", 0)
+  result.user.hop = daemon.setting("hop", "")
+  result.user.hopPin = daemon.setting("hopPin", "")
   result.user.remote = client.setting("remote", "")
   result.user.peerPin = client.setting("peerPin", "")
   result.user.limit = client.setting("limit", 0)

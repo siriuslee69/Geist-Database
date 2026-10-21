@@ -57,6 +57,7 @@ let
     ++ lib.optionals (usesConfigFile cfg) [ "--config" (toString (configFileFor "geistd" cfg)) ]
     ++ pinArgs "--trust" cfg.trust
     ++ pinArgs "--allow-write" cfg.allowWrite
+    ++ lib.optionals (cfg.hop != null) [ "--hop" cfg.hop "--hop-pin" (toString cfg.hopPin) ]
     ++ cfg.extraArgs;
 
   # Secrets are resolved at RUN time from the credentials directory, which
@@ -235,6 +236,23 @@ in
       '';
     };
 
+    hop = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "dac://vps.example:47658";
+      description = ''
+        A geist-hopd router this daemon links to by dialling out, so the
+        peers in `trust` can reach it THROUGH that router -- for a machine
+        nobody can dial directly. Needs `hopPin`. See docs/hop.md.
+      '';
+    };
+
+    hopPin = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = "The router's pin (public; may be a store path).";
+    };
+
     timeoutMs = mkOption {
       type = types.int;
       default = 1000;
@@ -373,6 +391,10 @@ in
             `allowWrite`. Without one there is nobody to serve: every
             handshake would be refused.
           '';
+        }
+        {
+          assertion = cfg.hop == null || cfg.hopPin != null;
+          message = "services.geistd: `hop` needs `hopPin`, the router's pin.";
         }
         {
           assertion = cfg.identityFile != "";

@@ -41,7 +41,7 @@
 ## database for writing and a direct CLI write is refused while the daemon
 ## runs. One writer per store root, whoever it is.
 
-import std/[os, strutils, tables, times]
+import std/[os, tables, times]
 
 import runePragmas
 import ../geist/stop
@@ -239,7 +239,7 @@ proc serveStep(S: var DaemonState, c: DaemonConfig,
   ## Returns true when --oneshot or --max-requests says to stop.
   var
     state: ptr DaemonState = addr S
-    step: tuple[ok: bool, served: bool, err: string] = serveOnce(server,
+    step: tuple[ok: bool, served: bool, err: string] = serveAnyOnce(server,
       proc (q: Query, p: PeerContext): Reply {.gcsafe.} =
         {.cast(gcsafe).}:
           result = handleQuery(state[], q, p),
@@ -267,15 +267,45 @@ proc syncStep(S: var DaemonState, c: DaemonConfig, agent: var SyncAgent) {.
         r.pulled, ", pushed ", r.pushed,
         (if r.ok: "" else: "  FAILED: " & r.err)
 
+proc linkHop(c: DaemonConfig, key: AmeIdentityKey, server: var GeistServer,
+    lastTry: var float) {.role: orchestrator, tag: "networkSurface|server".} =
+  ## c/key/server: when --hop is set and the link to that router is missing
+  ## or silent, make a new one -- at most every 10 seconds. Peers then reach
+  ## this daemon through the router (docs/hop.md).
+  var
+    now: float = epochTime()
+    router: tuple[ok: bool, a: GeistDacAddress] = parseDacAddress(c.hop)
+    pin: tuple[ok: bool, pin: AmePinnedPeerIdentity, err: string] =
+      (false, default(AmePinnedPeerIdentity), "")
+    made: tuple[ok: bool, hop: HopLink, err: string] = (false, nil, "")
+  if c.hop.len == 0 or not c.isServer() or now - lastTry < 10.0:
+    return
+  if server.hop != nil and not server.hop.hopSilent(now):
+    return
+  lastTry = now
+  pin = loadPin(c.hopPin)
+  if not router.ok or not pin.ok:
+    raise newException(ValueError, "--hop needs dac://host:port and " &
+      "--hop-pin <router pin>: " & pin.err)
+  made = connectHop(router.a, key, pin.pin, server.policy,
+    uint64(now * 1000.0), c.timeoutMs * 4)
+  if not made.ok:
+    if not c.quiet: echo "router ", c.hop, ": ", made.err
+    return
+  server.attachHop(made.hop)
+  if not c.quiet: echo "linked to router ", c.hop, " (", pin.pin.subject, ")"
+
 proc runLoop(S: var DaemonState, c: DaemonConfig, server: var GeistServer,
-    agent: var SyncAgent) {.role: metaOrchestrator,
+    agent: var SyncAgent, key: AmeIdentityKey) {.role: metaOrchestrator,
     tag: "networkSurface|server|sync".} =
   ## S/c/server/agent: until a signal, --oneshot or --max-requests. A
   ## client-only daemon has no socket to wait on, so it waits --timeout-ms
   ## between turns instead.
   var
     stop: bool = false
+    lastHopTry: float = 0.0
   while not shutdownWanted() and not stop:
+    linkHop(c, key, server, lastHopTry)
     if reloadIfChanged(S, c) and not c.quiet:
       echo "reloaded: file changed underneath (", S.session.entryCount(),
         " rows)"
@@ -321,9 +351,10 @@ proc runGeistd*(argv: seq[string]): int {.role: metaOrchestrator,
       server = startServer(c, key)
     if not c.quiet:
       announce(S, c, key, server, agent)
-    runLoop(S, c, server, agent)
+    runLoop(S, c, server, agent, key)
     agent.closeAgent()
     if c.isServer():
+      server.hop.closeHop()
       server.closeServer()
     S.session.close()
     if not c.quiet:

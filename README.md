@@ -9,7 +9,7 @@ see [the Geist overlay](docs/overlay.md). Each destination is a public
 relay endpoint plus a local alias; each identity can own several aliases.
 Geist reserves [UDP 47650–47659](docs/ports.md) within this workspace.
 
-### ❄ NixOS — the programs (`geist`, `geistd`, `geist-relay`, `geist-relayd`, `geist-routed`, `geist-forwardd`)
+### ❄ NixOS — the programs (`geist`, `geistd`, `geist-relay`, `geist-relayd`, `geist-routed`, `geist-forwardd`, `geist-hopd`)
 
 ```sh
 git clone https://github.com/siriuslee69/Geist-Database.git
@@ -21,7 +21,8 @@ nix-build nix/default.nix             # -> ./result/bin/geist, geistd, ...
 As a service, import `nix/module.nix` (`services.geistd`) or
 `nix/relay-module.nix` (`services.geist-relay`) or
 `nix/forward-module.nix` (`services.geist-forward`, the VPS end of
-Client -> VPS -> Home); every option is in
+Client -> VPS -> Home) or `nix/hop-module.nix` (`services.geist-hop`, the
+router machines link to, [docs/hop.md](docs/hop.md)); every option is in
 [docs/nix.md](docs/nix.md).
 
 ### ❄ NixOS — as a library in your own Nim program
@@ -2226,10 +2227,11 @@ only pushes stays a read-only follower. The same keys live under
 From code, the same two parts are `serveStore` and `tick`
 (`src/geist/agent.nim`, `examples/geist_sync.nim`).
 
-## 2.9 Two ways through a VPS
+## 2.9 Three ways through a VPS
 
-A home server has no public address; a rented machine does. Two ways
-to use one (full comparison: [docs/forwarding.md](docs/forwarding.md)):
+A home server has no public address; a rented machine does. Three ways
+to use one (A and B in full: [docs/forwarding.md](docs/forwarding.md);
+C: [docs/hop.md](docs/hop.md)):
 
 ```text
   A. FORWARD   client ---> VPS ---> home        geist-forwardd on the VPS
@@ -2238,6 +2240,11 @@ to use one (full comparison: [docs/forwarding.md](docs/forwarding.md)):
 
   B. MAILBOX   client ---> VPS <--- home        geistd on the VPS, and
      two handshakes; home only dials OUT       home runs geistd --sync
+
+  C. HOP       client ---> VPS <--- home        geist-hopd on the VPS,
+     home only dials OUT; ONE end-to-end         home runs geistd --hop
+     link through the router, which reads no request; many homes, a
+     directory per client, routers chained
 ```
 
 ```text
@@ -2537,6 +2544,10 @@ quiet import.
   |  src/geist/bytecheck.nim       walks peer bytes before decoding|
   |  src/geist/link.nim            find a hop, connect, fail over  |
   |  src/geist/forward.nim         VPS forwarder: bytes, no key    |
+  |  src/geist/hop_link.nim        a link to a geist-hopd router   |
+  |  src/geist/hop_router.nim      geist-hopd: links, route frames |
+  |  src/geist/lane_recovery.nim   a lane that fell behind, jumped |
+  |  src/geist/session_keys.nim    the SK each AM1P+S peer carries |
   |  src/geist/forward_settings.nim  [runtime.forward] only        |
   |  src/geist/ping.nim            the one datagram anyone may send|
   |  src/geist/stop.nim            "stop" for every daemon         |
@@ -2555,7 +2566,7 @@ quiet import.
   +----------------------------------------------------------------+
 
   +-- BINARIES (compose halves; never redefine a border) ----------+
-  |  src/geist/args.nim            the option reader all five share|
+  |  src/geist/args.nim            the option reader all six share |
   |  src/clients/geist_cli.nim     local folder or remote geistd   |
   |  src/clients/cli/common.nim      options, settings, opening    |
   |  src/clients/cli/direct.nim      commands on a local folder    |
@@ -2617,16 +2628,18 @@ shared half.
 
   Geist's own
   -------------------------------------------------------------------------
-  nimble buildAll           all five programs into build/
+  nimble buildAll           all six programs into build/
   nimble buildCliRelay      build/geist_database_cli_relay    (= geist-relay)
   nimble buildServerRelayd  build/geist_database_server_relayd (= geist-relayd)
   nimble buildServerRouted  build/geist_database_server_routed (= geist-routed)
   nimble buildServerForwardd build/geist_database_server_forwardd (= geist-forwardd)
+  nimble buildServerHopd    build/geist_database_server_hopd  (= geist-hopd)
   nimble checkAll           compile every public module
   nimble checkModular       part 1 with the network stack absent
   nimble checkRelay         part 3 with no database in the C output
   nimble checkRouter        the router with no store in the C output
   nimble checkForward       the forwarder with no store and no handshake
+  nimble checkHop           the hop router with no store in the C output
   nimble testCore           mapper + format
   nimble testCrypto         seal + keys + backup
   nimble testApi            session + masks + transport
@@ -2669,6 +2682,7 @@ nix build .#checks.x86_64-linux.relay-pipe -L
   docs/DESIGN_RATIONALE.md     why each shape exists (with numbers)
   docs/STORAGE_PLAN.md         on-disk plan and generation rules
   docs/relay.md                part 3 in full
+  docs/hop.md                  through a geist-hopd router
   docs/nix.md                  NixOS modules and VM checks
   evaluation/benchmarks/prototypes/  throwaway programs behind the numbers
   docs/submodules.md           which dependency owns which job
@@ -2688,6 +2702,13 @@ nix build .#checks.x86_64-linux.relay-pipe -L
                                                        spell; the client gets a new place and the
                                                        next call re-shakes hands. Raise it or ask
                                                        more often
+  "route refused: arrNoRoute" (geist --hop)          the router shows you no such target: check
+                                                       `geist routes`, the target's visibleTo (pin
+                                                       SUBJECTS), and that the target is linked
+                                                       (its geistd says "linked to router")
+  geistd never says "linked to router"               --hop-pin must be the ROUTER's pin, and the
+                                                       router's hop.toml must list geistd's pin as
+                                                       a [[peer]]
   "has a session key on file but did not use it"     the device lost its SK (reinstall, old
                                                        backup). On the side still holding it:
                                                        forgetSessionKey / `geist-monitor-cli ROOT

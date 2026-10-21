@@ -117,6 +117,8 @@ and below, never sideways within its own level, and never upward.
             v
   level 4   ping.nim  stop.nim (tiny, no Bifrost)
             forward.nim  forward_settings.nim (a VPS forwarder)
+            hop_link.nim (a link to a geist-hopd router) -> transport.nim
+            hop_router.nim (geist-hopd itself, above serve.nim)
             masks.nim  bytecheck.nim  payload.nim  lane_recovery.nim
             -> transport.nim
             -> peers.nim -> handshake.nim

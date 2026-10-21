@@ -17,7 +17,7 @@
 ## Who may dial in, and the server's own state, are ./peers; how a
 ## stranger becomes a peer is ./handshake. ./peers is re-exported here.
 
-import std/[tables, times]
+import std/[nativesockets, net, tables, times]
 
 import bifrost_exchange_protocols as bfx except ByteSeq
 
@@ -77,7 +77,7 @@ proc laneFrame(S: var GeistServer, link: var PeerLink,
   of lsNone:
     discard
   of lsAnswered:
-    bfx.sendDacFrameBytes(S.sock, remote, result.reply)
+    S.emitTo(key, remote, result.reply)
     reportNetwork(S.observer, "lane.jump.answered", key, link.subject,
       S.shared.authenticationName(), S.policy.startTier, link.sessionId)
   of lsJumped:
@@ -98,7 +98,7 @@ proc askJump(S: var GeistServer, link: var PeerLink, remote: bfx.DacAddress,
       epochTime())
   if ask.len == 0:
     return
-  bfx.sendDacFrameBytes(S.sock, remote, ask)
+  S.emitTo(key, remote, ask)
   reportNetwork(S.observer, "lane.jump.asked", key, link.subject,
     S.shared.authenticationName(), S.policy.startTier, link.sessionId)
 
@@ -146,7 +146,7 @@ proc answerPeer(S: var GeistServer, payload: openArray[uint8],
   ctx.rights = link.rights
   reply = S.answerPayload(fed.payload, ctx, handler)
   link.nextPackage = link.nextPackage + 1'u64
-  sent = sendPayload(S.sock, remote, link.session, encodeReply(reply),
+  sent = S.emitPayloadTo(key, remote, link.session, encodeReply(reply),
     link.nextPackage)
   link.requests = link.requests + 1
   S.peers[key] = link
@@ -240,3 +240,78 @@ proc serveOnce*(S: var GeistServer, handler: ServedHandler,
   except CatchableError as exc:
     result = (false, false, "frame from " & key & ": " & exc.msg)
 
+
+## ------------------------ peers through a router --------------------
+##
+## A server behind a router it dials out to (geist-hopd, ./hop_link):
+##
+##   geistd ==hop link==> geist-hopd <==hop link== phone
+##      |                                            |
+##      +------ end-to-end handshake and session ----+
+##
+## Frames from the phone arrive on the hop link, the phone named by the id
+## the router proved. They are handled by the SAME code as frames on the
+## server's own socket -- handshake, rights, handler -- under the key
+## `hop:<id>`, and the answers go back through the hop link (`emitTo`).
+
+proc attachHop*(S: var GeistServer, H: HopLink) {.role: configurator,
+    tag: "ame|networkSurface|server".} =
+  ## S/H: serve peers that arrive through this hop link too. A previous
+  ## hop link is closed, and the peers that came through it are forgotten:
+  ## their sessions were tied to it.
+  var
+    gone: seq[string] = @[]
+  if S.hop != nil and S.hop != H:
+    S.hop.closeHop()
+  for key in S.peers.keys:
+    if hopOrigin(key).ok:
+      gone.add key
+  for key in gone:
+    S.peers.del(key)
+  S.hop = H
+
+proc serveHopOnce*(S: var GeistServer, handler: ServedHandler,
+    timeoutMs: int = 1000): tuple[ok: bool, served: bool, err: string] {.
+    role: metaOrchestrator, tag: "ame|networkSurface|orchestrator|server".} =
+  ## S/handler/timeoutMs: like `serveOnce`, for ONE frame from the hop link.
+  ## A frame that is not from a peer (the router's own traffic) or none at
+  ## all within the window is an idle turn, not a failure.
+  var
+    f: HopFrame = (false, 0'u64, @[], "")
+    key: string = ""
+    fed: bfx.AmeHandshakeFeed = default(bfx.AmeHandshakeFeed)
+  if S.hop == nil or not S.hop.open:
+    return (false, false, "no hop link attached")
+  S.dropIdlePeers()
+  S.hop.keepHopAlive(epochTime())
+  f = S.hop.nextHopFrame(timeoutMs)
+  if not f.ok:
+    return (true, false, "")
+  key = hopKey(f.origin)
+  fed = bfx.feedAmeHandshakeDatagram(S.handshakePackages, f.frame, key)
+  if not fed.ok:
+    return (false, false, fed.err)
+  if not fed.done:
+    return (true, false, "")
+  try:
+    result = S.dispatchFrame(fed.payload, S.hop.remote, key, handler)
+  except CatchableError as exc:
+    result = (false, false, "frame from " & key & ": " & exc.msg)
+
+proc serveAnyOnce*(S: var GeistServer, handler: ServedHandler,
+    timeoutMs: int = 1000): tuple[ok: bool, served: bool, err: string] {.
+    role: metaOrchestrator, tag: "ame|networkSurface|orchestrator|server".} =
+  ## S/handler/timeoutMs: one frame from the server's own socket OR from its
+  ## hop link, whichever has one first. Without a hop link this is
+  ## `serveOnce`.
+  var
+    fds: seq[SocketHandle] = @[]
+  if S.hop == nil or not S.hop.open:
+    return S.serveOnce(handler, timeoutMs)
+  fds = @[S.sock.getFd(), S.hop.socket.getFd()]
+  if selectRead(fds, timeoutMs) <= 0:
+    S.hop.keepHopAlive(epochTime())
+    return (true, false, "")
+  if S.hop.socket.getFd() in fds:
+    return S.serveHopOnce(handler, 0)
+  result = S.serveOnce(handler, 0)

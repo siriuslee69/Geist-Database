@@ -122,6 +122,10 @@ type
     shared*: GeistSharedKey
     observer*: GeistNetworkObserver
     handshakePackages*: bfx.AmeHandshakePackages
+    hop*: HopLink
+      ## An uplink to a geist-hopd router (`attachHop`), through which peers
+      ## that cannot reach this server directly arrive. Those peers are
+      ## keyed `hop:<route id>` and answered through it. nil: none.
 
 const
   defaultPeerIdleSeconds* = 900'i64
@@ -234,6 +238,44 @@ proc delegatedContext*(s: GeistServer, p: PeerContext,
     return
   result.subject = a.onBehalfOf
   result.rights = p.rights * s.rightsFor(a.onBehalfOf)
+
+proc emitTo*(S: GeistServer, key: string, remote: bfx.DacAddress,
+    frame: ByteSeq) {.role: dataWriter, tag: "ame|networkSurface|server".} =
+  ## S/key/remote/frame: one sealed frame to a peer -- straight to its
+  ## address, or through the hop link when the peer arrived that way.
+  var
+    route: tuple[ok: bool, origin: uint64] = hopOrigin(key)
+  if route.ok and S.hop != nil:
+    S.hop.forwardVia(route.origin, frame)
+    return
+  bfx.sendDacFrameBytes(S.sock, remote, frame)
+
+proc emitRecordTo*(S: GeistServer, key: string, remote: bfx.DacAddress,
+    record: ByteSeq) {.role: dataWriter, tag: "ame|networkSurface|server".} =
+  ## S/key/remote/record: one whole handshake record, in as many
+  ## datagrams as it takes, to a peer however it reached this server.
+  var
+    route: tuple[ok: bool, origin: uint64] = hopOrigin(key)
+  if route.ok and S.hop != nil:
+    S.hop.forwardHandshakeVia(route.origin, record)
+    return
+  bfx.sendAmeHandshakeDac(S.sock, remote, record)
+
+proc emitPayloadTo*(S: GeistServer, key: string, remote: bfx.DacAddress,
+    session: var bfx.AmeSession, payload: ByteSeq,
+    packageId: uint64): SendOutcome {.role: orchestrator,
+    tag: "ame|networkSurface|server".} =
+  ## S/key/remote/session/payload/packageId: one encoded Reply to a peer,
+  ## as one frame or a package, however it reached this server.
+  if not hopOrigin(key).ok or S.hop == nil:
+    return sendPayload(S.sock, remote, session, payload, packageId)
+  try:
+    for frame in sealPayloadFrames(session, payload, packageId):
+      S.emitTo(key, remote, frame)
+      result.frames = result.frames + 1
+    result.ok = true
+  except CatchableError as exc:
+    result = (false, result.frames, exc.msg)
 
 proc dropIdlePeers*(S: var GeistServer) {.role: actor,
     tag: "ame|lifecycle|server".} =
