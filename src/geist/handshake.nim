@@ -89,6 +89,56 @@ proc allowsHelloMask(S: GeistServer, hello: bfx.AmeClientHello): bool {.
     if candidate == gtRecovery: break
     candidate = succ(candidate)
 
+proc addPeerCandidates(S: GeistServer, i: int,
+    C: var seq[tuple[peer: int, slot: SessionKeySlot, key: ByteSeq]]) {.
+    role: helper.} =
+  ## S/i/C: the session keys on file for trusted peer i, appended to C.
+  for c in sessionKeyCandidates(S.shared.sessionKeys, S.trusted[i].pin.subject):
+    C.add((i, c.slot, c.key))
+
+proc answerHello(S: GeistServer, hello: bfx.AmeClientHello,
+    link: var PeerLink): AnsweredHello {.role: orchestrator,
+    tag: "ame|cryptoBoundary|server".} =
+  ## S/hello: the server's half of the handshake for this hello.
+  ## link: told which peer's session key (SK) opened it, if one did.
+  ##
+  ## A hello with no SK is answered as always. A hello WITH one is sealed
+  ## under shared key + SK, and the hello does not say whose: so every
+  ## peer's SKs on file are tried, newest first, and the first that opens it
+  ## names the peer whose pin must finish (./session_keys).
+  ##
+  ##   hello flag   server keeps SKs   what happens
+  ##   ----------   ----------------   ------------------------------------
+  ##   no SK        any                answered with the shared key alone;
+  ##                                   `finishPeer` decides if that is
+  ##                                   allowed for the peer it turns out to be
+  ##   SK           no                 refused
+  ##   SK           yes                each peer's P then C, until one opens
+  var
+    C: seq[tuple[peer: int, slot: SessionKeySlot, key: ByteSeq]] = @[]
+    i: int = 0
+  if not hello.usesSessionKey:
+    return bfx.answerAmeHandshake(hello, [supportedTierPath(S.policy)],
+      S.shared.authenticationFor(S.trusted[0].pin), S.descriptor,
+      S.identity, handshakeParams())
+  if not S.shared.keepsSessionKeys():
+    return (false, default(bfx.AmeServerHandshake),
+      "client used a session key this server does not keep")
+  while i < S.trusted.len:
+    S.addPeerCandidates(i, C)
+    i = i + 1
+  for c in C:
+    result = bfx.answerAmeHandshake(hello, [supportedTierPath(S.policy)],
+      S.shared.authenticationFor(S.trusted[c.peer].pin, c.key), S.descriptor,
+      S.identity, handshakeParams())
+    if result.ok:
+      link.skPeer = c.peer
+      link.skSlot = c.slot
+      link.sessionKey = c.key
+      return
+  result = (false, default(bfx.AmeServerHandshake),
+    "the hello's session key matches no peer on file")
+
 proc beginPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
     remote: bfx.DacAddress, key: string): tuple[ok: bool, err: string] {.
     role: orchestrator, tag: "ame|networkSurface|server".} =
@@ -127,9 +177,9 @@ proc beginPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
   # the MODE it carries -- AM1S adds nothing to the key schedule, and the
   # expected peer is read at the finish, not here. The first pin therefore
   # stands in for "we speak pinned-key"; every pin is tried in `finishPeer`.
-  answered = bfx.answerAmeHandshake(hello, [supportedTierPath(S.policy)],
-    S.shared.authenticationFor(S.trusted[0].pin), S.descriptor,
-    S.identity, handshakeParams())
+  # A session key DOES join the key schedule, which is why `answerHello`
+  # has to find it now (./session_keys).
+  answered = S.answerHello(hello, link)
   if not answered.ok:
     S.refused = S.refused + 1
     reportNetwork(S.observer, "handshake.refused", key, "",
@@ -166,18 +216,35 @@ proc judgeFinish(S: var GeistServer, link: var PeerLink,
   var
     attempt: bfx.AmeServerHandshake = default(bfx.AmeServerHandshake)
     i: int = 0
+    last: int = S.trusted.len - 1
   result = (false, -1, default(bfx.AmeHandshakeResult))
-  while i < S.trusted.len:
+  # A hello that opened with a peer's session key may only be finished by
+  # THAT peer: its SK and its signature have to belong together.
+  if link.skSlot != sksNone:
+    i = link.skPeer
+    last = link.skPeer
+  while i <= last:
     attempt = link.pending
     # Bifrost opens the finish with the authentication the answer stored.
     # The answer stored the FIRST pin as a stand-in, so each attempt's copy
-    # is given the pin it is testing instead.
-    attempt.authentication = S.shared.authenticationFor(S.trusted[i].pin)
+    # is given the pin it is testing instead -- and the SK the hello used.
+    attempt.authentication = S.shared.authenticationFor(S.trusted[i].pin,
+      link.sessionKey)
     result.accepted = bfx.acceptAmeHandshake(attempt, finish, now)
     if result.accepted.ok:
       return (true, i, result.accepted)
     i = i + 1
   bfx.clearAmeServerHandshake(link.pending)
+
+proc skippedSessionKey(S: GeistServer, link: PeerLink): bool {.
+    role: parser, tag: "ame|server|validation".} =
+  ## S/link: true when this peer has a CONFIRMED session key on file, the
+  ## server requires it, and the hello came without one -- the downgrade the
+  ## SK exists to stop. (A pending key alone is not enough; see
+  ## `expectsSessionKey`.)
+  result = S.shared.keepsSessionKeys() and S.shared.sessionKeys.required and
+    link.skSlot == sksNone and
+    S.shared.sessionKeys.expectsSessionKey(link.subject)
 
 proc finishPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
     key: string): tuple[ok: bool, err: string] {.role: orchestrator,
@@ -210,6 +277,14 @@ proc finishPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
       judged.accepted.err & ")")
   link.subject = S.trusted[judged.at].pin.subject
   link.rights = S.trusted[judged.at].rights
+  if S.skippedSessionKey(link):
+    S.peers.del(key)
+    S.refused = S.refused + 1
+    reportNetwork(S.observer, "handshake.refused", key, link.subject,
+      S.shared.authenticationName(), S.policy.startTier,
+      error = "peer has a session key on file but did not use it")
+    return (false, "peer " & link.subject & " has a session key on file but " &
+      "did not use it; if it lost it, forget its session key on this server")
   link.peerTrust = judged.accepted.peerTrust
   sessionId = link.pending.clientHello.sessionId
   link.sessionId = sessionId
@@ -227,6 +302,10 @@ proc finishPeer*(S: var GeistServer, frame: bfx.AmeHandshakeFrame,
   # last thing holding them, and it is erased rather than kept for the
   # life of the session. The same applies to the stored server hello,
   # which only existed in case the client asked for it again.
+  if S.shared.keepsSessionKeys():
+    keepServerSessionKey(S.shared.sessionKeys, link.subject, link.skSlot,
+      bfx.ameSessionKey(link.session))
+  link.sessionKey = @[]
   bfx.clearAmeServerHandshake(link.pending)
   link.answer = @[]
   link.phase = ppOpen

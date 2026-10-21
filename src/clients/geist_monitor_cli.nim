@@ -13,11 +13,12 @@ proc runMonitorCli*(): int {.role: metaOrchestrator.} =
   of "provision": provisionDevice(root, paramStr(3))
   of "export-psk": exportSharedKey(root, paramStr(3))
   of "import-psk": importSharedKey(root, paramStr(3))
+  of "forget-sk": forgetPeerSessionKey(root, paramStr(3))
   of "request":
     S = openMonitor(root)
     echo S.monitorCall(paramStr(3))
     S.disconnect()
-  else: raise newException(ValueError, "usage: geist-monitor-cli <root> provision|export-psk|import-psk|request <value>")
+  else: raise newException(ValueError, "usage: geist-monitor-cli <root> provision|export-psk|import-psk|forget-sk|request <value>")
   result = 0
 
 when isMainModule:

@@ -23,6 +23,14 @@ key once with `geist-monitor-cli ROOT export-psk PRIVATE_WORD_FILE`, import
 it on each other root with `import-psk`, then remove the plaintext transfer
 file. Exchange only `keys/pairs/<subject>.pin` files into `peers/`.
 
+Each root also keeps `session-keys/`: one session key (SK) per peer, which
+the next connection needs next to the shared key and the pin (README,
+"The session key"). A device that lost its SK -- reinstalled, or restored
+from an old backup -- is refused until the side still holding the SK
+drops it: `geist-monitor-cli ROOT forget-sk SUBJECT` on that side (for the
+VPS, ROOT is `dataDir/relay` or `dataDir/store`). Never copy `session-keys/`
+between devices: a copy is exactly what the SK refuses.
+
 The PC root defaults to `~/.config/geist-monitor`. Android keeps its root in
 the application's private `files/monitor/` folder. Both need this public
 endpoint file as `config.json`:

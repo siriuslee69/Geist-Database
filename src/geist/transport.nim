@@ -77,6 +77,11 @@ type
     confirmed*: bool
     lastJumpAskAt*: float
       ## When this link last asked the server for a lane jump (./lane_recovery).
+    sessionKeys*: SessionKeyStore
+    pendingSessionKey*: ByteSeq
+      ## The SK this session handed out, kept until the server's first
+      ## answer proves it holds it too; then it becomes the one the next
+      ## handshake sends (./session_keys, "When a new SK counts").
 
 ## A handler type without a peer context used to live here. It is gone:
 ## anything deciding what a request MAY do has to know who is asking, and
@@ -307,7 +312,11 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
         peer.subject, shared.authenticationName(), policy.startTier,
         sessionId, error = result.err)
   try:
-    auth = shared.authenticationFor(peer)
+    if shared.keepsSessionKeys():
+      auth = shared.authenticationFor(peer,
+        shared.sessionKeys.loadSessionKeys(peer.subject).confirmed)
+    else:
+      auth = shared.authenticationFor(peer)
     reportNetwork(observer, "handshake.begin", bfx.formatDacAddress(remote),
       peer.subject, shared.authenticationName(), policy.startTier, sessionId)
     hs = bfx.beginAmeHandshake(sessionId, L, start, 1'u32, [], auth)
@@ -361,6 +370,9 @@ proc connectGeist*(remote: bfx.DacAddress, identity: bfx.AmeIdentityKey,
     result.link.mode = shared.authenticationName()
     result.link.subject = peer.subject
     result.link.sessionId = sessionId
+    if shared.keepsSessionKeys():
+      result.link.sessionKeys = shared.sessionKeys
+      result.link.pendingSessionKey = bfx.ameSessionKey(session)
     result.ok = true
     reportNetwork(observer, "handshake.finish.sent", bfx.formatDacAddress(remote),
       peer.subject, result.link.mode, policy.startTier, sessionId)
@@ -501,6 +513,9 @@ proc send*(S: var GeistLink, q: Query,
         return (false, Reply(), sent.err)
       result = S.awaitReply(timeoutMs, resend)
       attempts = if resend: attempts + 1 else: 2
+    if result.ok and S.pendingSessionKey.len > 0:
+      keepClientSessionKey(S.sessionKeys, S.subject, S.pendingSessionKey)
+      S.pendingSessionKey = @[]
     if result.ok and not S.confirmed:
       S.confirmed = true
       reportNetwork(S.observer, "handshake.confirmed", bfx.formatDacAddress(S.client.remote),

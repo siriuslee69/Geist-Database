@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: Links recover from wide loss bursts by themselves (Bifrost lane jumps)
+Commit Message: Session keys (SK) per peer for AM1P+S links; device monitor keeps them
 
 Features (Planned):
 - A NixOS VM test for services.geist-forward (the module is only parsed).
@@ -18,6 +18,14 @@ Features (Planned):
   geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
+- Session keys (2026-10-21, src/geist/session_keys.nim): a shared key may
+  carry a SessionKeyStore; every AM1P+S session hands out an SK the next
+  handshake needs. Kept per PEER (one group key, many devices): server C+P,
+  client C, confirmed only after the other side proved it holds it, so a
+  lost answer locks nobody out. The hello's SK must match the finishing
+  pin. Required only once a peer has a confirmed SK, so older builds are
+  not locked out. Device monitor: <root>/session-keys, `forget-sk`.
+  test_session_keys (chain, lost answer, old copy, stolen SK, old build).
 - Lane recovery (2026-10-21, src/geist/lane_recovery.nim): a direction of a
   link that fell behind a loss burst wider than the reorder window asks for a
   proved Bifrost lane jump (at most one ask a second) and carries on. A

@@ -89,6 +89,13 @@ type
     lastJumpAskAt*: float
       ## When this server last asked this peer for a lane jump
       ## (./lane_recovery), so a stream of bad frames costs one ask a second.
+    sessionKey*: ByteSeq
+    skPeer*: int
+    skSlot*: SessionKeySlot
+      ## The session key (SK) the client's hello opened with, whose peer
+      ## (index into `trusted`) and which of its two keys. sksNone: the
+      ## hello carried no SK. Only that peer's pin may then finish the
+      ## handshake (./handshake, `judgeFinish`).
 
   ServedHandler* = proc (q: Query, p: PeerContext): Reply {.gcsafe.}
 

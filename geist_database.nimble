@@ -273,7 +273,7 @@ task testDurability, "Run the generation-swap, lease and restore tests":
 
 task testExchange, "Run the live-socket daemon and identity tests":
   runTestFiles(["test_daemon_live", "test_row_identity", "test_forward",
-    "test_lane_jump"])
+    "test_lane_jump", "test_session_keys"])
 
 task testOverlay, "Run local names, identity leases and real AM1P+S return connections":
   runTestFiles(["test_overlay", "test_overlay_network"])

@@ -57,7 +57,9 @@ proc deviceSharedKey*(root: string): GeistSharedKey {.role: dataFetcher.} =
     got = K.symmetricKey("devices")
   if not got.ok:
     raise newException(IOError, got.err)
-  result = initGeistSharedKey("geist-device-monitor-v1", got.value.use())
+  ## Session keys live next to the keys, one file per peer (geist/session_keys).
+  result = initGeistSharedKey("geist-device-monitor-v1", got.value.use(),
+    initSessionKeyStore(root / "session-keys", required = true))
 
 proc exportSharedKey*(root, path: string) {.role: orchestrator.} =
   ## root/path: generate once with Geist and export for local provisioning.
@@ -82,3 +84,10 @@ proc importSharedKey*(root, path: string) {.role: orchestrator.} =
   if found.ok:
     raise newException(ValueError, "device shared key already exists; refusing to replace it")
   checked(K.importWords("devices", kkSymmetric, readFile(path).strip()))
+
+proc forgetPeerSessionKey*(root, subject: string) {.role: actor.} =
+  ## root/subject: this root's session key (SK) for one peer is dropped, so
+  ## that peer's next connection starts a new chain. For a device that lost
+  ## its SK (reinstalled, restored from an old backup) -- run it on the
+  ## OTHER side, the one still holding the SK.
+  initSessionKeyStore(root / "session-keys").forgetSessionKey(subject)

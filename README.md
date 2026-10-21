@@ -1731,14 +1731,42 @@ written down, which is why the example touches no path at all. A real
 deployment persists them with `loadOrCreateIdentity` and `savePin`, so a
 restart is the same peer rather than a stranger.
 
-**Authentication is public-key only.** A pin is a name plus public
-signing keys, and that is the one mode Geist wires up. Bifrost underneath
-also implements a shared-secret mode (AM1P, `initAmePskAuthentication`)
-and a mode needing BOTH a shared secret and the pinned key (AM1P+S,
-`initAmePskPinnedAuthentication`). Geist exposes neither -- `connectGeist`
-and `initGeistServer` both hard-code the pinned-key path. If you want
-either, that is the change to make, and it is contained to
-`transport.nim` (the asking end) and `serve.nim` (the answering end).
+**Two ways to authenticate.** A pin is a name plus public signing keys.
+Without anything else, that is the mode (AM1S). Give `connectGeist` and
+`initGeistServer` a `GeistSharedKey` and BOTH are needed -- the shared key
+and the pin (AM1P+S); the device monitor runs this way. Geist never falls
+back from the second to the first.
+
+**The session key (SK).** A shared key may carry a `SessionKeyStore`. Then
+every session hands out an SK both ends keep, and the NEXT handshake needs
+the shared key, the pin AND that SK: a copy of the shared key alone no
+longer opens a hello, and an old copy of a device is refused.
+
+```nim
+var shared = initGeistSharedKey("group", groupKey,
+  initSessionKeyStore(root / "session-keys", required = true))
+```
+
+The SK is kept per PEER, not per shared key, because every device of a
+group shares one shared key:
+
+```text
+  server, per peer:  C (confirmed)  P (pending)    accepts a hello with C or P
+  client, per server: C                            sends C
+
+  session works, first answer arrives  -> client C := new SK
+  server: hello opened with P          -> C := P, P := new SK
+  server: hello opened with C          -> P := new SK (C stays)
+```
+
+So a lost answer locks nobody out: the client keeps sending its old C,
+which the server still accepts. A hello's SK must belong to the same peer
+whose pin finishes the handshake. With `required`, a peer that has an SK
+on file must use it -- once it has used one, so a peer on an older build
+without SK support is never locked out; a device that lost its SK is let
+back in by dropping
+its SK on the server (`forgetSessionKey`, or `geist-monitor-cli ROOT
+forget-sk SUBJECT` for the monitor). Details: src/geist/session_keys.nim.
 
 ## 2.1 Two desktops, from nothing
 
@@ -2660,6 +2688,14 @@ nix build .#checks.x86_64-linux.relay-pipe -L
                                                        spell; the client gets a new place and the
                                                        next call re-shakes hands. Raise it or ask
                                                        more often
+  "has a session key on file but did not use it"     the device lost its SK (reinstall, old
+                                                       backup). On the side still holding it:
+                                                       forgetSessionKey / `geist-monitor-cli ROOT
+                                                       forget-sk SUBJECT`; never copy SK files
+  "the hello's session key matches no peer on file"  the device sends an SK the server no
+                                                       longer holds (an old copy, or the server
+                                                       lost its session-keys folder): forget it
+                                                       on the DEVICE side, then reconnect
   `lane.jump.*` events in the network log              a burst of lost datagrams; the link
                                                        recovered by itself. Many of them: size
                                                        the socket receive queue (Bifrost README,
