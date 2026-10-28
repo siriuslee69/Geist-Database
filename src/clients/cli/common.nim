@@ -11,7 +11,7 @@
 ##   tables   export and import: the database as a JSON or TOML file
 ##
 ## Network options (--remote, --hop, --identity, --peer-pin, ...) are NOT
-## here. They belong to geist-sync, which strips them from the command line
+## here. They belong to nebel, which strips them from the command line
 ## and hands the rest to `parseOptions` below.
 
 import std/[os, strutils]
@@ -126,8 +126,8 @@ commands
                             show [name|number]   the 24 words with --secret
                             import <name> --kind sym [--words "..."]
                             drop <name|number>
-                          Signing pairs and peer pins are geist-sync's:
-                          `geist-sync keys ...`.
+                          Signing pairs and peer pins are nebel's:
+                          `nebel keys ...`.
   convert <in> <out>      JSON <-> TOML by file extension; refuses what
                           the target format cannot hold, naming where
   export <file>           every visible row to a .json or .toml file;

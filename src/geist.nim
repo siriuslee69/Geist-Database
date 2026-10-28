@@ -32,11 +32,11 @@
 ## here, and no row is sent anywhere. Bifrost is not a dependency of this
 ## repository at all.
 ##
-## Talking to other machines is the job of geist-sync, which imports this
+## Talking to other machines is the job of nebel, which imports this
 ## library and adds peers, pins, relays and daemons on top of it:
 ##
 ##   import geist            this file: rows, files, keys, backups
-##   import geist_sync       geist-sync: links, sync, relays, daemons
+##   import nebel       nebel: links, sync, relays, daemons
 ##
 ## The split is checked by `nimble checkModular`, which compiles a
 ## program that imports only this file with no network stack on its path.

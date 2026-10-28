@@ -7,22 +7,22 @@
 ## A symmetric key needs no file at all: its 24 words ARE the key.
 ##
 ## The same folder also holds signing pairs and trusted peer pins. Those
-## need Bifrost, so they are handled by geist-sync (identity_folder.nim),
+## need Bifrost, so they are handled by nebel (identity_folder.nim),
 ## which writes into this folder layout. This module still LISTS and DROPS
 ## them by name, because listing and dropping are only file operations:
 ##
 ##   kind       what it is                          handled by
 ##   ---------  ----------------------------------  ---------------------------
 ##   symmetric  32 random bytes both sides share    geist (this file)
-##   pair       a signing key pair                  geist-sync
-##   peer       someone else's pin, trusted here    geist-sync
+##   pair       a signing key pair                  nebel
+##   peer       someone else's pin, trusted here    nebel
 ##
 ## On disk:
 ##
 ##   <dir>/
-##   ├── pairs/<name>.id          pair   (geist-sync)
-##   ├── pairs/<name>.pin         pair   (geist-sync)
-##   ├── peers/<name>.pin         peer   (geist-sync)
+##   ├── pairs/<name>.id          pair   (nebel)
+##   ├── pairs/<name>.pin         pair   (nebel)
+##   ├── peers/<name>.pin         peer   (nebel)
 ##   └── secret/sym.<name>.key    symmetric key, sealed with the password
 
 import std/[algorithm, os, strutils]
@@ -164,7 +164,7 @@ proc importWords*(S: var KeyFolder, name: string, k: KeyKind,
     text: string): tuple[ok: bool, err: string] {.role: orchestrator,
     tag: "appApi|cryptoBoundary|parsing|write".} =
   ## S/name: where the key goes. k: only kkSymmetric; a pair is rebuilt by
-  ## geist-sync, which knows how to grow one.
+  ## nebel, which knows how to grow one.
   ## text: the 24 words `secretWords` printed on the other machine.
   var
     err: string = S.taken(name, k)
@@ -173,7 +173,7 @@ proc importWords*(S: var KeyFolder, name: string, k: KeyKind,
     return (false, err)
   if k != kkSymmetric:
     return (false, "only a symmetric key is imported here; pairs and " &
-      "peers are handled by geist-sync")
+      "peers are handled by nebel")
   got = fromWords(text)
   if not got.ok:
     return (false, got.err)

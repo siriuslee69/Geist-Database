@@ -43,7 +43,7 @@ the reply before returning. Every operation in the list above is shaped
 this way. There is no one-way send in Geist today.
 
 This catches people out in one specific place, so it is worth stating
-plainly: `geist-relay --follow` is NOT a stream. It is a loop that polls
+plainly: `nebel-relay --follow` is NOT a stream. It is a loop that polls
 every `--interval-ms` milliseconds, 1000 by default. Nothing in Geist is
 pushed by a server; a reader always asks.
 
@@ -83,7 +83,7 @@ where Geist stands:
                               `nimble checkModular`, `checkRelay`,
                               `checkRouter`. That is real and it works.
                               But NO flag removes a primitive. There is
-                              no -d:geistCiphers=chacha.
+                              no -d:nebelCiphers=chacha.
   BY CONSTANT    ABSENT       No routine takes a `static` argument and
                               no overload resolves an algorithm at
                               compile time. Generics exist, but over
@@ -144,8 +144,8 @@ The pattern Bifrost already uses, applied to `crypto/cipher.nim`,
 
 ```nim
 # geist/crypto/build.nim
-const geistCiphers {.strdefine.} = "chacha20,aes"
-const hasAes* = "aes" in geistCiphers.split(",")
+const nebelCiphers {.strdefine.} = "chacha20,aes"
+const hasAes* = "aes" in nebelCiphers.split(",")
 
 # geist/crypto/cipher.nim
 when hasAes:
@@ -170,7 +170,7 @@ property of the current implementation, not a setting.
   #  ceiling                        value        set by
   -  -----------------------------  -----------  -------------------------
   1  one datagram                   65,507 B     DAC / UDP
-  2  payload sent whole, not         32,000 B    geistWholeMaxBytes
+  2  payload sent whole, not         32,000 B    nebelWholeMaxBytes
      packaged
   3  rows in one reply              ~28,000 B    replyRowBudget
   4  one DAC package                ~78 MB       65,535 chunks x 1,200 B

@@ -1082,7 +1082,7 @@ nim c -r examples/geist_observe.nim
   three clusters -> 260 bytes, whether the file is 1 MB or 1 GB
 ```
 
-This is how `geistd` notices that a local `geist put` moved the file
+This is how `nebeld` notices that a local `geist put` moved the file
 underneath it ([2.3](#23-who-may-do-what)) without reopening anything.
 
 ## 1.11 Configuring
@@ -1213,7 +1213,7 @@ can change what lands on disk:
   import geist            1 + 2
   import geist/wire       3        (+ [relay] machine keys from 4/5)
   import geist/network    1 + 2 + 3
-  geist-relayd            3 + [relay]; never compiles the reader for [storage]
+  nebel-relayd            3 + [relay]; never compiles the reader for [storage]
 ```
 
 `configs/default.toml` is one file with three kinds of reader. Its build
@@ -1245,7 +1245,7 @@ override:
 
 ```nim
 discard initGeistDefaults()            # part 1 only
-discard initGeistNetworkDefaults()     # parts 1 + 2
+discard initNebelDefaults()     # parts 1 + 2
 var db = openGeist[Note]("data/notes", defaultGeistConfig())
 ```
 
@@ -1287,7 +1287,7 @@ a storage preset is a shape of database; a build preset is a shape of
 *program*.
 
 ```text
-  nim c -d:preset=server src/server/geistd.nim
+  nim c -d:preset=server src/server/nebeld.nim
   nimble buildServer -d:preset=server        # the shared tasks pass it on
 
   configs/default.toml  -->  configs/server.toml  -->  command line
@@ -1331,7 +1331,7 @@ $ geist list          # no --path, no --preset
   [database]      path                     --path                       store folder
   [database]      preset                   --preset                     preset name
   [database]      passwordFile             --password-file              seal password file
-  [daemon]        listen                   --listen                     geistd bind (dac://host:port)
+  [daemon]        listen                   --listen                     nebeld bind (dac://host:port)
   [daemon]        identity                 --identity                   this side's key file
   [daemon]        identityPasswordFile     --identity-password-file     seals that key
   [daemon]        trust                    --trust (repeat)             pins allowed to read
@@ -1339,7 +1339,7 @@ $ geist list          # no --path, no --preset
   [client]        remote                   --remote                     daemon to call
   [client]        peerPin                  --peer-pin                   pin checked on that daemon
   [client]        limit                    --limit                      default list/find limit
-  [relay]         listen                   --listen                     geist-relayd bind (port 47656)
+  [relay]         listen                   --listen                     nebel-relayd bind (port 47656)
   [relay]         subject                  --subject                    relay name on its pin
   [relay]         identity                 --identity                   relay key file
   [relay]         identityPasswordFile     --identity-password-file     seals that key
@@ -1362,9 +1362,9 @@ belongs to.
 On NixOS these files are generated:
 
 ```nix
-services.geistd = { enable = true; path = "/var/lib/geist/notes"; ... };
-services.geist-relay = { enable = true; to = "exec"; ... };
-programs.geist-client = { enable = true; settings.database.path = "..."; };
+services.nebeld = { enable = true; path = "/var/lib/geist/notes"; ... };
+services.nebel-relay = { enable = true; to = "exec"; ... };
+programs.nebel-client = { enable = true; settings.database.path = "..."; };
 ```
 
 See [docs/nix.md](docs/nix.md).

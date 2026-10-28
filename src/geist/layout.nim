@@ -7,7 +7,7 @@
 ##   +-- config/          every TOML anything on this machine reads
 ##   |     geist.toml         library defaults
 ##   |     userconfig.toml    this installation
-##   |     router.toml        geist-routed
+##   |     router.toml        nebel-routed
 ##   |     fjord.toml         one per app
 ##   |     eris.toml
 ##   +-- keys/            signing identities, and the keystore

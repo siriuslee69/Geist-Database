@@ -44,7 +44,7 @@ Two concrete defects found by running it, both fixed by the rewrite:
 - `nimble exampleSimpleApi` (a task since removed) — the flagship example — crashed:
   `gameConfig()` marks `matchId`/`playerId`/`tick` required, the example
   stored a `Position{player,tick,x,y}`.
-- `geistd` loaded a snapshot at startup and never re-read the file
+- `nebeld` loaded a snapshot at startup and never re-read the file
   (`reloadManagedServerFiles` was called only after a backup-sync run),
   while taking a `.lease` the library never checked. A library write
   during a daemon run succeeded silently.
@@ -626,7 +626,7 @@ request.
 1. *Both sides pinned themselves.* Each generated a fresh identity per run
    and pinned its own key, so the handshake correctly refused. Pinned
    trust needs persisted identities and exchanged pins -- hence
-   `src/geist/identity.nim`, `geist keygen` and `geistd --pin-out`.
+   `src/geist/identity.nim`, `geist keygen` and `nebeld --pin-out`.
 2. *Trust was dropped after a successful handshake.* `initAmeSession`
    requires `peerTrust` and defaults `peerTrustRequired` to true; not
    forwarding the handshake's result failed every request AFTER the

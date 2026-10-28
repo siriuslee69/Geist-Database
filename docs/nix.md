@@ -5,9 +5,9 @@ Four things live under `nix/`:
 | file | what it is |
 |---|---|
 | `default.nix` | the package: the daemons and their clients |
-| `module.nix` | `services.geistd` and `programs.geist-client` |
-| `relay-module.nix` | `services.geist-relay`, the daemon with no database |
-| `forward-module.nix` | `services.geist-forward`, the VPS end of Client -> VPS -> Home: no key, no store |
+| `module.nix` | `services.nebeld` and `programs.nebel-client` |
+| `relay-module.nix` | `services.nebel-relay`, the daemon with no database |
+| `forward-module.nix` | `services.nebel-forward`, the VPS end of Client -> VPS -> Home: no key, no store |
 | `nix/tests/` | three NixOS VM tests that run real machines against each other |
 
 ## The package
@@ -19,11 +19,11 @@ built under a different memory model from the one the test suite runs
 under is a package nothing has actually tested. Its name, version and
 description come from `[project]` in that same file:
 
-- `geistd` from `src/server/geistd.nim`
+- `nebeld` from `src/server/nebeld.nim`
 - `geist` from `src/clients/geist_cli.nim`
-- `geist-relayd` from `src/server/geist_relayd.nim`
-- `geist-relay` from `src/clients/geist_relay.nim`
-- `geist-routed` from `src/server/geist_routed.nim`
+- `nebel-relayd` from `src/server/nebel_relayd.nim`
+- `nebel-relay` from `src/clients/nebel_relay.nim`
+- `nebel-routed` from `src/server/nebel_routed.nim`
 
 The relay pair is the same transport with a pipe where the store would be,
 and it is its own module because a machine that only moves messages has no
@@ -38,15 +38,15 @@ experiment: pointing a build at a sibling workspace checkout hides
 submodule drift and can reproduce a different API graph than the repo you
 have.
 
-## `services.geistd`
+## `services.nebeld`
 
 ```nix
-services.geistd = {
+services.nebeld = {
   enable = true;
   path = "/var/lib/geist/notes";        # a store root DIRECTORY
   listenHost = "192.168.50.10";
   openFirewall = true;
-  identityFile = "/var/lib/geist/geistd.id";
+  identityFile = "/var/lib/geist/nebeld.id";
   trust = [ "/var/lib/geist/peers/laptop.pin" ];        # may read
   allowWrite = [ "/var/lib/geist/peers/desktop.pin" ];  # may also write
 };
@@ -100,7 +100,7 @@ world-readable Nix store and are readable only by the service.
 
 ### The identity file must persist
 
-`identityFile` defaults to `/var/lib/geist/geistd.id` and is created on
+`identityFile` defaults to `/var/lib/geist/nebeld.id` and is created on
 first start. It cannot be a store path, and the module asserts as much: a
 daemon that minted a fresh key on every start could never be pinned by
 anybody, which makes it unusable as a peer.
@@ -110,8 +110,8 @@ since a daemon refuses to start until the peer it trusts has a pin on
 disk:
 
 ```console
-$ geistd --path /var/lib/geist/notes \
-         --identity /var/lib/geist/geistd.id \
+$ nebeld --path /var/lib/geist/notes \
+         --identity /var/lib/geist/nebeld.id \
          --identity-password-file /run/geist-secrets/id.pw \
          --subject desktop-a \
          --pin-out /var/lib/geist/desktop-a.pin
@@ -123,13 +123,13 @@ decision**, and nothing in Geist makes it for you.
 
 ### Bootstrapping order
 
-1. `geistd --pin-out` on each machine.
+1. `nebeld --pin-out` on each machine.
 2. Copy each pin to the machines that should trust it.
 3. Name those paths in `trust` / `allowWrite`.
 4. Start the service.
 
 Because of step 3, a first deployment usually sets
-`systemd.services.geistd.wantedBy = lib.mkForce [ ]`, does 1 and 2, then
+`systemd.services.nebeld.wantedBy = lib.mkForce [ ]`, does 1 and 2, then
 starts the unit by hand. Both VM tests do exactly this.
 
 ### Hardening
@@ -139,12 +139,12 @@ The unit runs as the `geist` system user with `ProtectSystem=strict` and
 syscall filter and `MemoryDenyWriteExecute`. The daemon reads and writes
 one directory and speaks UDP; it needs nothing else.
 
-## `programs.geist-client`
+## `programs.nebel-client`
 
 Installs the CLI and generates `userconfig.toml` files:
 
 ```nix
-programs.geist-client = {
+programs.nebel-client = {
   enable = true;
   settings = {
     database.path = "/var/lib/geist/notes";
@@ -171,33 +171,33 @@ which is what makes generating this file worth doing at all.
 `profiles` generates additional named configs below `/etc`, each of which
 either merges into the global `settings` or replaces them.
 
-## `services.geist-relay`
+## `services.nebel-relay`
 
 A separate module in `nix/relay-module.nix`, exported as
-`nixosModules.geist-relay`, for the daemon that moves messages and stores
+`nixosModules.nebel-relay`, for the daemon that moves messages and stores
 nothing. It shares this one's trust model exactly — `trust` may collect,
 `allowWrite` may send, pins are plain paths, the identity password goes
 through a credential, and the identity file must persist — and adds only
 the question of where a message goes: `to`, `format`, `file`, `exec`,
 `streams`, `spool`.
 
-Its default port is 47656, one above `geistd`'s, so a machine can run both
+Its default port is 47656, one above `nebeld`'s, so a machine can run both
 without either being told about the other. Full options and the reasoning
 in [relay.md](relay.md).
 
-## `services.geist-forward`
+## `services.nebel-forward`
 
 A separate module in `nix/forward-module.nix`, exported as
-`nixosModules.geist-forward`, for the small program on a VPS that carries
+`nixosModules.nebel-forward`, for the small program on a VPS that carries
 datagrams to a home server. It holds no key and no state, so it has no
 identity, no pins and no state directory; it runs as a dynamic user in a
 tight sandbox.
 
 ```nix
-services.geist-forward = {
+services.nebel-forward = {
   enable = true;
   openFirewall = true;
-  home = "10.8.0.2:47655";   # geistd, as reachable from the VPS
+  home = "10.8.0.2:47655";   # nebeld, as reachable from the VPS
 };
 ```
 
@@ -207,15 +207,15 @@ services.geist-forward = {
 each bounds is in [forwarding.md](forwarding.md). The module has not been
 run under a NixOS VM test yet -- only parsed.
 
-## `services.geist-hop`
+## `services.nebel-hop`
 
 A separate module in `nix/hop-module.nix`, exported as
-`nixosModules.geist-hop`, for the router machines link to
+`nixosModules.nebel-hop`, for the router machines link to
 ([hop.md](hop.md)). Its identity lives in `stateDir`
-(`/var/lib/geist-hop`); pins are public and may be store paths.
+(`/var/lib/nebel-hop`); pins are public and may be store paths.
 
 ```nix
-services.geist-hop = {
+services.nebel-hop = {
   enable = true;
   openFirewall = true;                 # UDP 47658
   routeId = 16;
@@ -227,16 +227,16 @@ services.geist-hop = {
 };
 
 # on the home machine, behind it:
-services.geistd = {
+services.nebeld = {
   # ...
   hop = "dac://vps.example:47658";
   hopPin = ./peers/vps-hop.pin;
 };
 ```
 
-Read the router's pin once with `geist-hopd --identity
-/var/lib/geist-hop/hop.id --pin-out hop.pin` after its first start. Like
-`services.geist-forward`, the module is parsed, not yet run under a VM test.
+Read the router's pin once with `nebel-hopd --identity
+/var/lib/nebel-hop/hop.id --pin-out hop.pin` after its first start. Like
+`services.nebel-forward`, the module is parsed, not yet run under a VM test.
 
 ## The VM tests
 
@@ -260,7 +260,7 @@ plain one does; and the module's generated `userconfig.toml` is one the
 CLI actually accepts.
 
 **`three-desktop-relay`** chains three databases: `origin → middle → tail`.
-It has nothing to do with `services.geist-relay` — the name predates it
+It has nothing to do with `services.nebel-relay` — the name predates it
 and describes a chain of daemons, not a message pipe. The two
 ends share a network but hold no pin for each other, and the test checks
 both facts, so nothing it observes can be explained by the ends talking
@@ -279,7 +279,7 @@ across the chain, then makes `origin` update one row and delete another
 and checks that both ends converge.
 
 **`relay-pipe`** has no database in it at all. A `phone`, a `pc` running
-`services.geist-relay` with `to = "exec"`, and a `laptop` that only
+`services.nebel-relay` with `to = "exec"`, and a `laptop` that only
 collects. The phone sends bytes; a program on the pc reads them from stdin
 and its stdout comes back as the reply; the laptop polls the same message
 out of the spool without consuming the phone's.

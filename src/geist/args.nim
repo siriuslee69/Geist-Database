@@ -9,7 +9,7 @@
 ##   --quiet   ("quiet" a flag)  key "quiet", value "",      last = i
 ##   list      (not an option)   bare = true, value "list",  last = i
 ##
-## `geist`, `geist-relay`, `geistd`, `geist-relayd` and `geist-routed` all
+## `geist`, `nebel-relay`, `nebeld`, `nebel-relayd` and `nebel-routed` all
 ## read their options this way; each used to carry its own copy of the
 ## loop, and five copies of one rule are five chances for them to drift.
 ##

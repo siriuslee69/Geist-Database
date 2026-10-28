@@ -117,8 +117,8 @@ and below, never sideways within its own level, and never upward.
             v
   level 4   ping.nim  stop.nim (tiny, no Bifrost)
             forward.nim  forward_settings.nim (a VPS forwarder)
-            hop_link.nim (a link to a geist-hopd router) -> transport.nim
-            hop_router.nim (geist-hopd itself, above serve.nim)
+            hop_link.nim (a link to a nebel-hopd router) -> transport.nim
+            hop_router.nim (nebel-hopd itself, above serve.nim)
             masks.nim  bytecheck.nim  payload.nim  lane_recovery.nim
             -> transport.nim
             -> peers.nim -> handshake.nim
@@ -169,7 +169,7 @@ machine's disk and back:
      |
      |  src/clients/geist_cli.nim      parse the command line
      v
-  connectGeist(remote, identity, pin, policy)
+  connectNebel(remote, identity, pin, policy)
      |
      |  src/geist/transport.nim        the handshake (see the README)
      |  src/geist/masks.nim            which algorithms, which tier
@@ -185,7 +185,7 @@ machine's disk and back:
      v
   serveOnce(handler)
      |
-     |  src/server/geistd.nim          the loop
+     |  src/server/nebeld.nim          the loop
      |  src/geist/serve.nim            open the frame
      |  src/geist/bytecheck.nim        walk the bytes: every length and
      |                                 enum checked; malformed -> an

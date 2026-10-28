@@ -67,7 +67,7 @@ type
     ## stop typing, not a way to override what was typed.
     ##
     ## The network half of the same file ([daemon], [client]) is read by
-    ## geist-sync's sync_settings.nim, not here.
+    ## nebel's sync_settings.nim, not here.
     path*: string
     preset*: string
     passwordFile*: string

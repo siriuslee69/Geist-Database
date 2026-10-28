@@ -7,7 +7,7 @@
 ##
 ## Everything here opens the database FILES in this process. Nothing is
 ## sent to another machine: talking to a peer, a daemon or a relay is the
-## job of geist-sync, which reuses the two tables below and adds its own
+## job of nebel, which reuses the two tables below and adds its own
 ## commands on top.
 ##
 ## Commands that need the at-rest password or rewrite local files -- init,

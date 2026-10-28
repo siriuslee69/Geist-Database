@@ -17,7 +17,7 @@
 ## against its enum. Only a buffer that walks cleanly to its last byte is
 ## handed to a decoder. Nothing here allocates what a length claims.
 ##
-## The same primitives are exported for `geist_sync` (wire_check.nim), which
+## The same primitives are exported for `nebel` (wire_check.nim), which
 ## walks the bytes a peer sends with them. The wire layouts themselves live
 ## there, not here.
 ##

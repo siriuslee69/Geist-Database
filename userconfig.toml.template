@@ -2,7 +2,7 @@
 # Geist user configuration  --  copy to userconfig.toml and edit
 # ---------------------------------------------------------------------
 #
-# This file belongs to whoever RUNS geist or geistd on this machine. It
+# This file belongs to whoever RUNS geist or nebeld on this machine. It
 # saves typing and nothing else: every setting here has a command line
 # option, and the option always wins.
 #

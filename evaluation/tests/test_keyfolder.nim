@@ -2,7 +2,7 @@
 ##
 ## What matters most: words rebuild EXACTLY the same key, and a typo is
 ## refused rather than turned into a different key. Pairs and peer pins
-## are tested in geist-sync (test_identity_folder.nim).
+## are tested in Nebel-DecentralizedDB (test_identity_folder.nim).
 
 import runePragmas
 import std/[os, unittest]
@@ -53,7 +53,7 @@ suite "key folder":
     check b.secretWords(e).words == a.secretWords(e).words
 
   # {.testKind: tkEdgeCase.}
-  test "a pair is refused here: geist-sync imports pairs":
+  test "a pair is refused here: nebel imports pairs":
     var
       a: KeyFolder = openKeyFolder(scratch("p"), "pw")
     check not a.importWords("server", kkPair, "x").ok

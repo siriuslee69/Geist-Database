@@ -8,8 +8,8 @@
 ##   geist keys list
 ##     #  kind       name
 ##     1  symmetric  backup
-##     2  pair       server     <- geist-sync's, shown here by name only
-##     3  peer       laptop     <- geist-sync's, shown here by name only
+##     2  pair       server     <- nebel's, shown here by name only
+##     3  peer       laptop     <- nebel's, shown here by name only
 ##
 ##   geist keys new-sym backup          32 random bytes, sealed
 ##   geist keys show backup --secret    the 24 words that rebuild it
@@ -20,7 +20,7 @@
 ##   there:  geist keys import backup --kind sym --words "<24 words>"
 ##
 ## Signing pairs and peer pins share this folder but need Bifrost, so
-## `geist-sync keys ...` makes and shows them.
+## `nebel keys ...` makes and shows them.
 
 import std/[os, strutils]
 
@@ -93,7 +93,7 @@ proc wordsArg(o: Options, what: string): string {.role: parser,
 proc showKey(f: KeyFolder, o: Options) {.role: actor,
     tag: "cli|cryptoBoundary|read".} =
   ## f/o: what one key looks like. Only a symmetric key's words are shown
-  ## here; a pair or a peer is shown by geist-sync, which has its fingerprint.
+  ## here; a pair or a peer is shown by nebel, which has its fingerprint.
   var
     e: KeyEntry = f.pickKey(o)
     sec: tuple[ok: bool, words: string, err: string] = (false, "", "")
@@ -101,7 +101,7 @@ proc showKey(f: KeyFolder, o: Options) {.role: actor,
   echo "kind:   ", kindName(e.kind)
   if e.kind != kkSymmetric:
     echo ""
-    echo "fingerprint and secret: geist-sync keys show ", e.name
+    echo "fingerprint and secret: nebel keys show ", e.name
     return
   if not o.showSecret:
     echo ""
@@ -132,14 +132,14 @@ proc cmdKeys*(o: Options) {.role: orchestrator,
     f.showKey(o)
   of "import":
     if o.kind notin ["sym", "symmetric"]:
-      fail("keys import needs --kind sym; pairs are imported by geist-sync")
+      fail("keys import needs --kind sym; pairs are imported by nebel")
     mustDo(f.importWords(nameArg(o), kkSymmetric, wordsArg(o, "24 words")))
     echo "imported symmetric '", nameArg(o), "'"
   of "drop":
     mustDo(f.dropKey(f.pickKey(o)))
     echo "dropped"
   of "new-pair", "trust":
-    fail("`keys " & what & "` is geist-sync's: run `geist-sync keys " &
+    fail("`keys " & what & "` is nebel's: run `nebel keys " &
       what & "`")
   else:
     fail("unknown `keys " & what & "`; try `geist help`")

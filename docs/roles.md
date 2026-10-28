@@ -17,12 +17,12 @@ and where each stops. Every row names a runnable example.
   read from disk           geist           byId, find, list, seek*;    geist_quickstart,
                                            observeStore/followStore    geist_observe,
                                            for a store you do not own  geist_fast_search
-  sync, as code            geist/network   needLocal / offerLocal      geist_sync
+  sync, as code            geist/network   needLocal / offerLocal      nebel
                                            (same process), needRemote
                                            / offerRemote (a link),
                                            needVia / offerVia (routed)
-  background sync daemon   geist/network   serveStore (answer), tick   geist_sync;
-                           or geistd       (ask) -- or geistd with     `geistd --help`
+  background sync daemon   geist/network   serveStore (answer), tick   nebel;
+                           or nebeld       (ask) -- or nebeld with     `nebeld --help`
                                            --trust / --allow-write
                                            and/or --pull/--push/--sync
   convert data             geist           convertDoc, convertFile,    geist_convert;
@@ -30,8 +30,8 @@ and where each stops. Every row names a runnable example.
   encrypt in memory        geist           sealObject / openObject,    geist_seal
                                            sealWithKey / openWithKey,
                                            ...WithPassword
-  reach home via a VPS     geist-forwardd  one process on the VPS,   docs/forwarding.md;
-                                           no code in your app:        `geist-forwardd --help`
+  reach home via a VPS     nebel-forwardd  one process on the VPS,   docs/forwarding.md;
+                                           no code in your app:        `nebel-forwardd --help`
                                            dial the VPS, pin home
 ```
 
@@ -41,11 +41,11 @@ one lacks (`need`); to PUSH is to send another store what IT lacks
 the store, so each call moves only what is new -- after a restart too.
 
 **Def. 2 (a node).** A program running `serveStore` is a node others can
-reach; a program running `tick` is a node that reaches others. `geistd` is
+reach; a program running `tick` is a node that reaches others. `nebeld` is
 both, switched on by its options:
 
 ```text
-  geistd --path mail --identity me.id \
+  nebeld --path mail --identity me.id \
          --allow-write laptop.pin \                   <- others dial in
          --sync vps.pin@dac://vps.example:47655 \     <- this dials out
          --sync-every 30
@@ -67,7 +67,7 @@ while running:
   server            what Geist holds                  start from         fits?
   ----------------  --------------------------------  -----------------  -----------------
   email             one store per mailbox, chosen by  cloud-sync preset; yes; attachments
-                    address (registry.nim); phones    registry; geistd   <= ~78 MB each
+                    address (registry.nim); phones    registry; nebeld   <= ~78 MB each
                     push with offerVia                --sync on replicas (ceiling 4)
   game              player records and world state;   app / live         yes; state sync
                     positions between servers          presets; tick     on a LAN at
@@ -103,7 +103,7 @@ the planned servers:
 Video and audio streams do not fit and are not meant to: a stream must
 not wait for an acknowledgement per frame, and this transport waits for
 one per message. Carry the stream on a transport built for it and keep
-what describes it in Geist. `geist-relayd` (docs/relay.md) moves short
+what describes it in Geist. `nebel-relayd` (docs/relay.md) moves short
 clips and messages -- a voice note to a transcriber -- not a film.
 
 What would lift 4, 5 and 6 is listed, in order of value, in
