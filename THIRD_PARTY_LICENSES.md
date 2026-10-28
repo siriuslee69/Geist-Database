@@ -10,11 +10,10 @@ which terms. It records what was observed in the pinned submodules on
 ```text
   component                   pinned at   license          how it gets in
   --------------------------  ----------  ---------------  -------------------------
-  Bifrost-ExchangeProtocols   29915b7     all rights       compiled in (network half)
                                           reserved, same
                                           author as Geist
   Tyr-Crypto (its own code)   2f8d30c     Unlicense        compiled in
-  Eir-CompressionAndECC       ed3ba8a     Unlicense        compiled in (via Bifrost)
+  Eir-CompressionAndECC       ed3ba8a     Unlicense        pinned; compression at rest (not yet compiled in)
   SIMD-Nexus                  efee3b4     Unlicense        compiled in
   Fylgia-Utils                9dc379d     Unlicense        compiled in (TOML reader)
   Rune-Pragmas                49d8868     Unlicense        compile time only

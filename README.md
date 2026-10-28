@@ -108,8 +108,6 @@ knows the schema knows every offset.
   reference       the 33 bytes a row keeps in place of an externalised
                   value: 1 tag byte + a 32-byte content hash.
   lease           `.geist-lock`. One line: `<pid> <host> <unix-seconds>`.
-  cursor file     `.geist-cursors`. One line per peer:
-                  `<remote> <epoch> <cursor>`.
 
   IN A ROW
   --------
@@ -133,10 +131,11 @@ knows the schema knows every offset.
                   tombstones. It only grows.
   live view       the newest version of each id, tombstones excluded.
                   `entryCount` counts these; `logCount` counts the log.
-  log position    an index into the log. What a peer's cursor counts.
+  log position    an index into the log, counted from zero.
   @position       an index into the live view, as `list` prints it.
   epoch           a counter bumped when the log is REWRITTEN (compaction).
-                  A peer whose epoch changed must start again from zero.
+                  A reader whose saved position is from an older epoch must
+                  start again from zero.
   tombstone       a row appended to say an id is gone. Nothing is erased
                   in place, so the removal replicates like any other row.
 
@@ -150,32 +149,13 @@ knows the schema knows every offset.
                   Lose it and the data cannot be opened, by design.
   key file        the sealed secret material, `.keys`.
 
-  ON THE WIRE
-  -----------
-  identity        a signing key file. Private; never leaves its machine.
-  pin             the public half of an identity, in a `.pin` file. Handed
-                  to a peer out of band. That exchange IS the trust.
-  subject         the name on an identity, as peers see it.
-  strength        which algorithms a session uses. Six named levels.
-  Query / Reply   the request and answer. One shape for every operation.
-  frame           one AME/DAC datagram. At most 65,507 bytes.
-  envelope        the first byte of a frame's payload: 0 whole,
-                  1 package manifest, 2 package chunk.
-  package         a payload split across frames because it exceeded
-                  32,000 bytes, reassembled and digest-checked on arrival.
-
-  THE RELAY
-  ---------
-  stream          a name a message is sent under. Not a schema.
-  message         bytes, plus who sent them and when, both stamped locally.
-  spool           a bounded in-memory ring of messages per stream.
 ```
 
 ---
 
 ## Five minutes
 
-Everything below this point is one of the three parts in more detail.
+Everything below this point is part 1, the store, in more detail.
 This is the shortest complete round trip through part 1.
 
 ### In Nim
@@ -207,12 +187,11 @@ The reopen is the part worth keeping in the example: it is what shows the
 row survived the process, under the id `put` handed back.
 
 ```text
-nim c -r examples/geist_quickstart.nim     # or: nimble runExamples, for all five
+nim c -r examples/geist_quickstart.nim     # or: nimble runExamples, for all of them
 ```
 
-The other four sit beside it in `examples/`: `geist_encrypted`,
-`geist_observe`, `geist_fast_search` and `geist_buffers` -- that last one is two Geist instances passing rows
-to each other with no database on either side ([2.0](#20-a-link-does-not-need-a-database)).
+The others sit beside it in `examples/`: `geist_convert`, `geist_encrypted`,
+`geist_fast_search`, `geist_observe`, `geist_seal` and `geist_tables`.
 
 ### From the shell
 
@@ -267,7 +246,6 @@ main.ge1st.b1      <- backup rotation slots
 main.ge1st.b2
 .geist-lock        <- who may write (only while a writer is open)
 .geist-sidecar/    <- values too big to sit in a row
-.geist-cursors     <- where peers left off (only after a sync)
 ```
 
 Nothing here is a hidden index that can drift: everything except the data
@@ -313,7 +291,7 @@ An id is a small machine tag plus a counter, so two machines minting rows
 at the same moment cannot collide.
 
 Identity costs 16 bytes per row (`__rowId` + `__flags`) and buys `set`,
-`delete`, `byId` and row-level exchange with a peer. Two presets turn it
+`delete`, `byId` and row-level edits. Two presets turn it
 off on purpose — see [1.11](#111-configuring).
 
 ## 1.3 Looking at it
@@ -450,7 +428,7 @@ echo db.entryCount(), " visible / ", db.logCount(), " stored"
   del id=3
 ```
 
-That is also why a peer can catch up by asking for "everything after
+That is also why `rowsSince` can answer "everything after
 position N" — the log only grows, so a position keeps its meaning.
 
 Two commands trim it, in this order:
@@ -854,7 +832,7 @@ Four modes, which are the four answers to "when is the copy rewritten":
 ```
 
 ```nim
-c.transpose = tmInterval        # a daemon that saves often
+c.transpose = tmInterval        # a long-running process that saves often
 c.transposeEverySeconds = 300
 ```
 
@@ -1082,8 +1060,8 @@ nim c -r examples/geist_observe.nim
   three clusters -> 260 bytes, whether the file is 1 MB or 1 GB
 ```
 
-This is how `nebeld` notices that a local `geist put` moved the file
-underneath it ([2.3](#23-who-may-do-what)) without reopening anything.
+This is how a long-running process notices that a local `geist put` moved the file
+underneath it without reopening anything.
 
 ## 1.11 Configuring
 
@@ -1145,7 +1123,7 @@ They are worth reading before you pick:
                                               a batch root, not chained
                                               one by one
   host        objects up to ~78 MB            one transfer is 65,535
-                                              chunks x 1,200 B; peer
+                                              chunks x 1,200 B
                                               DISCOVERY does not exist,
                                               pins are placed by hand
   live        50 Hz positions on a LAN        every send waits for a
@@ -1171,56 +1149,16 @@ c.columnGroups = @[@["body"], @["authorId", "spaceId"]]
 c.backup.everyNWrites = 32'u32
 ```
 
-### The layers, and which of them may touch what
+### What counts as configuration
 
-Five things get called "config". They are not a pile — they sit on
-different sides of the store/link/machine walls, and only the first two
-can change what lands on disk:
-
-```text
-  +-- SHAPE (part 1 only) -----------------------------------------+
-  |  1  preset            appConfig() / --preset app               |
-  |                       columns, id on/off, seal, batch,         |
-  |                       write mode, backup policy                |
-  |                       scope: ONE database                      |
-  |                                                                |
-  |  2  library defaults  configs/default.toml [runtime.storage]   |
-  |                       and [runtime.backup]                     |
-  |                       a few nudges over the preset             |
-  |                       scope: every database in the project     |
-  +----------------------------------------------------------------+
-
-  +-- LINK (part 2 and 3) -----------------------------------------+
-  |  3  link policy       configs/default.toml [runtime.transport] |
-  |                       where a link starts, when it climbs      |
-  |                       scope: every peer session                |
-  |                       does NOT choose algorithms — those are   |
-  |                       fixed in code                            |
-  +----------------------------------------------------------------+
-
-  +-- MACHINE (binaries only; never touches on-disk shape) --------+
-  |  4  this machine      userconfig.toml                          |
-  |                       paths, pins, listen address, sinks       |
-  |                                                                |
-  |  5  this run          CLI flags / NixOS services               |
-  |                       one-off overrides of 4                   |
-  +----------------------------------------------------------------+
-```
+Three things get called config. Only the first two can change what lands
+on disk:
 
 ```text
-  who reads which layer
-  ---------------------
-  import geist            1 + 2
-  import geist/wire       3        (+ [relay] machine keys from 4/5)
-  import geist/network    1 + 2 + 3
-  nebel-relayd            3 + [relay]; never compiles the reader for [storage]
+  preset             the SHAPE of one database     code, or --preset
+  library defaults   configs/default.toml          [runtime.storage], [runtime.backup]
+  this machine       userconfig.toml [database]    which folder, which preset
 ```
-
-`configs/default.toml` is one file with three kinds of reader. Its build
-tables (`[project]`, `[nim]`, `[define]`, `[passC]`, `[passL]`) are read by
-the compiler through `config.nims`. Of its `[runtime]` tables,
-`storage`/`backup` never reach the wire half, `transport` never reaches
-the disk half, and neither parses the other's keys.
 
 ### How shape layers stack
 
@@ -1244,8 +1182,7 @@ override:
 ```
 
 ```nim
-discard initGeistDefaults()            # part 1 only
-discard initNebelDefaults()     # parts 1 + 2
+discard initGeistDefaults()            # the library defaults
 var db = openGeist[Note]("data/notes", defaultGeistConfig())
 ```
 
@@ -1269,14 +1206,7 @@ surface:
   [runtime.storage]     transposeEverySeconds  0         rebuild window for "interval", in seconds
   [runtime.backup]      copies              2            rotation slots .b1 .b2 .b3
   [runtime.backup]      everySeconds        0            also rotate on a timer
-  [runtime.transport]   startTier           "standard"   strength a link opens at
-  [runtime.transport]   secretAtMiB         64           climb to secret after this many MiB
-  [runtime.transport]   archiveAtMiB        1024         climb to archive after this many MiB
-  [runtime.transport]   requireCookie       true         challenge a first hello before doing key work
 ```
-
-You may change *when* a link climbs. You may not change *what algorithms*
-a strength uses — see [2.5](#25-strength-levels).
 
 ### `configs/<preset>.toml` — build presets
 
@@ -1287,11 +1217,9 @@ a storage preset is a shape of database; a build preset is a shape of
 *program*.
 
 ```text
-  nim c -d:preset=server src/server/nebeld.nim
-  nimble buildServer -d:preset=server        # the shared tasks pass it on
 
-  configs/default.toml  -->  configs/server.toml  -->  command line
-  (every switch)             (what server changes)     (wins over both)
+  configs/default.toml  -->  configs/iot.toml  -->  command line
+  (every switch)             (what iot changes)        (wins over both)
 ```
 
 ```text
@@ -1299,75 +1227,37 @@ a storage preset is a shape of database; a build preset is a shape of
   ------------  ---------------------  ------------------------------------
   default.toml  --mm:orc --threads:on  storage preset app, tier standard
                 -d:hasLibsodium
-  server.toml   + --opt:speed          tier secret, 3 backups, hourly
   iot.toml      + --opt:size, gc-      storage preset iot, no row ids,
-                sections               1 backup, tier telemetry
+  sections               1 backup
   android.toml  no -d:hasLibsodium     (same as default)
 ```
 
-A program built with `-d:preset=server` reads `configs/default.toml` and
-then `configs/server.toml` from its working directory when it starts, so
+A program built with `-d:preset=iot` reads `configs/default.toml` and
+then `configs/iot.toml` from its working directory when it starts, so
 the file on disk can still be edited after the build.
 
 ### `userconfig.toml` — this machine
 
-Saves typing, nothing else. Every key has a flag, and the flag always
-wins. Looked for in the working directory, then
-`~/.config/geist/userconfig.toml`. Passwords are named by *file*, so the
-config itself stays shareable.
+Geist reads one table from this file, `[database]`. It names the store a
+command uses when `--path` is not given. Every key is optional.
 
-```text
-$ cat userconfig.toml
+```toml
 [database]
 path = "data/notes"
-preset = "app"
-
-$ geist list          # no --path, no --preset
+preset = "secure-app"
+passwordFile = "secrets/db.pw"
 ```
 
-```text
-  section         key                      flag                         sets
-  -------------   -----------------------  ---------------------------  ----
-  [database]      path                     --path                       store folder
-  [database]      preset                   --preset                     preset name
-  [database]      passwordFile             --password-file              seal password file
-  [daemon]        listen                   --listen                     nebeld bind (dac://host:port)
-  [daemon]        identity                 --identity                   this side's key file
-  [daemon]        identityPasswordFile     --identity-password-file     seals that key
-  [daemon]        trust                    --trust (repeat)             pins allowed to read
-  [daemon]        allowWrite               --allow-write (repeat)       pins allowed to send rows
-  [client]        remote                   --remote                     daemon to call
-  [client]        peerPin                  --peer-pin                   pin checked on that daemon
-  [client]        limit                    --limit                      default list/find limit
-  [relay]         listen                   --listen                     nebel-relayd bind (port 47656)
-  [relay]         subject                  --subject                    relay name on its pin
-  [relay]         identity                 --identity                   relay key file
-  [relay]         identityPasswordFile     --identity-password-file     seals that key
-  [relay]         trust                    --trust (repeat)             pins that may collect
-  [relay]         allowWrite               --allow-write (repeat)       pins that may send
-  [relay]         to                       --to                         spool | stdout | file | exec
-  [relay]         file                     --file                       log path when to=file
-  [relay]         format                   --format                     lines | json | raw
-  [relay]         exec                     --exec                       command when to=exec
-  [relay]         execTimeoutMs            --exec-timeout-ms            kill after N ms (0 = no wait)
-  [relay]         stream                   --stream (repeat)            accepted stream names
-  [relay]         spool                    --spool                      in-memory messages per stream
-  [relayClient]   remote / peerPin / ...   same flags                   client side of a relay
-```
+Geist looks for the file in the working directory, then in its `config/`
+folder, then in `~/.config/geist/`. The command line always wins: a flag
+you type is never replaced by the file.
 
-`[daemon]` vs `[client]`, and `[relay]` vs `[relayClient]`, stay separate
-so a machine can run both ends without anyone guessing which side a key
-belongs to.
+Prefer `passwordFile` to `--password`. A password typed on the command
+line is visible in the process list. An unknown key in `[database]` is an
+**error** — a typo must not look like success.
 
-On NixOS these files are generated:
-
-```nix
-services.nebeld = { enable = true; path = "/var/lib/geist/notes"; ... };
-services.nebel-relay = { enable = true; to = "exec"; ... };
-programs.nebel-client = { enable = true; settings.database.path = "..."; };
-```
-
-See [docs/nix.md](docs/nix.md).
+The sections `[daemon]`, `[client]`, `[relay]` and `[relayClient]` belong to
+Nebel-DecentralizedDB. The same file can hold them; Geist does not read them.
 
 ## 1.12 Converting JSON and TOML
 

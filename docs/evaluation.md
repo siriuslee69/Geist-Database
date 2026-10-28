@@ -48,33 +48,27 @@ program is built into `build/evaluation/`, never beside its source.
   nimble test         every test_*.nim                    minutes
   nimble testCore     mapper + format                     seconds
   nimble testCrypto   crypto, key lifecycle, backup       seconds
-  nimble testApi      session, transport, settings        seconds
+  nimble testApi      session, settings, presets          seconds
   nimble testDurability  generation swap, lease, restore  seconds
-  nimble testExchange    live-socket daemon + identity    minutes
   nimble testApiSurface  collection, seek, column, hash   seconds
 ```
 
-`testExchange` is the slow one and the important one: it starts real
-daemons on real sockets and runs real post-quantum handshakes between
-them. Nothing else in the suite would notice a handshake that negotiated
-successfully and then could not carry a byte.
-
 ### The modular proofs
 
-`evaluation/tests/modular/` holds two files that are not ordinary tests.
-They are compiled, and then the names of the GENERATED C FILES are
+`evaluation/tests/modular/` holds a file that is not an ordinary test.
+It is compiled, and then the names of the GENERATED C FILES are
 inspected:
 
 ```text
   storage_only.nim  ->  does `import geist` pull in a network stack?
-  relay_only.nim    ->  does `import geist/wire` pull in a database?
 ```
 
-Run by `nimble checkModular`, `nimble checkRelay` and
-`nimble checkRouter` and `nimble checkForward`. A comment saying "the relay
-must not open a database" is a wish; a build that fails when it does is a rule. This is
-the mechanism that keeps the three halves in `docs/layout.md` separable
-on a small device, where "compiles a post-quantum KEM you never use" is
+Run by `nimble checkModular`. The relay, router, hop and forwarder proofs
+are in Nebel-DecentralizedDB, which imports this library. A comment saying
+"the storage half must not open a network" is a wish; a build that fails
+when it does is a rule.
+This is what keeps the storage half usable on a small device, where "compiles a
+post-quantum KEM you never use" is
 measured in kilobytes of flash.
 
 ### Declaring what a test is for

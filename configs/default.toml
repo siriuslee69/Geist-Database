@@ -113,7 +113,7 @@ rowIdentity = true
 # beside an encrypted file.
 transpose = "none"
 
-# Seconds, for transpose = "interval". A daemon that saves often can keep
+# Seconds, for transpose = "interval". A process that saves often can keep
 # the search copy roughly fresh without rewriting it on every write.
 transposeEverySeconds = 300
 

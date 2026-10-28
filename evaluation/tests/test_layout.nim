@@ -62,7 +62,7 @@ suite "where the folder is":
     discard openHome(p, nrClient)
     check not dirExists(p)
 
-suite "the six subdirectories":
+suite "the storage subdirectories":
 
   setup:
     var
@@ -74,10 +74,7 @@ suite "the six subdirectories":
     check h.configDir() == p / "config"
     check h.keysDir() == p / "keys"
     check h.keystoreDir() == p / "keys" / "keystore"
-    check h.peersDir() == p / "peers"
     check h.dbDir() == p / "db"
-    check h.spoolDir() == p / "spool"
-    check h.logDir() == p / "logs"
 
   # {.testKind: tkUnit.}
   test "and ensureHome makes them":
@@ -85,10 +82,7 @@ suite "the six subdirectories":
     check dirExists(h.configDir())
     check dirExists(h.keysDir())
     check dirExists(h.keystoreDir())
-    check dirExists(h.peersDir())
     check dirExists(h.dbDir())
-    check dirExists(h.spoolDir())
-    check dirExists(h.logDir())
 
   # {.testKind: tkEdgeCase.}
   test "but not the app directories: db/ lists what is actually here":
@@ -114,10 +108,6 @@ suite "named files":
   test "and json is left alone":
     check h.configPath("export.json").endsWith("config/export.json")
 
-  # {.testKind: tkUnit.}
-  test "an identity and a pin land in their own folders":
-    check h.identityPath("vps-1").endsWith("keys/vps-1.id")
-    check h.pinPath("vps-2").endsWith("peers/vps-2.pin")
 
 suite "what an operator is shown":
 

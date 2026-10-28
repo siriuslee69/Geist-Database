@@ -70,19 +70,6 @@ it stores.
 | E4 | Blob-dominated metadata | per object | ~300 B row + MB blob | per object | row then blob | low | med | yes | ample | very large |
 | E5 | Power-loss-prone embedded | 1 s | ~64 B | rare | whole | low | low | opt | scarce | small |
 
-### The relay is not a blob store
-
-Scenario 17 was originally modelled as opaque store-and-forward with
-delete-after-TTL. It is not. A relay stores **routing state** — sender,
-receiver, endpoint, last-seen — which is a small hot read-dominated table
-identical in shape to the peer directory (18). In-flight payloads stay in
-RAM because transfer speed is the point; spilling to disk is an
-exceptional path, not the steady state.
-
-This matters more than it looks. See §5.
-
----
-
 ## 3. Derived requirements
 
 | Group | Scenarios | Layout | Overflow | Nulls | Write mode |
@@ -127,25 +114,6 @@ Layout is irrelevant because nothing is serialised in steady state.
 Five of the 18 legacy presets fall here (call, live-position, game, and
 partially stream and relay). Currently `wmVolatile` exists in `WriteMode`
 **(verified, `src/geist/config.nim:27`)** and nothing implements it.
-
----
-
-## 5. What the relay correction removes
-
-Hole reuse with 2-bit free flags, the crash-safe free list, and background
-compaction were justified by exactly one scenario: a relay churning
-through TTL'd blobs.
-
-With the relay reclassified as a routing table, **no scenario in the set
-requires a free list.** Chat rarely deletes. The gaming server appends. An
-evidence log is append-only by definition. The IoT gateway appends.
-
-Fragmentation reclaim is therefore a **generation rebuild**, which already
-exists: write generation *N+1*, swap the manifest, drop *N*. That is the
-same mechanism as the key reroll and the same atomic swap point.
-
-**Decision: build no free list.** Revisit only if a real workload shows
-delete-heavy churn on a database too large to rewrite.
 
 ---
 

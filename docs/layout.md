@@ -1,208 +1,67 @@
 # Code layout
 
-Where every file lives, and why it lives there rather than next door.
-
-╭⟢ 1. The shape of the repository 🌊
-├⟢ 2. The three halves 🐦‍🔥
-├⟢ 3. Dependency levels inside the library 🍣
-├⟢ 4. What each dependency is for ⟡
-╰⟢ 5. How a request moves through the files ❖
+Geist is one library, `geist`, and one command line program, `geist`. This
+file says where each piece lives and what it may import.
 
 ## 1. The shape of the repository
 
 ```text
-  Geist-Database/
-  |
-  +-- src/
-  |   +-- geist.nim              the storage half, one import
-  |   +-- geist/                 the library's own modules
-  |   |   +-- crypto/            cipher, mac, batch, column
-  |   +-- clients/               programs a person runs
-  |   +-- server/                programs a machine runs
-  |
-  +-- evaluation/
-  |   +-- tests/                 unit, edge case, regression, integration
-  |   |   +-- modular/           proofs about what does NOT get compiled
-  |   +-- benchmarks/            the Otter timing harness
-  |   +-- statistics/            recorded measurements of this tree
-  |
-  +-- examples/                  runnable, and run by `nimble runExamples`
-  +-- configs/                   default.toml, the ONE settings file, and
-  |                              build presets (server, iot, android)
-  +-- docs/                      this file and its neighbours
-  +-- agents/PROGRESS.md         project state and handoff notes
-  +-- nix/                       NixOS package, modules and VM tests
-  +-- android/                   the Kotlin keystore companion
-  +-- submodules/                every dependency, pinned
+  src/geist.nim               the facade: `import geist` gives the whole library
+  src/geist/                  the modules, grouped below
+  src/clients/geist_cli.nim   the `geist` entry point
+  src/clients/cli/            common, direct, keys, tables (the CLI parts)
+  evaluation/tests/           tests, one file per area (test_<area>.nim)
+  evaluation/tests/modular/   storage_only.nim: proof of no network stack
+  evaluation/benchmarks/      performance measurements
+  examples/                   geist_<name>.nim, one idea each
+  configs/                    default.toml, iot.toml, android.toml
+  android/geistkeystore/      the Android keystore companion
+  android/geistvault/        the Android keyring app
+  docs/                       this folder
 ```
 
-Four rules decide that picture, and there are no others.
+## 2. The one rule about imports
 
-**Def. 1 (evaluation).** Anything that measures the code rather than
-being the code goes under `evaluation/`. Tests, benchmarks and recorded
-statistics are three kinds of measurement, so they are three folders
-under one roof.
+Storage modules import only storage modules and the pinned libraries in
+docs/submodules.md. No storage module imports anything from the network
+half, and `nimble checkModular` proves it: it compiles a program with
+Bifrost removed from the search path. Within the library, the facade
+`src/geist.nim` is the only file that lists the whole set.
 
-**Def. 2 (a program vs. a library).** `src/geist/` is a library: it is
-imported and it returns values. `src/clients/` and `src/server/` are
-programs: they parse arguments, print, and exit. A program may import the
-library; the library may never import a program.
-
-**Def. 3 (a dependency lives in one place).** Every dependency is a git
-submodule under `submodules/`, `nimsimd` included. Nothing is vendored
-into `src/`, and nothing is fetched at build time. `docs/submodules.md`
-says which copy of each the compiler sees.
-
-**Def. 4 (one settings file).** Every switch -- compiler flags, `-d:`
-defines, and the values the program starts with -- is written once, in
-`configs/default.toml`. A build preset (`configs/server.toml`, ...) holds
-only what differs. The .nimble file and nix read `[project]` from the
-same file rather than repeating it.
-
-## 2. The three halves
-
-Geist is one repository holding three things that are deliberately
-separable. The `nimble check*` tasks below are not documentation about
-this -- they FAIL THE BUILD when it stops being true.
+## 3. What each module group is for
 
 ```text
-  +----------------------------------------------------------------+
-  | part 1  STORAGE      import geist                               |
-  |         rows, clusters, columns, generations, the lease         |
-  |         compiles NO network stack, NO post-quantum KEM          |
-  |         proved by: nimble checkModular                          |
-  +----------------------------------------------------------------+
-  | part 2  TRANSPORT    import geist/network                       |
-  |         Query/Reply over Bifrost AME/DAC; the handshake         |
-  |         needs part 1 for the row types only                     |
-  +----------------------------------------------------------------+
-  | part 3  RELAY        import geist/wire                          |
-  |         the same transport with a pipe where the database is    |
-  |         compiles NO database module at all                      |
-  |         proved by: nimble checkRelay, nimble checkRouter        |
-  |         the forwarder is smaller still: no database AND no      |
-  |         handshake. proved by: nimble checkForward               |
-  +----------------------------------------------------------------+
+  group            modules                        job
+  ---------------  -----------------------------  -----------------------------
+  data on disk     store, row, format, sidecar,   the packed-row file format,
+                   durable, lease, backup         swapping generations safely
+  rows by id       rowid, mapper, dynamic, row    identity and typed access
+  encryption       keys, keystore, keyring,       sealed batches, key files,
+                   crypto/*, secrets, seal        several stores with own keys
+  reading          seek, collection, observe,     partial reads and watching
+                   show, transpose                a store you do not own
+  tables           tabletext, tableread,          JSON and TOML, round-trip
+                   sessiontable, doc              safe
+  settings         settings, config, layout       presets, defaults, folders
 ```
 
-Why the proofs exist rather than a comment: a program that relays voice
-clips between two phones has no store to serve, and the moment it can
-open a database somebody will give it one to open. The check reads the
-generated C file names and fails if a storage module appears in a relay
-build.
+## 4. What is NOT here
 
-## 3. Dependency levels inside the library
+The transport, peers, pins, relays, sync agents and daemons are in
+Nebel-DecentralizedDB. A storage module that starts importing any of them
+fails `nimble checkModular`.
 
-Modules are ordered so that a reader can start at the top and never meet
-a name that has not been defined yet. Level `n` may import level `n-1`
-and below, never sideways within its own level, and never upward.
+## 5. A request, through the files
 
 ```text
-  level 0   types.nim  secret.nim  format.nim  rowid.nim
-            |  the vocabulary: what a Row is, what a Query is,
-            |  how an integer becomes bytes
-            v
-  level 1   mapper.nim  durable.nim  lease.nim  sidecar.nim
-            |  one job each, on top of the vocabulary
-            v
-  level 2   store.nim  row.nim  keys.nim  crypto/*
-            |  the store itself and what protects it
-            v
-  level 3   sessionopen -> sessioncore -> replicate / observe /
-            sessionsweep / sessionview / sessiontable
-            (session.nim gathers them)
-            tabletext.nim -> tableread.nim  (a table as JSON or TOML)
-            collection.nim  seek.nim  backup.nim
-            |  what a caller actually holds and asks
-            v
-  level 4   ping.nim  stop.nim (tiny, no Bifrost)
-            forward.nim  forward_settings.nim (a VPS forwarder)
-            hop_link.nim (a link to a nebel-hopd router) -> transport.nim
-            hop_router.nim (nebel-hopd itself, above serve.nim)
-            masks.nim  bytecheck.nim  payload.nim  lane_recovery.nim
-            -> transport.nim
-            -> peers.nim -> handshake.nim
-            -> serve.nim -> network.nim
-            |  the wire, which is the only part that knows Bifrost
-            v
-  level 5   clients/  server/
-               programs
+  geist --path data/notes list
+     |
+     +-- cli/common     parse options, read userconfig [database]
+     +-- cli/direct     cmdList: open the store
+     |        |
+     |        +-- session     open generation, check the lease
+     |        +-- store       read the clusters
+     |        +-- crypto/*    open sealed batches, if any
+     |
+     +-- cli/common     print rows (show)
 ```
-
-`masks.nim` is worth naming separately. It is the ONLY file in the
-repository that decides anything about the transport -- which algorithms
-sit in which slot, and which slots each strength level turns on.
-Everything else about the wire is a Bifrost call. That is a deliberate
-boundary: it means "what protects a session" is one file a reader can
-hold in their head, not a property spread across a protocol stack.
-
-## 4. What each dependency is for
-
-```text
-  submodule                   what Geist uses it for
-  --------------------------  --------------------------------------
-  Bifrost-ExchangeProtocols   the whole wire: AME handshake and
-                              sessions, DAC datagrams, packaging
-  Tyr-Crypto                  the primitives Bifrost's slots name
-  Eir-CompressionAndECC       Reed-Solomon repair inside DAC packages
-  Fylgia-Utils                shared helpers used across the workspace
-  SIMD-Nexus                  vectorised search over column bytes
-  Rune-Pragmas                `runePragmas`: the role and tag pragmas
-                              every routine in the workspace declares
-  Otter-RepoEvaluation        the benchmark harness and the measurement
-                              behind evaluation/statistics/
-```
-
-All seven are pinned at the commits Bifrost itself pins, where they
-overlap. That is not a preference: Nim takes the LAST matching `--path`
-entry, so two copies of one dependency on the path means one of them is
-silently ignored, and the one that loses is whichever the ordering
-happens to disfavour. One copy, one commit, no ordering question.
-
-## 5. How a request moves through the files
-
-A remote `find` from a person's terminal to the bytes on another
-machine's disk and back:
-
-```text
-  geist --at dac://host:9000 find title=hello
-     |
-     |  src/clients/geist_cli.nim      parse the command line
-     v
-  connectNebel(remote, identity, pin, policy)
-     |
-     |  src/geist/transport.nim        the handshake (see the README)
-     |  src/geist/masks.nim            which algorithms, which tier
-     |  Bifrost                        every cryptographic step
-     v
-  send(Query(op: qoFind, ...))
-     |
-     |  src/geist/transport.nim        encodeQuery -> bytes
-     |  src/geist/payload.nim          one frame, or a DAC package
-     v
-  ~~~~~~~~~~~~~~~ the network ~~~~~~~~~~~~~~~
-     |
-     v
-  serveOnce(handler)
-     |
-     |  src/server/nebeld.nim          the loop
-     |  src/geist/serve.nim            open the frame
-     |  src/geist/bytecheck.nim        walk the bytes: every length and
-     |                                 enum checked; malformed -> an
-     |                                 error reply, never a decode
-     |  src/geist/serve.nim            decodeQuery, work out this
-     |                                 peer's rights
-     v
-  answerQuery(session, cursors, q, peer)
-     |
-     |  src/geist/answer.nim           which op, and is it allowed
-     |  src/geist/seek.nim             scan the clusters
-     |  src/geist/row.nim              read the columns out of a row
-     v
-  Reply  ->  encodeReply  ->  frames  ->  back the way it came
-```
-
-Two things that picture makes visible. The CLI never touches a cluster:
-it only ever holds a `Query` and a `Reply`. And the handler is told WHO
-is asking as a separate argument, so no code path can answer a request
-without having looked at the asker's rights.

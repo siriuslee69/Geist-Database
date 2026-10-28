@@ -7,21 +7,15 @@
 ##   +-- config/          every TOML anything on this machine reads
 ##   |     geist.toml         library defaults
 ##   |     userconfig.toml    this installation
-##   |     router.toml        nebel-routed
 ##   |     fjord.toml         one per app
 ##   |     eris.toml
-##   +-- keys/            signing identities, and the keystore
-##   |     <node>.id
+##   +-- keys/            symmetric keys, and the keystore
 ##   |     keystore/
-##   +-- peers/           the pins of everyone this node trusts
-##   |     vps-1.pin
 ##   +-- db/              every store, under the app that owns it
 ##   |     fjord/accounts/
 ##   |     fjord/mail/alice/inbox/
 ##   |     eris/messages/
 ##   |     eris/games/alderreach/
-##   +-- spool/           things in flight
-##   +-- logs/
 ##
 ## THE PROBLEM THIS SOLVES. `openGeist` takes a directory, so before this
 ## module every application chose one, and three applications chose three
@@ -68,15 +62,11 @@ const
     ## deployment moves the whole thing or none of it.
   configDirName* = "config"
   keysDirName* = "keys"
-  peersDirName* = "peers"
   dbDirName* = "db"
-  spoolDirName* = "spool"
-  logDirName* = "logs"
   keystoreDirName* = "keystore"
   defaultHomeName* = "geist"
   libraryConfigFile* = "geist.toml"
   userConfigFile* = "userconfig.toml"
-  routerConfigFile* = "router.toml"
 
 type
   NodeRole* {.role: configurator, tag: "config|types".} = enum
@@ -167,25 +157,10 @@ proc keystoreDir*(h: GeistHome): string {.role: helper, inline,
   ## h: what `openKeystore` should be given.
   result = h.keysDir() / keystoreDirName
 
-proc peersDir*(h: GeistHome): string {.role: helper, inline,
-    tag: "peerDirectory".} =
-  ## h: the pins of everyone this node trusts.
-  result = h.base / peersDirName
-
 proc dbDir*(h: GeistHome): string {.role: helper, inline,
     tag: "storageIo".} =
   ## h: every store, under the app that owns it.
   result = h.base / dbDirName
-
-proc spoolDir*(h: GeistHome): string {.role: helper, inline,
-    tag: "storageIo".} =
-  ## h: things in flight, which survive a restart but are not content.
-  result = h.base / spoolDirName
-
-proc logDir*(h: GeistHome): string {.role: helper, inline,
-    tag: "storageIo".} =
-  ## h: where a daemon writes, when it writes to a file at all.
-  result = h.base / logDirName
 
 proc configPath*(h: GeistHome, name: string): string {.role: helper,
     tag: "config".} =
@@ -198,16 +173,6 @@ proc configPath*(h: GeistHome, name: string): string {.role: helper,
       t.toLowerAscii().endsWith(".json")):
     t = t & ".toml"
   result = h.configDir() / t
-
-proc identityPath*(h: GeistHome, node: string): string {.role: helper,
-    tag: "cryptoBoundary".} =
-  ## h/node: this node's signing key.
-  result = h.keysDir() / node & ".id"
-
-proc pinPath*(h: GeistHome, peer: string): string {.role: helper,
-    tag: "peerDirectory".} =
-  ## h/peer: one peer's pin.
-  result = h.peersDir() / peer & ".pin"
 
 proc appDir*(h: GeistHome; app: string; instance: string = ""): string {.
     role: helper, tag: "storageIo".} =
@@ -224,14 +189,14 @@ proc appDir*(h: GeistHome; app: string; instance: string = ""): string {.
 
 proc ensureHome*(h: GeistHome): tuple[ok: bool, err: string] {.
     role: dataWriter, tag: "lifecycle|storageIo".} =
-  ## h: create the folder and its six fixed subdirectories.
+  ## h: create the folder and its five fixed subdirectories.
   ##
   ## Called once at startup. The app directories under `db/` are NOT
   ## created here: they appear when a store is opened, so `db/` lists what
   ## this machine actually holds rather than every app it could hold.
   var
     dirs: seq[string] = @[h.base, h.configDir(), h.keysDir(),
-      h.keystoreDir(), h.peersDir(), h.dbDir(), h.spoolDir(), h.logDir()]
+      h.keystoreDir(), h.dbDir()]
     i: int = 0
   while i < dirs.len:
     try:
@@ -268,13 +233,10 @@ proc describeHome*(h: GeistHome): string {.role: helper,
     (if h.role == nrServer: "a server)" else: "a client)"))
   L.add "  config/   " & (if dirExists(h.configDir()): "" else: "-- missing")
   L.add "  keys/     " & (if dirExists(h.keysDir()): "" else: "-- missing")
-  L.add "  peers/    " & (if dirExists(h.peersDir()): "" else: "-- missing")
   L.add "  db/       " & (if dirExists(h.dbDir()): "" else: "-- missing")
   while i < apps.len:
     L.add "    " & apps[i] & "/"
     i = i + 1
   if apps.len == 0 and dirExists(h.dbDir()):
     L.add "    (no application has stored anything yet)"
-  L.add "  spool/    " & (if dirExists(h.spoolDir()): "" else: "-- missing")
-  L.add "  logs/     " & (if dirExists(h.logDir()): "" else: "-- missing")
   result = L.join("\n")
