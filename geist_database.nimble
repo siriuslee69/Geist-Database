@@ -3,7 +3,7 @@
 ## ---------------------------------------------------------------------------
 ##
 ## Geist is the storage half: rows, files, keys, backups, one CLI. Talking to
-## other machines (sync, relays, daemons, the device monitor) is geist-sync,
+## other machines (sync, relays, daemons, the device monitor) is Nebel's,
 ## which imports this library. See that repository's .nimble file.
 ##
 ## Every generic task -- test, runExamples, runBenchmarks, runCli/buildCli,
@@ -48,7 +48,7 @@ srcDir        = "src"
 requires "nim >= 2.0.0", "nimsimd >= 1.3.2"
 
 ## NOTE: no UI and no network dependencies belong here. Geist is a headless
-## library and one CLI. Bifrost (the transport) is geist-sync's.
+## library and one CLI. Bifrost (the transport) is Nebel's.
 
 const
   ownTasks: array[2, string] = ["buildAll", "runStatistics"]

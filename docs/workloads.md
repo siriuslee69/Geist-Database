@@ -43,7 +43,7 @@ the reply before returning. Every operation in the list above is shaped
 this way. There is no one-way send in Geist today.
 
 This catches people out in one specific place, so it is worth stating
-plainly: `nebel-relay --follow` is NOT a stream. It is a loop that polls
+plainly: `nebel-relay --follow` (Nebel-DecentralizedDB) is NOT a stream. It is a loop that polls
 every `--interval-ms` milliseconds, 1000 by default. Nothing in Geist is
 pushed by a server; a reader always asks.
 

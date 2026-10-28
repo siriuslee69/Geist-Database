@@ -11,7 +11,7 @@
     in
     {
       # The storage library and its one CLI. Talking to other machines
-      # (sync, relays, daemons, NixOS modules) is geist-sync's flake.
+      # (sync, relays, daemons, NixOS modules) is Nebel-DecentralizedDB's flake.
       packages = forAllSystems (pkgs: {
         default = pkgs.callPackage ./nix/default.nix { };
         geist = pkgs.callPackage ./nix/default.nix { };
