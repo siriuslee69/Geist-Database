@@ -1,5 +1,26 @@
 # Progress
 
+Commit Message: Storage only: network, sync and daemons move to Nebel-DecentralizedDB
+
+## 2026-10-28 Storage only
+
+Geist is the storage library and its local CLI. Everything that talks to
+another machine moved to Nebel-DecentralizedDB, which imports this repo as
+a pinned submodule: the transport (Bifrost), peers and pins, relays, the
+overlay, forwarding, the hop router, sync, the six daemons, the device
+monitor, its NixOS modules and VM tests, and the Android monitor app.
+
+The features in the list below that are about links, sync or daemons now
+belong to Nebel-DecentralizedDB. Its `agents/PROGRESS.md` holds them.
+What stayed here: rows, files, keys (symmetric), backups, sealing, the
+column copy, presets, the local `geist` CLI and the storage tests.
+
+Verified: `nimble test` passes (382 checks, exit 0); `nimble checkModular`
+compiles a storage-only program with no Bifrost on the path.
+
+Decision kept: Eir-CompressionAndECC stays pinned here, for compression at
+rest. Nothing imports it yet.
+
 Commit Message: geist-hopd: a router machines link to, end-to-end Geist links through it
 
 Features (Planned):
