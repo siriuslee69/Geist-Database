@@ -38,8 +38,6 @@ Features (Planned):
   strength (today one `[transport] startTier` per process).
 - Automatic tier climbing: `TriggerPolicy` is validated and carried, but
   a session only changes strength when asked.
-- Carrier pairing (Bifrost 95a3ef2, local branch `carrier-pairing`) for
-  geist-relayd, if Bifrost takes it back into its history.
 
 Features (Done):
 - geist-hopd (2026-10-21, docs/hop.md): machines make ONE link to a router
