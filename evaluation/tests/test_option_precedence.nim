@@ -15,7 +15,6 @@ import runePragmas
 import std/[os, unittest]
 
 import clients/geist_cli
-import server/geistd
 
 proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / name
@@ -50,8 +49,6 @@ suite "the geist CLI: an option beats the file":
       o = withUserConfig(parseOptions(["list", "--config", cfg]))
     check o.path == "/from/the/file"
     check o.preset == "secure-app"
-    check o.limit == 50
-    check o.remote == "dac://10.0.0.2:8888"
 
   # {.testKind: tkUnit.}
   test "typing the default value still counts as typing it":
@@ -82,34 +79,3 @@ suite "the geist CLI: an option beats the file":
     check "json" in o.given
     check "limit" notin o.given
 
-suite "geistd: an option beats the file":
-  # {.testKind: tkEdgeCase.}
-  test "a file fills in only what was not given":
-    var
-      cfg = writeConfig(scratch("geist_t_prec4"))
-      c = resolveConfig(["--config", cfg])
-    check c.path == "/from/the/file"
-    check c.preset == "secure-app"
-    check c.listen == "dac://10.0.0.1:9999"
-    check c.trust == @["/from/the/file.pin"]
-
-  # {.testKind: tkUnit.}
-  test "typing the default listen address still counts":
-    # Binding loopback explicitly is a deployment decision, and a file
-    # moving the daemon onto a routable address instead is exactly the
-    # surprise this prevents.
-    var
-      cfg = writeConfig(scratch("geist_t_prec5"))
-      c = resolveConfig(
-        ["--config", cfg, "--listen", "dac://127.0.0.1:47655",
-         "--preset", "app"])
-    check c.listen == "dac://127.0.0.1:47655"
-    check c.preset == "app"
-    check c.path == "/from/the/file"
-
-  # {.testKind: tkEdgeCase.}
-  test "an empty trust list from the command line is not silently refilled":
-    var
-      cfg = writeConfig(scratch("geist_t_prec6"))
-      c = resolveConfig(["--config", cfg, "--trust", "/typed.pin"])
-    check c.trust == @["/typed.pin"]

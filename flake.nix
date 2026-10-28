@@ -1,5 +1,5 @@
 {
-  description = "Geist Database";
+  description = "Geist: a packed-row, encrypted database on one machine";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -10,31 +10,12 @@
         nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
+      # The storage library and its one CLI. Talking to other machines
+      # (sync, relays, daemons, NixOS modules) is geist-sync's flake.
       packages = forAllSystems (pkgs: {
         default = pkgs.callPackage ./nix/default.nix { };
         geist = pkgs.callPackage ./nix/default.nix { };
       });
-
-      # All three run real NixOS guests over a real network.
-      # `two-desktop-exchange` is the common case -- two machines swapping
-      # rows; `three-desktop-relay` proves the middle machine of a chain is
-      # not special; `relay-pipe` proves the other use of the same
-      # transport, moving messages with no database anywhere in sight.
-      checks = forAllSystems (pkgs:
-        let
-          geistPackage = pkgs.callPackage ./nix/default.nix { };
-          args = { inherit geistPackage; module = ./nix/module.nix; };
-        in
-        {
-          two-desktop-exchange =
-            pkgs.callPackage ./nix/tests/two-desktop-exchange.nix args;
-          three-desktop-relay =
-            pkgs.callPackage ./nix/tests/three-desktop-relay.nix args;
-          relay-pipe = pkgs.callPackage ./nix/tests/relay-pipe.nix {
-            inherit geistPackage;
-            relayModule = ./nix/relay-module.nix;
-          };
-        });
 
       devShells = forAllSystems (pkgs:
         let
@@ -67,16 +48,5 @@
             '';
           };
         });
-
-      nixosModules.default = import ./nix/module.nix;
-      nixosModules.geistd = import ./nix/module.nix;
-      nixosModules.geist-client = import ./nix/module.nix;
-      # The relay is its own module: a machine that only moves messages
-      # has no database options to answer for.
-      nixosModules.geist-relay = import ./nix/relay-module.nix;
-      # The VPS end of Client -> VPS -> Home: no key, no store, no state.
-      nixosModules.geist-forward = import ./nix/forward-module.nix;
-      # The router machines link to: holds link keys, reads no payload.
-      nixosModules.geist-hop = import ./nix/hop-module.nix;
     };
 }

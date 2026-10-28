@@ -18,7 +18,6 @@
 #   [passC] / [passL]    config.nims                            --passC/--passL
 #   [runtime.storage]    src/geist/settings.nim                 GeistDefaults
 #   [runtime.backup]     src/geist/settings.nim                 GeistDefaults
-#   [runtime.transport]  src/geist/transport_settings.nim       TransportDefaults
 #
 # "" or false in [define] means "not set" (the built-in default).
 #
@@ -126,69 +125,3 @@ copies = 2
 # preset's own policy.
 everySeconds = 0
 
-[runtime.transport]
-# Project port allocation: 47650..47659 belongs to Geist. Store 47655,
-# relay 47656, router 47657. Open only ports actually used; docs/ports.md.
-# Read by the NETWORK half of the library only (geist/network). A program
-# that imports plain `geist` to write rows to disk never looks at this
-# table, and does not compile the code that would understand it.
-#
-# Which tier a session starts at, and how much traffic makes it climb.
-# Climbing rekeys upward into a wider algorithm set as a conversation gets
-# long enough to be worth attacking.
-#
-#   telemetry  userData  standard  secret  archive  recovery
-#
-# WHICH algorithms each tier selects is not configurable. That is the one
-# thing about the network Geist owns outright, and a settings file able to
-# weaken a tier's mask would make the guarantee a deployment detail.
-startTier = "standard"
-
-# Anti-flood. A first hello is answered with a cookie challenge -- a short
-# tag over the caller's address and the time -- and the key exchange only
-# happens once that cookie comes back. Nothing proves a source address on
-# a datagram socket, so with this off a flood of forged helloes has the
-# server doing post-quantum key exchanges for packets that came from
-# nowhere. Costs one extra round trip per SESSION, not per request.
-#
-# Leave it true. Turn it off only on a socket strangers cannot reach --
-# loopback, or a link that is already inside something else.
-requireCookie = true
-
-# Mebibytes transferred before climbing. archive and recovery add the large
-# KEMs (FrodoKEM-1344, 21 KB public key; HQC-5, 7 KB), so their handshake
-# may need DAC package transfer instead of one frame.
-secretAtMiB = 64
-archiveAtMiB = 1024
-
-[runtime.forward]
-# Read by geist-forwardd only: the small program on a VPS that carries
-# datagrams from clients to a home server it cannot be dialled at directly.
-# The forwarder holds no key and opens nothing, so every number here bounds
-# what a stranger can make it spend, not what it may read.
-#
-#   Client ---> VPS (geist-forwardd) ---> home (geistd)
-#
-# Most clients the table holds. A newcomer is refused when it is full;
-# an existing client is never pushed out to make room.
-maxClients = 512
-
-# A client with no traffic for this long loses its place. Its next
-# datagram gets a fresh one, and home sees a new source port.
-clientIdleSeconds = 120
-
-# How often the VPS asks home "still there?", and how long silence lasts
-# before home counts as away (datagrams are then held, a few, not many).
-# silentSeconds must be longer than pingSeconds.
-pingSeconds = 20
-silentSeconds = 60
-
-# Held for a silent home: the newest N datagrams or bytes, oldest dropped.
-# Covers a reboot, not an outage -- the transport above asks again.
-bufferDatagrams = 64
-bufferBytes = 262144
-
-# Chase a home address that changed (a line that reconnects). Also lets
-# anyone who can reach the control socket move the forwarder, so leave it
-# false unless home's address really does change.
-followHome = false

@@ -23,7 +23,7 @@
 import std/[strutils, os]
 
 import runePragmas
-import ../../geist/network
+import ../../geist
 import ../../geist/keyfolder
 import ./common
 import ./keys

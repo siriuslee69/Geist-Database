@@ -60,7 +60,6 @@
 import std/[os, strutils]
 
 import runePragmas
-import ./address
 
 const
   geistHomeEnv* = "GEIST_HOME"
@@ -222,50 +221,6 @@ proc appDir*(h: GeistHome; app: string; instance: string = ""): string {.
   if instance.len > 0:
     t = t & "." & instance.toLowerAscii()
   result = h.dbDir() / t
-
-proc storePath*(h: GeistHome, app, instance: string,
-    target: string): tuple[ok: bool, path: string, err: string] {.
-    role: helper, tag: "storageIo".} =
-  ## h/app/instance: whose store.
-  ## target: the address target, `mail/alice/inbox` or `accounts`.
-  ##
-  ## THE PATH IS THE ADDRESS. A store reached as
-  ## `geist://fjord/mail/alice/inbox` lives at
-  ## `db/fjord/mail/alice/inbox`, so an operator who has one can find the
-  ## other without a lookup table. That is the whole reason this takes a
-  ## target string rather than a list of components.
-  ##
-  ## The target is validated here even though callers normally build it
-  ## with `address.nim`: this is the function that turns it into a
-  ## filesystem path, so this is where `..` has to be impossible.
-  var
-    parsed: tuple[ok: bool, a: GeistAddress, err: string] =
-      (false, default(GeistAddress), "")
-  if target.len == 0:
-    return (false, "", "a store needs a target")
-  parsed = parseAddress(target)
-  if not parsed.ok:
-    return (false, "", parsed.err)
-  if parsed.a.isRouted():
-    # A whole address was passed where a target was wanted. Take the
-    # target out of it rather than refusing: the caller had the right
-    # value in the wrong shape, and this is unambiguous.
-    return (true, h.appDir(app, instance) / parsed.a.forLeaf(), "")
-  result = (true, h.appDir(app, instance) / parsed.a.forLeaf(), "")
-
-proc storeFor*(h: GeistHome,
-    a: GeistAddress): tuple[ok: bool, path: string, err: string] {.
-    role: helper, tag: "storageIo".} =
-  ## h/a: the folder for whatever this address names, on this machine.
-  ##
-  ## The short form of `storePath` for the common case: a daemon that has
-  ## just parsed a request already holds the address, and taking it apart
-  ## to pass three strings back in would be an opportunity to pass them in
-  ## the wrong order.
-  if a.app.len == 0:
-    return (false, "", "address '" & $a & "' names no app, so there is " &
-      "no folder for it")
-  result = (true, h.appDir(a.app, a.instance) / a.forLeaf(), "")
 
 proc ensureHome*(h: GeistHome): tuple[ok: bool, err: string] {.
     role: dataWriter, tag: "lifecycle|storageIo".} =

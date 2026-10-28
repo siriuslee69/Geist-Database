@@ -1,27 +1,27 @@
 ## ---------------------------------------------------------------------
-## Bytecheck <- is this buffer the shape it claims to be?
+## Bytecheck <- is this file's buffer the shape it claims to be?
 ## ---------------------------------------------------------------------
 ##
-##   bytes from a peer --> checkQueryBytes / checkReplyBytes --> "" ?
-##                                                                |
-##                        yes: decodeQuery / decodeReply  <-------+
-##                        no:  refuse, with the complaint
+##   bytes from disk --> schemaFrom / checkSchemaBytes --> "" ?
+##                                                          |
+##                       yes: decodeSchema  <---------------+
+##                       no:  refuse, with the complaint
 ##
-## The decoders in `format.nim` and `transport.nim` trust every length
-## they read, because the bytes they are meant for are the bytes their own
-## encoders wrote. Bytes that arrive from another machine are not that: a
-## peer with a bug, a truncated package or a hostile sender can claim a
-## four-gigabyte string in a ten-byte buffer. Decoding that reads past the
-## end, which stops the whole daemon rather than refusing one request.
+## The decoders in `format.nim` trust every length they read, because the
+## bytes they are meant for are the bytes their own encoders wrote. A
+## damaged file is not that: a flipped bit can claim a four-gigabyte string
+## in a ten-byte buffer. Decoding that reads past the end.
 ##
-## So every buffer from outside is WALKED first, here, with every length
+## So every buffer read from a file is WALKED first, here, with every length
 ## checked against what is actually there and every enum byte checked
 ## against its enum. Only a buffer that walks cleanly to its last byte is
 ## handed to a decoder. Nothing here allocates what a length claims.
 ##
-## Def. 1: a TEXT on the wire is `u32 n | n bytes` (see `format.addText`).
-## A payload (`Query.payload`) has the same shape.
+## The same primitives are exported for `geist_sync` (wire_check.nim), which
+## walks the bytes a peer sends with them. The wire layouts themselves live
+## there, not here.
 ##
+## Def. 1: a TEXT is `u32 n | n bytes` (see `format.addText`).
 ## Def. 2: a COUNT is a `u32` saying how many items follow. A count is
 ## never trusted as a size: the loop stops at the first item that does
 ## not fit, so a count of four billion costs one failed check.
@@ -31,7 +31,7 @@ import var_invariants
 import ./types
 import ./format
 
-proc take(A: openArray[uint8], o: var int, k: int): bool {.role: sanitizer,
+proc take*(A: openArray[uint8], o: var int, k: int): bool {.role: sanitizer,
     inline, tag: "codecBoundary|read",
     needs: o >= 0,
     gives: not result or o <= A.len.} =
@@ -42,14 +42,14 @@ proc take(A: openArray[uint8], o: var int, k: int): bool {.role: sanitizer,
   o = o + k
   result = true
 
-proc takeText(A: openArray[uint8], o: var int): bool {.role: sanitizer,
+proc takeText*(A: openArray[uint8], o: var int): bool {.role: sanitizer,
     tag: "codecBoundary|read".} =
   ## A/o: step over one text (Def. 1), or return false.
   if o + 4 > A.len:
     return false
   result = take(A, o, 4 + int(A.getU32(o)))
 
-proc takeCount(A: openArray[uint8], o: var int): tuple[ok: bool, n: int] {.
+proc takeCount*(A: openArray[uint8], o: var int): tuple[ok: bool, n: int] {.
     role: sanitizer, tag: "codecBoundary|read".} =
   ## A/o: read one count (Def. 2) and step past it.
   if o + 4 > A.len:
@@ -62,7 +62,7 @@ type
     ## Steps over ONE item of a list and says whether it was all there:
     ## `takeText`, `takePredicate`, `takeRow`.
 
-proc takeEach(A: openArray[uint8], o: var int, n: int,
+proc takeEach*(A: openArray[uint8], o: var int, n: int,
     item: ItemStep): bool {.role: sanitizer, tag: "codecBoundary|read".} =
   ## A/o/n: step over n items back to back, or return false.
   ## item: how one item is laid out.
@@ -77,7 +77,7 @@ proc takeEach(A: openArray[uint8], o: var int, n: int,
     i = i + 1
   result = true
 
-proc enumByteOk(b: uint8, highest: int): bool {.role: sanitizer, inline,
+proc enumByteOk*(b: uint8, highest: int): bool {.role: sanitizer, inline,
     tag: "codecBoundary|read".} =
   ## b/highest: does this byte name a value of an enum whose last value
   ## is `highest`?
@@ -130,79 +130,6 @@ proc checkSchemaBytes*(A: openArray[uint8], o: var int): string {.
   c = takeCount(A, o)
   if not c.ok or not takeEach(A, o, 2 * c.n, takeText):
     return "schema: the aliases run past the end"
-  result = ""
-
-## ---------------------------- query ---------------------------------
-
-proc takePredicate(A: openArray[uint8], o: var int): bool {.role: sanitizer,
-    tag: "codecBoundary|read".} =
-  ## A/o: step over one predicate:
-  ##
-  ##   | text field | u8 isText | text text | u64 num |
-  result = takeText(A, o) and take(A, o, 1) and takeText(A, o) and
-    take(A, o, 8)
-
-proc checkQueryBytes*(A: openArray[uint8]): string {.role: sanitizer,
-    tag: "codecBoundary|networkSurface|read".} =
-  ## A: a request body from a peer. Returns the complaint, "" when
-  ## `decodeQuery` may read it.
-  ##
-  ##   u8 op | text collection | count n | n predicates | u32 limit
-  ##   | u64 cursor | text subscriptionId | text payload
-  ##
-  ## Trailing bytes are refused too: a request that decodes and then has
-  ## leftovers is not the request the sender meant.
-  var
-    o: int = 1
-    c: tuple[ok: bool, n: int] = (false, 0)
-  if A.len < 1:
-    return "request: empty"
-  if not enumByteOk(A[0], ord(high(QueryOp))):
-    return "request: unknown operation " & $A[0]
-  if not takeText(A, o):
-    return "request: the collection runs past the end"
-  c = takeCount(A, o)
-  if not c.ok or not takeEach(A, o, c.n, takePredicate):
-    return "request: the predicates run past the end"
-  if not take(A, o, 4 + 8):
-    return "request: limit and cursor are missing"
-  if not (takeText(A, o) and takeText(A, o)):
-    return "request: the subscription id or payload runs past the end"
-  if o != A.len:
-    return "request: " & $(A.len - o) & " trailing bytes"
-  result = ""
-
-## ---------------------------- reply ---------------------------------
-
-proc takeRow(A: openArray[uint8], o: var int): bool {.role: sanitizer,
-    tag: "codecBoundary|read".} =
-  ## A/o: step over one row: | u16 schemaId | u32 length | bytes |
-  result = take(A, o, 2) and takeText(A, o)
-
-proc checkReplyBytes*(A: openArray[uint8]): string {.role: sanitizer,
-    tag: "codecBoundary|networkSurface|read".} =
-  ## A: an answer from a peer. Returns the complaint, "" when
-  ## `decodeReply` may read it.
-  ##
-  ##   u8 ok | text err | u64 cursor | u32 matched | u64 epoch
-  ##   | schema | count n | n rows
-  var
-    o: int = 1
-    c: tuple[ok: bool, n: int] = (false, 0)
-  if A.len < 1:
-    return "answer: empty"
-  if not takeText(A, o):
-    return "answer: the error text runs past the end"
-  if not take(A, o, 8 + 4 + 8):
-    return "answer: cursor, count and epoch are missing"
-  result = checkSchemaBytes(A, o)
-  if result.len > 0:
-    return "answer: " & result
-  c = takeCount(A, o)
-  if not c.ok or not takeEach(A, o, c.n, takeRow):
-    return "answer: the rows run past the end"
-  if o != A.len:
-    return "answer: " & $(A.len - o) & " trailing bytes"
   result = ""
 
 ## ---------------------------- from a file ---------------------------

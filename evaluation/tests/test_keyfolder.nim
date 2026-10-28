@@ -1,8 +1,8 @@
-## The key folder and its words: pairs, symmetric keys, peers.
+## The key folder's symmetric keys, and the words that rebuild them.
 ##
-## What matters most: words rebuild EXACTLY the same key, a typo is
-## refused rather than turned into a different key, and a pin whose
-## fingerprint does not match the words read out is never trusted.
+## What matters most: words rebuild EXACTLY the same key, and a typo is
+## refused rather than turned into a different key. Pairs and peer pins
+## are tested in geist-sync (test_identity_folder.nim).
 
 import runePragmas
 import std/[os, unittest]
@@ -40,34 +40,23 @@ suite "words":
 
 suite "key folder":
   # {.testKind: tkIntegration.}
-  test "a pair and a symmetric key travel as words":
+  test "a symmetric key travels as words":
     var
       a: KeyFolder = openKeyFolder(scratch("a"), "pw-a")
       b: KeyFolder = openKeyFolder(scratch("b"), "pw-b")
       e: KeyEntry = KeyEntry()
-    check a.newPair("server").ok
     check a.newSymmetric("backup").ok
-    check a.listKeys().len == 2
-    e = a.findKey("1").entry
-    check e.kind == kkPair
-    check b.importWords("server", kkPair, a.secretWords(e).words).ok
-    check readFile(a.keyFile("server", kfPairPin)) == readFile(b.keyFile("server", kfPairPin))
+    check a.listKeys().len == 1
     e = a.findKey("backup").entry
+    check e.kind == kkSymmetric
     check b.importWords("backup", kkSymmetric, a.secretWords(e).words).ok
     check b.secretWords(e).words == a.secretWords(e).words
 
   # {.testKind: tkEdgeCase.}
-  test "trust checks the fingerprint words":
+  test "a pair is refused here: geist-sync imports pairs":
     var
-      a: KeyFolder = openKeyFolder(scratch("c"), "pw")
-      b: KeyFolder = openKeyFolder(scratch("d"), "pw")
-      fp: string = ""
-    check a.newPair("server").ok
-    fp = a.publicWords(a.findKey("server").entry).words
-    check not b.trustPin("bad", a.keyFile("server", kfPairPin),
-      toWords(newSeq[uint8](16))).ok
-    check b.trustPin("server", a.keyFile("server", kfPairPin), fp).ok
-    check b.findKey("server").entry.kind == kkPeer
+      a: KeyFolder = openKeyFolder(scratch("p"), "pw")
+    check not a.importWords("server", kkPair, "x").ok
 
   # {.testKind: tkEdgeCase.}
   test "a wrong password cannot read the secret words":

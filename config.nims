@@ -30,8 +30,8 @@ import std/[os, strutils]
 
 const
   repoRoot: string = thisDir()
-  pinnedDeps: array[7, string] = ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
-    "Eir-CompressionAndECC", "Bifrost-ExchangeProtocols", "nimsimd",
+  pinnedDeps: array[6, string] = ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
+    "Eir-CompressionAndECC", "nimsimd",
     "Otter-RepoEvaluation"]
 
 proc addPathIfExists(p: string) =

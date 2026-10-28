@@ -18,5 +18,3 @@ dependencyResolutionManagement {
 rootProject.name = "Geist-Android"
 include(":geistkeystore")
 include(":geistvault")
-include(":app")
-project(":app").projectDir = file("geistmonitor")

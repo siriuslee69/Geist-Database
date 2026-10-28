@@ -3,7 +3,6 @@
 , simdNexusSrc ? ../submodules/SIMD-Nexus
 , tyrCryptoSrc ? ../submodules/Tyr-Crypto
 , eirCompressionAndEccSrc ? ../submodules/Eir-CompressionAndECC
-, bifrostExchangeProtocolsSrc ? ../submodules/Bifrost-ExchangeProtocols
 # The one shared pragma module for the whole workspace. Every `.nim` file
 # in this tree and in its dependencies says `import runePragmas`, so a
 # build without it does not compile a single module.
@@ -73,8 +72,6 @@ let
   filteredSimdNexusSrc = filterDependencySource simdNexusSrc;
   filteredTyrCryptoSrc = filterDependencySource tyrCryptoSrc;
   filteredEirCompressionAndEccSrc = filterDependencySource eirCompressionAndEccSrc;
-  filteredBifrostExchangeProtocolsSrc =
-    filterDependencySource bifrostExchangeProtocolsSrc;
   filteredRunePragmasSrc = filterDependencySource runePragmasSrc;
   filteredNimbleTasksSrc = filterDependencySource nimbleTasksSrc;
   filteredVarInvariantsSrc = filterDependencySource varInvariantsSrc;
@@ -84,7 +81,7 @@ let
   # reads: [project] in configs/default.toml.
   project = (builtins.fromTOML (builtins.readFile ../configs/default.toml)).project;
 
-  geistSrc = pkgs.runCommand "geistd-source" {} ''
+  geistSrc = pkgs.runCommand "geist-source" {} ''
     mkdir -p "$out"
     cp -R ${filteredSrc}/. "$out/"
     chmod -R u+w "$out"
@@ -96,7 +93,6 @@ let
     ln -s ${filteredSimdNexusSrc} "$out/submodules/SIMD-Nexus"
     ln -s ${filteredTyrCryptoSrc} "$out/submodules/Tyr-Crypto"
     ln -s ${filteredEirCompressionAndEccSrc} "$out/submodules/Eir-CompressionAndECC"
-    ln -s ${filteredBifrostExchangeProtocolsSrc} "$out/submodules/Bifrost-ExchangeProtocols"
     ln -s ${filteredRunePragmasSrc} "$out/submodules/Rune-Pragmas"
     ln -s ${filteredNimbleTasksSrc} "$out/submodules/Nimble-Tasks"
     ln -s ${filteredVarInvariantsSrc} "$out/submodules/Var-Invariants"
@@ -123,28 +119,13 @@ pkgs.stdenv.mkDerivation {
   # ones the suite runs under is a package nothing has actually tested.
   buildPhase = ''
     export HOME=$TMPDIR
-    nim c -d:release --hints:off --out:geistd src/server/geistd.nim
     nim c -d:release --hints:off --out:geist src/clients/geist_cli.nim
-    # The relay pair: the same transport with a pipe where the database
-    # would be. Separate binaries because they are a separate deployment --
-    # a machine relaying voice clips has no store to serve.
-    nim c -d:release --hints:off --out:geist-relayd src/server/geist_relayd.nim
-    nim c -d:release --hints:off --out:geist-relay src/clients/geist_relay.nim
-    nim c -d:release --hints:off --out:geist-routed src/server/geist_routed.nim
-    nim c -d:release --hints:off --out:geist-forwardd src/server/geist_forwardd.nim
-    nim c -d:release --hints:off --out:geist-hopd src/server/geist_hopd.nim
   '';
 
   installPhase = ''
     mkdir -p $out/bin
-    cp geistd $out/bin/geistd
     cp geist $out/bin/geist
-    cp geist-relayd $out/bin/geist-relayd
-    cp geist-relay $out/bin/geist-relay
-    cp geist-routed $out/bin/geist-routed
-    cp geist-forwardd $out/bin/geist-forwardd
-    cp geist-hopd $out/bin/geist-hopd
-    for prog in geistd geist geist-relayd geist-relay geist-routed geist-forwardd geist-hopd; do
+    for prog in geist; do
       wrapProgram $out/bin/$prog \
         --set LIBSODIUM_LIB_DIRS ${pkgs.libsodium}/lib \
         --prefix LD_LIBRARY_PATH : ${pkgs.libsodium}/lib

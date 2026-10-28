@@ -7,21 +7,23 @@
 ##
 ##   common   options, userconfig, opening a store, printing rows
 ##   direct   commands that open the files in this process (--path)
-##   remote   commands sent to a running geistd (--remote), and sync
+##   keys     the symmetric keys in the key folder (`geist keys ...`)
+##   tables   export and import: the database as a JSON or TOML file
+##
+## Network options (--remote, --hop, --identity, --peer-pin, ...) are NOT
+## here. They belong to geist-sync, which strips them from the command line
+## and hands the rest to `parseOptions` below.
 
 import std/[os, strutils]
 
 import runePragmas
 import ../../geist/args
-import ../../geist/network
+import ../../geist
 
 type
-  Mode* {.role: truthState, tag: "cli|types".} = enum
-    mDirect, mRemote
-
-  Options* {.role: truthState, tag: "cli|parsing|types".} = object
-    ## Exported, like the daemon's `DaemonConfig`, so option precedence can
-    ## be tested without spawning a process. Nothing else imports this.
+  Options* {.role: truthState, tag: "cli|parsing|types".} = object of RootObj
+    ## Exported so option precedence can be tested without spawning a
+    ## process. Nothing else imports this.
     ##
     ## given: the long option names ACTUALLY TYPED, which is the only way
     ##   to tell `--preset app` from a `preset` nobody mentioned. Several
@@ -29,15 +31,7 @@ type
     ##   answer that question -- and a config file silently winning over
     ##   something visible on the command line is the failure this exists
     ##   to prevent.
-    mode*: Mode
     path*: string
-    remote*: string
-    hop*: string
-    hopPin*: string
-    target*: string
-      ## hop/hopPin/target: reach the daemon THROUGH a geist-hopd router
-      ##   (docs/hop.md): the router, its pin, and the daemon's route id or
-      ##   directory name. --peer-pin is then the DAEMON's pin.
     password*: string
     passwordFile*: string
     preset*: string
@@ -45,13 +39,8 @@ type
     typeName*: string
     limit*: int
     slot*: int
-    identity*: string
-    peerPin*: string
-    pinOut*: string
-    subject*: string
     keysDir*: string
     words*: string
-    pinFile*: string
     kind*: string
     showSecret*: bool
     json*: bool
@@ -77,13 +66,7 @@ const
   usageText* = """
 geist <command> [options]
 
-  --path <dir>            operate directly on a database directory
-  --remote dac://host:port  operate through a running geistd
-  --hop dac://host:port   ... or reach that geistd through a geist-hopd
-                          router (with --hop-pin and --target)
-  --hop-pin <file>        the router's pin
-  --target <id|name>      the geistd's route id or directory name; see
-                          `geist routes`
+  --path <dir>            operate on a database directory
   --password <text>       at-rest password (prefer --password-file)
   --password-file <file>  read the password from a file
   --preset <name>         config preset, default: [storage] preset in configs/default.toml
@@ -91,14 +74,9 @@ geist <command> [options]
   --type <name>           object type label for `init`
   --limit <n>             maximum rows, default 20
   --slot <n>              backup slot for `restore`, default 1
-  --identity <file>       signing identity; created by `keygen`
-  --peer-pin <file>       the daemon's public pin (required for --remote)
-  --pin-out <file>        where `keygen` writes the shareable pin
-  --subject <name>        identity subject for `keygen`, default geist-cli
   --keys <dir>            key folder for `keys`
-  --words "w1 w2 ..."     words for `keys import` and `keys trust`
-  --pin <file>            pin file for `keys trust`
-  --kind pair|sym         what `keys import` rebuilds
+  --words "w1 w2 ..."     words for `keys import`
+  --kind sym              what `keys import` rebuilds
   --secret                `keys show` also prints the secret words
   --json                  machine-readable output
   --transposed            show the answer with the axes swapped: one line
@@ -115,8 +93,6 @@ geist <command> [options]
                           the working directory, then ~/.config/geist
 
 commands
-  routes                  the targets a geist-hopd router shows you
-                          (--hop, --hop-pin, --identity)
   inspect                 header + cluster index; no password needed
   verify                  check every sealed batch's integrity digest; no
                           password needed. Proves the bytes are the ones
@@ -139,29 +115,19 @@ commands
                           every row
   transpose [status]      rebuild the column-first search copy, or report
                           whether it is still current
-  sync                    catch this database (--path) up with a peer
-                          (--remote), applying the rows it has and this
-                          one does not. Needs both. Rows keep the identity
-                          the peer stored them under, so a row that
-                          started several desktops away arrives under the
-                          id it was born with, and this database can be
-                          followed onward by another.
   checkpoint <message>    append a hash-chained journal row
   backup                  force a rotation now
   restore                 restore from --slot
   rekey                   re-key every batch at its epoch high-water mark
-  keygen                  create --identity and --pin-out, then exit
-  keys <what> [name]      the key folder (--keys, default ~/.config/geist/keys):
-                            list                 every pair, symmetric key, peer
-                            new-pair <name>      signing pair (Bifrost hello,
-                                                 server identity)
+  keys <what> [name]      the symmetric keys in the key folder (--keys,
+                          default ~/.config/geist/keys):
+                            list                 every key in the folder
                             new-sym <name>       32-byte symmetric key
-                            show [name|number]   fingerprint words; with
-                                                 --secret the 24 secret words.
-                                                 No name: pick from the list
-                            import <name> --kind pair|sym [--words "..."]
-                            trust <name> --pin <file> [--words "<12 words>"]
+                            show [name|number]   the 24 words with --secret
+                            import <name> --kind sym [--words "..."]
                             drop <name|number>
+                          Signing pairs and peer pins are geist-sync's:
+                          `geist-sync keys ...`.
   convert <in> <out>      JSON <-> TOML by file extension; refuses what
                           the target format cannot hold, naming where
   export <file>           every visible row to a .json or .toml file;
@@ -173,10 +139,6 @@ commands
                           twice replaces rather than doubles
   presets                 list configuration presets
   help                    this text
-
-Pinned trust means each side must already know the other's public keys, so
---remote needs both --identity and --peer-pin. Run `keygen` on each side and
-exchange the .pin files; hand the daemon your pin with its --trust option.
 """
 
 type
@@ -226,7 +188,6 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
   result.preset = ""   # "" = whatever configs/default.toml names
   result.limit = 20
   result.slot = 1
-  result.subject = "geist-cli"
   while i < argv.len:
     try:
       step = nextOption(argv, i, cliFlags)
@@ -241,10 +202,6 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     value = step.value
     case key
     of "path": result.path = value
-    of "remote": result.remote = value
-    of "hop": result.hop = value
-    of "hop-pin": result.hopPin = value
-    of "target": result.target = value
     of "password": result.password = value
     of "password-file": result.passwordFile = value
     of "preset": result.preset = value
@@ -252,13 +209,8 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     of "type": result.typeName = value
     of "limit": result.limit = parseInt(value)
     of "slot": result.slot = parseInt(value)
-    of "identity": result.identity = value
-    of "peer-pin": result.peerPin = value
-    of "pin-out": result.pinOut = value
-    of "subject": result.subject = value
     of "keys": result.keysDir = value
     of "words": result.words = value
-    of "pin": result.pinFile = value
     of "kind": result.kind = value
     of "secret": result.showSecret = true
     of "json": result.json = true
@@ -273,8 +225,6 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     else: fail("unknown option --" & key)
     result.given.add key
     i = i + 1
-  result.mode = if result.remote.len > 0 or result.hop.len > 0: mRemote
-    else: mDirect
 
 proc withUserConfig*(o: Options): Options {.role: configurator,
     tag: "cli|config|parsing".} =
@@ -306,20 +256,12 @@ proc withUserConfig*(o: Options): Options {.role: configurator,
     result.preset = loaded.user.preset
   if "password-file" notin result.given:
     result.passwordFile = loaded.user.passwordFile
-  if "remote" notin result.given:
-    result.remote = loaded.user.remote
-  if "peer-pin" notin result.given:
-    result.peerPin = loaded.user.peerPin
-  if "limit" notin result.given and loaded.user.limit > 0:
-    result.limit = loaded.user.limit
-  result.mode = if result.remote.len > 0 or result.hop.len > 0: mRemote
-    else: mDirect
 
 proc storePaths*(o: Options): tuple[dir, name: string] {.role: parser,
     tag: "cli|parsing|storageIo".} =
   ## o: options whose --path is split into a store root and a stem.
   if o.path.len == 0:
-    fail("--path or --remote is required")
+    fail("--path is required")
   result.dir = o.path
   result.name = "main"
   if o.path.splitFile().ext.len > 0:

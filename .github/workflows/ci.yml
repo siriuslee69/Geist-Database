@@ -25,10 +25,6 @@ jobs:
         run: nimble checkAll
       - name: Prove the storage half needs no network stack
         run: nimble checkModular
-      - name: Prove the wire half needs no database
-        run: nimble checkRelay
-      - name: Prove the router needs no store
-        run: nimble checkRouter
       - name: Full test suite
         run: nimble test
 
@@ -46,8 +42,6 @@ jobs:
         run: |
           nix-shell -p nim libsodium --run "nimble checkAll"
           nix-shell -p nim libsodium --run "nimble checkModular"
-          nix-shell -p nim libsodium --run "nimble checkRelay"
-          nix-shell -p nim libsodium --run "nimble checkRouter"
           nix-shell -p nim libsodium --run "nimble test"
           nix-shell -p nim libsodium --run "nimble runExamples"
           nix-shell -p nim libsodium --run "nimble buildAll"

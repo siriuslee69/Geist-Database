@@ -11,7 +11,6 @@
 import runePragmas
 import std/[os, strutils, unittest]
 
-import geist/address
 import geist/layout
 
 proc scratch(name: string): string {.role: helper.} =
@@ -119,71 +118,6 @@ suite "named files":
   test "an identity and a pin land in their own folders":
     check h.identityPath("vps-1").endsWith("keys/vps-1.id")
     check h.pinPath("vps-2").endsWith("peers/vps-2.pin")
-
-suite "the path is the address":
-
-  setup:
-    var h = openHome(scratch("paths"), nrClient).home
-
-  # {.testKind: tkUnit.}
-  test "a target becomes the same shape underneath db/":
-    var r = h.storePath("fjord", "", "mail/alice/inbox")
-    check r.ok
-    check r.path.endsWith("db/fjord/mail/alice/inbox")
-
-  # {.testKind: tkUnit.}
-  test "an instance sits beside its app rather than under it":
-    var r = h.storePath("fjord", "staging", "accounts")
-    check r.ok
-    check r.path.endsWith("db/fjord.staging/accounts")
-
-  # {.testKind: tkEdgeCase.}
-  test "a whole address is taken apart rather than refused":
-    var r = h.storePath("fjord", "", "geist://fjord/mail/alice/inbox")
-    check r.ok
-    check r.path.endsWith("db/fjord/mail/alice/inbox")
-
-  # {.testKind: tkUnit.}
-  test "storeFor reads the app out of the address itself":
-    var
-      a = parseAddress("geist://eris.games/games/alderreach").a
-      r = h.storeFor(a)
-    check r.ok
-    check r.path.endsWith("db/eris.games/games/alderreach")
-
-  # {.testKind: tkEdgeCase.}
-  test "an address that names no app has no folder":
-    var r = h.storeFor(parseAddress("notes").a)
-    check not r.ok
-    check "names no app" in r.err
-
-  # {.testKind: tkEdgeCase.}
-  test "two apps cannot collide on a shared target name":
-    var
-      a = h.storePath("fjord", "", "accounts")
-      b = h.storePath("eris", "", "accounts")
-    check a.path != b.path
-
-suite "what cannot become a path":
-
-  setup:
-    var h = openHome(scratch("safe"), nrClient).home
-
-  # {.testKind: tkEdgeCase.}
-  test "'..' is refused where the path is made":
-    var r = h.storePath("fjord", "", "mail/../../etc/passwd")
-    check not r.ok
-    check "'..'" in r.err
-
-  # {.testKind: tkEdgeCase.}
-  test "an absolute target is refused":
-    check not h.storePath("fjord", "", "/etc/passwd").ok
-
-  # {.testKind: tkEdgeCase.}
-  test "an empty target is refused":
-    var r = h.storePath("fjord", "", "")
-    check not r.ok
-    check "needs a target" in r.err
 
 suite "what an operator is shown":
 

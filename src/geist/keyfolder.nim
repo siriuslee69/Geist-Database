@@ -1,60 +1,36 @@
 ## ---------------------------------------------------------------------
-## Key folder <- every key this Geist owns or trusts, in one place
+## Key folder <- the symmetric keys this Geist seals data with
 ## ---------------------------------------------------------------------
 ##
-## Three kinds of key live here:
+## A symmetric key is 32 random bytes that two sides share, used to seal
+## data both sides must open. `geist export --seal-key NAME` uses one.
+## A symmetric key needs no file at all: its 24 words ARE the key.
 ##
-##   kind       what it is                          used for
+## The same folder also holds signing pairs and trusted peer pins. Those
+## need Bifrost, so they are handled by geist-sync (identity_folder.nim),
+## which writes into this folder layout. This module still LISTS and DROPS
+## them by name, because listing and dropping are only file operations:
+##
+##   kind       what it is                          handled by
 ##   ---------  ----------------------------------  ---------------------------
-##   pair       a signing key pair: a secret half   signing the first Bifrost
-##              that never leaves, a public half    message; telling a server
-##              (the "pin") handed to peers         apart from an impostor
-##   symmetric  32 random bytes both sides share    sealing data both sides
-##                                                  must open
-##   peer       someone else's pin, trusted here    checking who is on the
-##                                                  other end
+##   symmetric  32 random bytes both sides share    geist (this file)
+##   pair       a signing key pair                  geist-sync
+##   peer       someone else's pin, trusted here    geist-sync
 ##
 ## On disk:
 ##
 ##   <dir>/
-##   ├── pairs/<name>.id     pair: secret keys, sealed with the password
-##   ├── pairs/<name>.pin    pair: public keys        <- hand this to peers
-##   ├── secret/pair.<name>.key   the 32-byte seed the pair grew from
-##   ├── secret/sym.<name>.key    a symmetric key
-##   └── peers/<name>.pin    a trusted peer's pin
-##
-## WHY A PAIR HAS A SEED. Every key of a pair is grown from ONE 32-byte
-## seed: slot i gets BLAKE3(key = seed, "geist pair slot " & i), cut to
-## the 32 or 48 bytes that slot's key maker takes. The seed
-## written as 24 words therefore rebuilds the whole pair on another
-## machine -- a backup, or the same server identity on a second box. The
-## seed is as secret as the pair itself.
-##
-## WHY A PIN IS NOT WORDS. A pin holds four post-quantum public keys,
-## about 5 KB. That would be thousands of words. So the pin travels as a
-## FILE (it is public, any channel will do), and its 12-word FINGERPRINT
-## travels by a channel you trust (read aloud, on paper). `trust` refuses
-## a pin whose fingerprint does not match the words given.
-##
-##   server                                   client
-##   ------                                   ------
-##   keys new-pair server
-##   keys show server   -> 12 words  ~~~~~~>  (read aloud)
-##   pairs/server.pin   ---- any channel --->  keys trust server
-##                                               --pin server.pin
-##                                               --words "<12 words>"
-##
-## A symmetric key needs no file at all: its 24 words ARE the key.
+##   ├── pairs/<name>.id          pair   (geist-sync)
+##   ├── pairs/<name>.pin         pair   (geist-sync)
+##   ├── peers/<name>.pin         peer   (geist-sync)
+##   └── secret/sym.<name>.key    symmetric key, sealed with the password
 
 import std/[algorithm, os, strutils]
 
-import bifrost_exchange_protocols as bfx except ByteSeq
 import tyr
 
 import runePragmas
-import ./identity
 import ./keystore
-import ./masks
 import ./secret
 import ./words
 
@@ -62,7 +38,7 @@ const
   pairDir = "pairs"
   secretDir = "secret"
   peerDir = "peers"
-  pairPrefix = "pair."
+  pairPrefix* = "pair."
   symPrefix = "sym."
   seedBytes = 32
 
@@ -109,26 +85,6 @@ proc keyFile*(f: KeyFolder, name: string, w: KeyFile): string {.role: helper,
   of kfPairSecret: result = f.dir / pairDir / name & ".id"
   of kfPairPin: result = f.dir / pairDir / name & ".pin"
   of kfPeerPin: result = f.dir / peerDir / name & ".pin"
-
-proc slotSeedBytes(a: bfx.AmeSignatureAlgorithm): int {.role: helper,
-    tag: "cryptoBoundary".} =
-  ## a: one signature slot -> how many seed bytes its key generator takes.
-  case a
-  of bfx.asaSphincsShake128f, bfx.asaFalcon512, bfx.asaFalcon1024: result = 48
-  else: result = 32
-
-proc pairFromSeed*(subject: string, seed: openArray[uint8]): bfx.AmeIdentityKey {.
-    role: truthBuilder, tag: "cryptoBoundary".} =
-  ## subject: the pair's name. seed: 32 bytes -> the same pair every time.
-  var
-    slots: bfx.AmeSignatureAlgorithms = geistSignatureSlots()
-    S: seq[bfx.ByteSeq] = @[]
-    i: int = 0
-  while i < int(slots.length):
-    S.add blake3KeyedHash(seed, cast[seq[byte]]("geist pair slot " & $i),
-      slotSeedBytes(slots.algorithms[i]))
-    i = i + 1
-  result = bfx.initAmeIdentityKey(subject, slots, S)
 
 proc namesIn(dir, ext: string): seq[string] {.role: parser,
     tag: "read|storageIo".} =
@@ -180,7 +136,7 @@ proc findKey*(f: KeyFolder, nameOrNumber: string): tuple[ok: bool,
       "one key; use its number from `geist keys list`")
   result.ok = true
 
-proc taken(f: KeyFolder, name: string, k: KeyKind): string {.role: sanitizer,
+proc taken*(f: KeyFolder, name: string, k: KeyKind): string {.role: sanitizer,
     tag: "parsing".} =
   ## f/name/k: why this name cannot be used for a new key, or "".
   var
@@ -195,29 +151,6 @@ proc taken(f: KeyFolder, name: string, k: KeyKind): string {.role: sanitizer,
     return "a password is needed: the key is sealed with it"
   result = ""
 
-proc savePair(S: var KeyFolder, name: string,
-    seed: openArray[uint8]): tuple[ok: bool, err: string] {.role: dataWriter,
-    tag: "cryptoBoundary|storageIo|write".} =
-  ## S/name/seed: grow the pair, then write seed, secret half and pin.
-  var
-    k: bfx.AmeIdentityKey = pairFromSeed(name, seed)
-  result = S.store.put(pairPrefix & name, seed)
-  if not result.ok:
-    return
-  result = saveIdentity(S.keyFile(name, kfPairSecret), S.password, k)
-  if not result.ok:
-    return
-  result = savePin(S.keyFile(name, kfPairPin), pinOf(k))
-
-proc newPair*(S: var KeyFolder, name: string): tuple[ok: bool,
-    err: string] {.role: orchestrator, tag: "appApi|cryptoBoundary|write".} =
-  ## S/name: a fresh signing pair from 32 random bytes.
-  var
-    err: string = S.taken(name, kkPair)
-  if err.len > 0:
-    return (false, err)
-  result = S.savePair(name, cryptoRandomBytes(seedBytes))
-
 proc newSymmetric*(S: var KeyFolder, name: string): tuple[ok: bool,
     err: string] {.role: orchestrator, tag: "appApi|cryptoBoundary|write".} =
   ## S/name: 32 fresh random bytes, sealed.
@@ -230,47 +163,25 @@ proc newSymmetric*(S: var KeyFolder, name: string): tuple[ok: bool,
 proc importWords*(S: var KeyFolder, name: string, k: KeyKind,
     text: string): tuple[ok: bool, err: string] {.role: orchestrator,
     tag: "appApi|cryptoBoundary|parsing|write".} =
-  ## S/name: where the key goes. k: kkPair or kkSymmetric.
+  ## S/name: where the key goes. k: only kkSymmetric; a pair is rebuilt by
+  ## geist-sync, which knows how to grow one.
   ## text: the 24 words `secretWords` printed on the other machine.
-  ## A pair is rebuilt under `name`, which becomes its subject, so give it
-  ## the same name it had there if peers already trust its pin.
   var
     err: string = S.taken(name, k)
     got: tuple[ok: bool, bytes: seq[uint8], err: string] = (false, @[], "")
   if err.len > 0:
     return (false, err)
+  if k != kkSymmetric:
+    return (false, "only a symmetric key is imported here; pairs and " &
+      "peers are handled by geist-sync")
   got = fromWords(text)
   if not got.ok:
     return (false, got.err)
   if got.bytes.len != seedBytes:
     return (false, "a key is 24 words; these were " &
       $(text.splitWhitespace().len))
-  case k
-  of kkPair: result = S.savePair(name, got.bytes)
-  of kkSymmetric: result = S.store.put(symPrefix & name, got.bytes)
-  of kkPeer: result = (false, "a peer is trusted from its pin file")
+  result = S.store.put(symPrefix & name, got.bytes)
 
-proc trustPin*(S: var KeyFolder, name, pinPath, fingerprint: string): tuple[
-    ok: bool, err: string] {.role: orchestrator,
-    tag: "appApi|cryptoBoundary|networkSurface|write".} =
-  ## S/name: the peer's name here. pinPath: its .pin file.
-  ## fingerprint: the 12 words the peer read out, or "" to skip the check
-  ## (only when the file itself came over a channel you trust).
-  var
-    err: string = S.taken(name, kkPeer)
-    pin: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string] =
-      (false, bfx.AmePinnedPeerIdentity(), "")
-  if err.len > 0:
-    return (false, err)
-  pin = loadPin(pinPath)
-  if not pin.ok:
-    return (false, pin.err)
-  if fingerprint.len > 0 and
-      fingerprint.toLowerAscii().splitWhitespace().join(" ") !=
-      toWords(pinFingerprint(pin.pin)):
-    return (false, "the pin's fingerprint does not match the words: " &
-      "this is not the pin that was read out. NOT trusted")
-  result = savePin(S.keyFile(name, kfPeerPin), pin.pin)
 
 proc dropKey*(S: var KeyFolder, e: KeyEntry): tuple[ok: bool, err: string] {.
     role: actor, tag: "appApi|cryptoBoundary|delete".} =
@@ -288,22 +199,6 @@ proc dropKey*(S: var KeyFolder, e: KeyEntry): tuple[ok: bool, err: string] {.
       result = (true, "")
   except CatchableError as exc:
     result = (false, exc.msg)
-
-proc publicWords*(f: KeyFolder, e: KeyEntry): tuple[ok: bool, words: string,
-    err: string] {.role: parser, tag: "appApi|cryptoBoundary|read".} =
-  ## f/e: the 12 fingerprint words of a pair's or peer's pin. Safe to show
-  ## anyone. A symmetric key has no public side and gets an error.
-  var
-    pin: tuple[ok: bool, pin: bfx.AmePinnedPeerIdentity, err: string] =
-      (false, bfx.AmePinnedPeerIdentity(), "")
-  case e.kind
-  of kkPair: pin = loadPin(f.keyFile(e.name, kfPairPin))
-  of kkPeer: pin = loadPin(f.keyFile(e.name, kfPeerPin))
-  of kkSymmetric:
-    return (false, "", "a symmetric key has no public side")
-  if not pin.ok:
-    return (false, "", pin.err)
-  result = (true, toWords(pinFingerprint(pin.pin)), "")
 
 proc secretWords*(f: KeyFolder, e: KeyEntry): tuple[ok: bool, words: string,
     err: string] {.role: decryptor, tag: "appApi|cryptoBoundary|read".} =

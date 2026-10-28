@@ -15,7 +15,7 @@
 import runePragmas
 import std/[os, strutils, unittest]
 import geist
-import geist/network
+import geist
 
 proc scratch(name: string): string {.role: helper.} =
   result = getTempDir() / name

@@ -1,9 +1,9 @@
 ## ---------------------------------------------------------------------
-## Settings <- configs/default.toml for the library, userconfig.toml for a client
+## Settings <- configs/default.toml for the library, userconfig.toml for this machine
 ## ---------------------------------------------------------------------
 ##
 ##   configs/default.toml  what the LIBRARY defaults to  -> geistDefaults()
-##   userconfig.toml       what THIS installation does  -> loadUserConfig()
+##   userconfig.toml       what THIS machine's database is  -> loadUserConfig()
 ##
 ## Two files because they answer to different people. `configs/default.toml` ships
 ## with the project and sets the defaults every embedding application
@@ -62,30 +62,15 @@ type
     loadedFrom*: string
 
   UserConfig* {.role: configurator, tag: "cli|config|types".} = object
-    ## What one installation does. Every field maps to a command line
-    ## option, and the option WINS: a config file is a way to stop typing,
-    ## not a way to override what was typed.
+    ## What one installation does to its LOCAL database. Every field maps to
+    ## a command line option, and the option WINS: a config file is a way to
+    ## stop typing, not a way to override what was typed.
+    ##
+    ## The network half of the same file ([daemon], [client]) is read by
+    ## geist-sync's sync_settings.nim, not here.
     path*: string
     preset*: string
     passwordFile*: string
-    listen*: string
-    identity*: string
-    identityPasswordFile*: string
-    trust*: seq[string]
-    allowWrite*: seq[string]
-    pull*: seq[string]
-    push*: seq[string]
-    sync*: seq[string]
-      ## pull/push/sync: peers the daemon visits ITSELF, each written
-      ##   `<pin file>@dac://host:port` (see `parseSyncSpec` in agent.nim).
-    syncEverySeconds*: int
-    hop*: string
-    hopPin*: string
-      ## hop/hopPin: a geist-hopd router this daemon links to (dials out),
-      ## so peers can reach it through that router. Empty: none.
-    remote*: string
-    peerPin*: string
-    limit*: int
     loadedFrom*: string
 
 proc builtinDefaults*(): GeistDefaults {.role: configurator, stage: stDone,
@@ -253,67 +238,27 @@ proc defaultGeistConfig*(): GeistConfig {.role: configurator,
 proc loadUserConfig*(path: string = userConfigName): tuple[ok: bool,
     user: UserConfig, err: string] {.role: configurator,
     tag: "cli|config|parsing|read".} =
-  ## path: `userconfig.toml`.
+  ## path: `userconfig.toml`. Only its `[database]` table is read here.
   ##
   ##   [database]
   ##   path = "data/notes"
   ##   preset = "secure-app"
   ##   passwordFile = "secrets/db.pw"
-  ##
-  ##   [daemon]
-  ##   listen = "dac://0.0.0.0:47655"
-  ##   identity = "keys/geistd.id"
-  ##   trust = ["peers/laptop.pin"]
-  ##   allowWrite = ["peers/desktop.pin"]
-  ##   sync = ["peers/vps.pin@dac://vps.example:47655"]
-  ##   syncEverySeconds = 30
-  ##
-  ##   [client]
-  ##   remote = "dac://desktop.local:47655"
-  ##   peerPin = "peers/desktop.pin"
-  ##   limit = 50
   var
     doc: tuple[ok: bool, node: JsonNode, err: string] =
       (false, default(JsonNode), "")
     db: JsonNode = default(JsonNode)
-    daemon: JsonNode = default(JsonNode)
-    client: JsonNode = default(JsonNode)
     complaint: string = ""
   doc = tomlOf(path)
   if not doc.ok:
     return (false, UserConfig(), doc.err)
   db = doc.node.section("database")
-  daemon = doc.node.section("daemon")
-  client = doc.node.section("client")
   complaint = checkKeys(db, ["path", "preset", "passwordFile"], "[database]")
-  if complaint.len > 0:
-    return (false, UserConfig(), complaint)
-  complaint = checkKeys(daemon,
-    ["listen", "identity", "identityPasswordFile", "trust", "allowWrite",
-     "pull", "push", "sync", "syncEverySeconds", "hop", "hopPin"],
-    "[daemon]")
-  if complaint.len > 0:
-    return (false, UserConfig(), complaint)
-  complaint = checkKeys(client, ["remote", "peerPin", "limit"], "[client]")
   if complaint.len > 0:
     return (false, UserConfig(), complaint)
   result.user.path = db.setting("path", "")
   result.user.preset = db.setting("preset", "")
   result.user.passwordFile = db.setting("passwordFile", "")
-  result.user.listen = daemon.setting("listen", "")
-  result.user.identity = daemon.setting("identity", "")
-  result.user.identityPasswordFile = daemon.setting("identityPasswordFile", "")
-  result.user.trust = daemon.setting("trust", newSeq[string]())
-  result.user.allowWrite = daemon.setting("allowWrite", newSeq[string]())
-  result.user.pull = daemon.setting("pull", newSeq[string]())
-  result.user.push = daemon.setting("push", newSeq[string]())
-  result.user.sync = daemon.setting("sync", newSeq[string]())
-  result.user.syncEverySeconds = daemon.setting("syncEverySeconds", 0)
-  result.user.hop = daemon.setting("hop", "")
-  result.user.hopPin = daemon.setting("hopPin", "")
-  result.user.remote = client.setting("remote", "")
-  result.user.peerPin = client.setting("peerPin", "")
-  result.user.limit = client.setting("limit", 0)
   result.user.loadedFrom = if fileExists(path): path else: ""
   result.ok = true
 

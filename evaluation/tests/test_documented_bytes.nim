@@ -14,7 +14,6 @@
 import std/[unittest]
 
 import geist
-import geist/network
 
 suite "how bytes are written":
 
@@ -88,54 +87,6 @@ suite "the row, as the README lays it out":
     var r = Ref(target: rtSidecar, hash: newSeq[uint8](32))
     check encodeRef(r).len == 33
 
-suite "the request, as the README lays it out":
-
-  # {.testKind: tkRegression.}
-  test "operations are numbered as documented":
-    check ord(qoGet) == 0
-    check ord(qoPut) == 1
-    check ord(qoFind) == 2
-    check ord(qoDelete) == 3
-    check ord(qoSync) == 4
-    check ord(qoFetch) == 5
-    check ord(qoSubscribe) == 6
-    check ord(qoPoll) == 7
-
-  # {.testKind: tkRegression.}
-  test "a find lands on the offsets the README prints":
-    var q = Query(op: qoFind, collection: "notes", limit: 20'u32)
-    q.where.add Predicate(field: "title", text: "hi", isText: true)
-    var b = encodeQuery(q)
-    check b.len == 58
-    check b[0] == 2'u8                 # 0   op
-    check b.getU32(1) == 5'u32         # 1   collection length
-    check b[5] == uint8('n')           # 5   "notes"
-    check b.getU32(10) == 1'u32        # 10  predicate count
-    check b.getU32(14) == 5'u32        # 14  field length
-    check b[23] == 1'u8                # 23  isText
-    check b.getU32(24) == 2'u32        # 24  text length
-    check b.getU32(38) == 20'u32       # 38  limit
-    check b.getU64(42) == 0'u64        # 42  cursor
-    check b.getU32(50) == 0'u32        # 50  subscriptionId length
-    check b.getU32(54) == 0'u32        # 54  payload length
-
-  # {.testKind: tkRegression.}
-  test "a reply lands on the offsets the README prints":
-    var r = Reply(ok: true, cursor: 3'u64, matched: 1'u32, epoch: 7'u64)
-    r.rows.add Row(schemaId: 0'u16, data: @[0x68'u8, 0x69'u8])
-    var b = encodeReply(r)
-    check b[0] == 1'u8                 # 0   ok
-    check b.getU32(1) == 0'u32         # 1   err length
-    check b.getU64(5) == 3'u64         # 5   cursor
-    check b.getU32(13) == 1'u32        # 13  matched
-    check b.getU64(17) == 7'u64        # 17  epoch
-
-  # {.testKind: tkRegression.}
-  test "the frame and package thresholds are the documented ones":
-    check geistWholeMaxBytes == 32_000
-    check geistDacFrameMaxBytes == 65_507
-    check replyRowBudget == 28_000
-
 suite "the derived files, as the README names them":
 
   # {.testKind: tkRegression.}
@@ -143,21 +94,3 @@ suite "the derived files, as the README names them":
     check transposedMagic == "GETR1"
     check transposedSuffix == ".getr"
 
-  # {.testKind: tkRegression.}
-  test "a relay envelope is stream, sender, at, ordinal, body":
-    var m = RelayMessage(stream: "voice", sender: "phone", at: 5'i64,
-      ordinal: 3'u64, body: asBytes("hi"))
-    var b = encodeMessage(m)
-    check b.getU32(0) == 5'u32          # stream length
-    check b.getU32(9) == 5'u32          # sender length, after "voice"
-    var back = decodeMessage(b)
-    check back.stream == "voice"
-    check back.sender == "phone"
-    check back.at == 5'i64
-    check back.ordinal == 3'u64
-    check asText(back.body) == "hi"
-
-  # {.testKind: tkRegression.}
-  test "an envelope row can never be read as a stored row":
-    # 0xFFF1 is far outside the range a database assigns.
-    check relayEnvelopeId == 0xFFF1'u16

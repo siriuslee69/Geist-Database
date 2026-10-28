@@ -14,10 +14,6 @@
 	path = submodules/Eir-CompressionAndECC
 	url = ../Eir-CompressionAndECC.git
 	branch = main
-[submodule "deps/Bifrost-ExchangeProtocols"]
-	path = submodules/Bifrost-ExchangeProtocols
-	url = ../Bifrost-ExchangeProtocols.git
-	branch = main
 [submodule "submodules/Otter-RepoEvaluation"]
 	path = submodules/Otter-RepoEvaluation
 	url = https://github.com/siriuslee69/Otter-RepoEvaluation.git

@@ -2,24 +2,20 @@
 ## geist_database.nimble <- only what is special to Geist
 ## ---------------------------------------------------------------------------
 ##
+## Geist is the storage half: rows, files, keys, backups, one CLI. Talking to
+## other machines (sync, relays, daemons, the device monitor) is geist-sync,
+## which imports this library. See that repository's .nimble file.
+##
 ## Every generic task -- test, runExamples, runBenchmarks, runCli/buildCli,
-## runServer/buildServer, autopush, switch, applyNightly, updateSubmodules,
-## clean, ... -- comes from Nimble-Tasks, included at the bottom.
-## `nimble sharedTasks` lists them. What stays here:
+## autopush, switch, applyNightly, updateSubmodules, clean, ... -- comes from
+## Nimble-Tasks, included at the bottom. `nimble sharedTasks` lists them.
+## What stays here:
 ##
 ##   task               what it does
 ##   -----------------  ------------------------------------------------------
-##   buildAll           every Geist program, for release (replaces the shared
-##                      one, which only knows one cli and one server)
-##   buildCliRelay      geist-relay        the relay's command line client
-##   buildServerRelayd  geist-relayd       the message relay
-##   buildServerRouted  geist-routed       the request router
-##   buildServerForwardd geist-forwardd    the VPS datagram forwarder
+##   buildAll           the Geist CLI, for release (replaces the shared one)
 ##   checkAll           compile-check every public module
 ##   checkModular       the storage half builds with NO network stack
-##   checkRelay         the wire half builds with NO database in it
-##   checkRouter        the router builds with NO database in it
-##   checkForward       the forwarder builds with no database, no handshake
 ##   testCore ...       one area of the test suite, for a quick loop
 ##   bench<Group>       one benchmark group
 ##   demoCli            a scratch database driven through the CLI
@@ -51,10 +47,8 @@ srcDir        = "src"
 ## config.nims, so a fresh clone builds without `nimble install`.
 requires "nim >= 2.0.0", "nimsimd >= 1.3.2"
 
-## NOTE: no UI dependencies belong here. Geist is a headless library, a CLI
-## and a set of daemons; a stray `requires "owlkettle", "illwill", "webui"`
-## once made every install of the database pull in a GTK stack it never
-## calls.
+## NOTE: no UI and no network dependencies belong here. Geist is a headless
+## library and one CLI. Bifrost (the transport) is geist-sync's.
 
 const
   ownTasks: array[2, string] = ["buildAll", "runStatistics"]
@@ -63,21 +57,6 @@ const
     ## nix/default.nix fetches. `updateSubmodules` must not move it to
     ## whatever its master branch holds today.
   cliEntry: string = "src/clients/geist_cli.nim"
-  serverEntry: string = "src/server/geistd.nim"
-  webuiEntry: string = "src/clients/geist_monitor_webui.nim"
-  storageModules: array[25, string] = ["geist", "geist@ssession",
-    "geist@ssessionopen", "geist@ssessioncore", "geist@sreplicate",
-    "geist@sobserve", "geist@ssessionsweep", "geist@ssessionview",
-    "geist@sstore", "geist@srow", "geist@srowid", "geist@skeys",
-    "geist@sconfig", "geist@sbackup", "geist@slease", "geist@ssidecar",
-    "geist@scollection", "geist@sseek", "geist@sdurable", "geist@smapper",
-    "geist@sdynamic", "geist@ssettings", "geist@ssessiontable",
-    "geist@stabletext", "geist@stableread"]
-    ## The C files a program has compiled the DATABASE half into. The relay
-    ## and the router must produce none of them.
-  forwardForbidden: array[6, string] = ["geist@stransport", "geist@sserve",
-    "geist@shandshake", "geist@speers", "geist@smasks", "geist@sidentity"]
-    ## Modules that mean a handshake is being made: not for the forwarder.
   benchSource: string = "evaluation/benchmarks/bench_geist.nim"
   benchProgram: string = "build/evaluation/bench_geist"
 
@@ -112,19 +91,6 @@ proc runTestFiles(A: openArray[string]) =
     exec "nim c -r -d:release --hints:off -o:build/evaluation/" & f & " evaluation/tests/" &
       f & ".nim"
 
-proc leakedStorage(cacheDir: string, extra: openArray[string] = []):
-    seq[string] =
-  ## cacheDir: a nimcache folder -> the database modules compiled into it.
-  ## extra: more module names that must not be there either.
-  var
-    name: string = ""
-  for f in listFiles(cacheDir):
-    name = f.extractFilename()
-    if name.len > 8 and name.endsWith(".nim.c") and
-        (name.startsWith("@p") or name.startsWith("@m")) and
-        (name[2 .. ^7] in storageModules or name[2 .. ^7] in extra):
-      result.add name
-
 proc runBench(group: string) =
   ## group: one benchmark group name, or "" for all of them.
   mkDir("build/evaluation")
@@ -138,42 +104,9 @@ proc runBench(group: string) =
 #   program        task                entry
 #   -------------  ------------------  --------------------------------
 #   geist          buildCli (shared)   src/clients/geist_cli.nim
-#   geistd         buildServer (shared) src/server/geistd.nim
-#   geist-relay    buildCliRelay       src/clients/geist_relay.nim
-#   geist-relayd   buildServerRelayd   src/server/geist_relayd.nim
-#   geist-routed   buildServerRouted   src/server/geist_routed.nim
-#   geist-forwardd buildServerForwardd src/server/geist_forwardd.nim
-#   geist-hopd     buildServerHopd     src/server/geist_hopd.nim
 
-task buildCliRelay, "Build geist-relay, the relay's command line client":
-  buildProgram("src/clients/geist_relay.nim", "geist_database_cli_relay")
-
-task buildServerRelayd, "Build geist-relayd, the message relay":
-  buildProgram("src/server/geist_relayd.nim", "geist_database_server_relayd")
-
-task buildServerRouted, "Build geist-routed, the request router":
-  buildProgram("src/server/geist_routed.nim", "geist_database_server_routed")
-
-task buildServerForwardd, "Build geist-forwardd, the VPS datagram forwarder":
-  buildProgram("src/server/geist_forwardd.nim", "geist_database_server_forwardd")
-
-task buildServerHopd, "Build geist-hopd, the router machines link to (docs/hop.md)":
-  buildProgram("src/server/geist_hopd.nim", "geist_database_server_hopd")
-
-task buildServerMonitor, "Build the two-role AM1P+S device monitor daemon":
-  buildProgram("src/server/geist_monitord.nim", "geist-monitord")
-
-task buildCliMonitor, "Build the device monitor provisioning and check CLI":
-  buildProgram("src/clients/geist_monitor_cli.nim", "geist-monitor-cli")
-
-task buildAll, "Build every Geist program for release":
+task buildAll, "Build the Geist CLI for release":
   buildProgram(cliEntry, "geist_database_cli")
-  buildProgram(serverEntry, "geist_database_server")
-  buildProgram("src/clients/geist_relay.nim", "geist_database_cli_relay")
-  buildProgram("src/server/geist_relayd.nim", "geist_database_server_relayd")
-  buildProgram("src/server/geist_routed.nim", "geist_database_server_routed")
-  buildProgram("src/server/geist_forwardd.nim", "geist_database_server_forwardd")
-  buildProgram("src/server/geist_hopd.nim", "geist_database_server_hopd")
 
 # ---------------------------------------------------------------------
 # Compile checks
@@ -181,10 +114,7 @@ task buildAll, "Build every Geist program for release":
 
 task checkAll, "Compile-check every public module":
   for f in listFiles("src/geist") & listFiles("src/geist/crypto") &
-      @["src/geist.nim", "src/clients/geist_cli.nim",
-        "src/clients/geist_relay.nim", "src/server/geistd.nim",
-        "src/server/geist_relayd.nim", "src/server/geist_routed.nim",
-        "src/server/geist_forwardd.nim"]:
+      @["src/geist.nim", cliEntry]:
     if f.endsWith(".nim"):
       exec "nim c --compileOnly --hints:off " & f
 
@@ -201,77 +131,15 @@ task checkModular, "Prove the storage half builds with no network stack":
   var
     paths: string = ""
   for p in ["submodules/Fylgia-Utils/src", "submodules/Tyr-Crypto/src",
+            "submodules/Eir-CompressionAndECC/src", "submodules/SIMD-Nexus/src",
             "submodules/Rune-Pragmas/meta", "submodules/Var-Invariants/src",
-            "submodules/SIMD-Nexus/src",
-            "submodules/Eir-CompressionAndECC/src", "submodules/nimsimd/src"]:
+            "submodules/nimsimd/src"]:
     if dirExists(p):
       paths = paths & " --path:" & p
   exec "nim c -r --skipProjCfg --skipParentCfg --mm:orc --threads:on " &
     "--hints:off --warnings:off -d:hasLibsodium --path:src" & paths &
     " --nimcache:build/nimcache-modular -o:build/storage-only " &
     "evaluation/tests/modular/storage_only.nim"
-
-task checkRelay, "Prove the wire half builds with no database in it":
-  ## The mirror of checkModular. That one removes Bifrost from the path
-  ## and compiles a disk-only program; this one compiles a relay and then
-  ## LOOKS AT WHAT THE COMPILER EMITTED. Passing means no module of the
-  ## storage half was reachable from `import geist/wire` -- not that a
-  ## header comment says so.
-  var
-    leaked: seq[string] = @[]
-  exec "nim c -r --hints:off --warnings:off " &
-    "--nimcache:build/nimcache-relay -o:build/relay-only " &
-    "evaluation/tests/modular/relay_only.nim"
-  leaked = leakedStorage("build/nimcache-relay")
-  if leaked.len > 0:
-    echo "The relay build pulled in the database: " & leaked.join(", ")
-    echo "Something under src/geist/wire.nim now imports the storage half."
-    quit(1)
-  echo "relay build: no database module compiled"
-
-task checkRouter, "Prove the router forwards without compiling a store":
-  ## Same proof as checkRelay, aimed at the router. A daemon that could
-  ## open a database would eventually be given one to open, so the fact
-  ## that it CANNOT is worth a build failure rather than a comment.
-  var
-    leaked: seq[string] = @[]
-  exec "nim c --hints:off --warnings:off " &
-    "--nimcache:build/nimcache-router -o:build/router-only " &
-    "src/server/geist_routed.nim"
-  leaked = leakedStorage("build/nimcache-router")
-  if leaked.len > 0:
-    echo "The router build pulled in the database: " & leaked.join(", ")
-    quit(1)
-  echo "router build: no database module compiled"
-
-task checkHop, "Prove the hop router hands links on without compiling a store":
-  ## Same proof as checkRouter, for geist-hopd: it reads no payload and
-  ## must not be able to open a database either.
-  var
-    leaked: seq[string] = @[]
-  exec "nim c --hints:off --warnings:off " &
-    "--nimcache:build/nimcache-hop -o:build/hop-only " &
-    "src/server/geist_hopd.nim"
-  leaked = leakedStorage("build/nimcache-hop")
-  if leaked.len > 0:
-    echo "The hop router build pulled in the database: " & leaked.join(", ")
-    quit(1)
-  echo "hop router build: no database module compiled"
-
-task checkForward, "Prove the forwarder moves bytes without a store or a handshake":
-  ## The forwarder holds no key. If a database module OR the handshake
-  ## (the answering end, the asking end, the tiers, identities) ever
-  ## reaches its build, it has started doing what a VPS must not do.
-  var
-    leaked: seq[string] = @[]
-  exec "nim c --hints:off --warnings:off " &
-    "--nimcache:build/nimcache-forward -o:build/forward-only " &
-    "src/server/geist_forwardd.nim"
-  leaked = leakedStorage("build/nimcache-forward", forwardForbidden)
-  if leaked.len > 0:
-    echo "The forwarder build pulled in: " & leaked.join(", ")
-    quit(1)
-  echo "forwarder build: no database and no handshake module compiled"
 
 # ---------------------------------------------------------------------
 # One area of the test suite (`nimble test` runs all of them)
@@ -284,18 +152,11 @@ task testCrypto, "Run the crypto, key lifecycle, keyring and backup tests":
   runTestFiles(["test_crypto_batch", "test_keys_backup", "test_keyrings",
     "test_vault_bridge", "test_keyfolder"])
 
-task testApi, "Run the session, transport and settings tests":
-  runTestFiles(["test_session_api", "test_masks_transport", "test_settings"])
+task testApi, "Run the session and settings tests":
+  runTestFiles(["test_session_api", "test_settings", "test_presets"])
 
 task testDurability, "Run the generation-swap, lease and restore tests":
   runTestFiles(["test_durability_lease", "test_sidecar_sweep"])
-
-task testExchange, "Run the live-socket daemon and identity tests":
-  runTestFiles(["test_daemon_live", "test_row_identity", "test_forward",
-    "test_lane_jump", "test_session_keys", "test_hop_router"])
-
-task testOverlay, "Run local names, identity leases and real AM1P+S return connections":
-  runTestFiles(["test_overlay", "test_overlay_network"])
 
 task testApiSurface, "Run the collection, seek, column storage and table file tests":
   runTestFiles(["test_collection_seek", "test_hash_agility",
@@ -358,8 +219,8 @@ task runStatistics, "Measure the repository with Otter and record the numbers":
     at: string = "build/measure"
     bin: string = ""
     deps: seq[string] = @["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
-      "Eir-CompressionAndECC", "Bifrost-ExchangeProtocols", "Rune-Pragmas",
-      "Otter-RepoEvaluation", "Nimble-Tasks", "Var-Invariants"]
+      "Eir-CompressionAndECC", "Rune-Pragmas",
+      "Otter-RepoEvaluation", "Nimble-Tasks", "Var-Invariants", "nimsimd"]
     here: string = getCurrentDir()
   if not fileExists(otter):
     echo "Otter is not checked out: git submodule update --init " &
@@ -399,7 +260,6 @@ task runStatistics, "Measure the repository with Otter and record the numbers":
 # ---------------------------------------------------------------------
 # Android
 # ---------------------------------------------------------------------
-#
 # The companion is a LIBRARY (Kotlin + JNI), not an app, so the shared
 # buildAndroid/installAndroid -- which build and install an APK -- do not
 # apply. These two drive its own gradle module instead.
@@ -415,4 +275,3 @@ task androidTest, "Run the keystore tests on a connected device":
   ## be set over adb. See docs/keystore.md.
   exec "cd android && gradle :geistkeystore:connectedDebugAndroidTest " &
     "--console=plain"
-

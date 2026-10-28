@@ -7,12 +7,11 @@
 ##
 ##   common   options, userconfig, opening a store, printing rows
 ##   direct   commands that open the files in this process (--path)
-##   remote   commands sent to a running geistd (--remote), and sync
 
 import std/[os, strutils, tables]
 
 import runePragmas
-import ../../geist/network
+import ../../geist
 import ./common
 
 ## --------------------------- direct commands ------------------------
@@ -537,31 +536,6 @@ proc cmdRekey*(o: Options) {.role: actor,
     fail(written.err)
   echo "re-keyed ", due.len, " batch(es); the rest of the database was untouched"
   db.close()
-
-proc cmdKeygen*(o: Options) {.role: actor,
-    tag: "cli|cryptoBoundary|networkSurface|write".} =
-  ## o: options carrying --identity, --pin-out and --subject.
-  var
-    mine: tuple[ok: bool, key: AmeIdentityKey, created: bool, err: string] =
-      (false, default(AmeIdentityKey), false, "")
-    written: tuple[ok: bool, err: string] = (false, "")
-    pinPath: string = ""
-  if o.identity.len == 0:
-    fail("keygen needs --identity <file>")
-  if resolvePassword(o).len == 0:
-    fail("keygen needs a password: the identity's secret keys are sealed")
-  mine = loadOrCreateIdentity(o.identity, resolvePassword(o), o.subject,
-    geistSignatureSlots())
-  if not mine.ok:
-    fail(mine.err)
-  pinPath = if o.pinOut.len > 0: o.pinOut else: o.identity & ".pin"
-  written = savePin(pinPath, pinOf(mine.key))
-  if not written.ok:
-    fail(written.err)
-  echo (if mine.created: "created " else: "loaded existing "), o.identity
-  echo "wrote ", pinPath, "  <- hand this to the peer"
-  echo ""
-  echo describePin(pinOf(mine.key))
 
 proc cmdPresets*(o: Options) {.role: actor, tag: "cli|config|read".} =
   ## o: unused; every command takes the options, so the table in

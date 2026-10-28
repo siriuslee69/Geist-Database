@@ -8,7 +8,7 @@
 
 import runePragmas
 import std/[json, os, strutils, unittest]
-import geist/network
+import geist
 import geist/toml_read
 
 proc scratch(name: string): string {.role: helper.} =
@@ -134,115 +134,6 @@ copies = 3
     check got.defaults.rowIdentityNamed
     check not applyDefaults(appConfig(), got.defaults).rowIdentity
 
-suite "user configuration":
-  # {.testKind: tkEdgeCase.}
-  test "sections are read and an absent file is not an error":
-    var
-      dir = scratch("geist_t_ucfg1")
-      path = dir / "userconfig.toml"
-    check loadUserConfig(path).ok
-    writeFile(path, """
-[database]
-path = "data/notes"
-preset = "chat"
-passwordFile = "secrets/db.pw"
-
-[daemon]
-listen = "dac://0.0.0.0:47655"
-identity = "keys/geistd.id"
-trust = ["peers/a.pin", "peers/b.pin"]
-allowWrite = ["peers/c.pin"]
-
-[client]
-remote = "dac://desk:47655"
-peerPin = "peers/geistd.pin"
-limit = 50
-""")
-    var got = loadUserConfig(path)
-    check got.ok
-    check got.user.path == "data/notes"
-    check got.user.preset == "chat"
-    check got.user.listen == "dac://0.0.0.0:47655"
-    check got.user.trust.len == 2
-    check got.user.trust[1] == "peers/b.pin"
-    check got.user.allowWrite == @["peers/c.pin"]
-    check got.user.remote == "dac://desk:47655"
-    check got.user.limit == 50
-
-  # {.testKind: tkUnit.}
-  test "one pin may be written without a list around it":
-    var
-      dir = scratch("geist_t_ucfg2")
-      path = dir / "userconfig.toml"
-    writeFile(path, "[daemon]\ntrust = \"peers/only.pin\"\n")
-    var got = loadUserConfig(path)
-    check got.ok
-    check got.user.trust == @["peers/only.pin"]
-
-  # {.testKind: tkEdgeCase.}
-  test "an unknown key in any section is refused":
-    var
-      dir = scratch("geist_t_ucfg3")
-      path = dir / "userconfig.toml"
-    writeFile(path, "[client]\nremoteHost = \"desk\"\n")
-    var got = loadUserConfig(path)
-    check not got.ok
-    check got.err.contains("remoteHost")
-
-  # {.testKind: tkEdgeCase.}
-  test "a file that is not TOML fails rather than being skipped":
-    var
-      dir = scratch("geist_t_ucfg4")
-      path = dir / "userconfig.toml"
-    writeFile(path, "[database\npath = ")
-    var got = loadUserConfig(path)
-    check not got.ok
-    check got.err.contains(path)
-
-suite "transport settings":
-  # {.testKind: tkUnit.}
-  test "the tier policy comes from the file and still validates":
-    var
-      dir = scratch("geist_t_cfg6")
-      path = dir / "config.toml"
-    writeFile(path, """
-[runtime.transport]
-startTier = "secret"
-secretAtMiB = 16
-archiveAtMiB = 256
-""")
-    var got = loadTransportDefaults(path)
-    check got.ok
-    check got.defaults.startTier == gtSecret
-    var policy = defaultsTriggerPolicy(got.defaults)
-    check policy.startTier == gtSecret
-    check policy.rows[gtSecret].threshold == 16'u64
-    check policy.rows[gtArchive].threshold == 256'u64
-    # A policy a settings file produced must still be one the transport
-    # will accept, or the failure surfaces at connect time instead.
-    check validateTriggerPolicy(policy).ok
-
-  # {.testKind: tkEdgeCase.}
-  test "an unknown tier name is refused":
-    var
-      dir = scratch("geist_t_cfg7")
-      path = dir / "config.toml"
-    writeFile(path, "[runtime.transport]\nstartTier = \"paranoid\"\n")
-    var got = loadTransportDefaults(path)
-    check not got.ok
-    check got.err.contains("paranoid")
-
-  # {.testKind: tkUnit.}
-  test "the shipped configs/default.toml parses and validates":
-    # The file in configs/ is what a new user reads first. If it drifts
-    # from the parser, every one of them starts with an error.
-    var got = loadTransportDefaults(currentSourcePath().parentDir() / ".." /
-      ".." / "configs" / "default.toml")
-    check got.ok
-    # Found and read, not skipped as missing -- a missing file is also ok.
-    check got.defaults.loadedFrom.len > 0
-    check validateTriggerPolicy(defaultsTriggerPolicy(got.defaults)).ok
-
 suite "build presets at run time":
   # {.testKind: tkUnit, covers: "runtimeOf".}
   test "a preset file replaces only the keys it names":
@@ -280,7 +171,7 @@ suite "build presets at run time":
   test "only the library default file is ever overlaid":
     check overlayNames("somewhere/else.toml").len == 0
 
-  # {.testKind: tkSmoke, covers: "loadGeistDefaults, loadTransportDefaults".}
+  # {.testKind: tkSmoke, covers: "loadGeistDefaults, runtimeOf".}
   test "every shipped configs/*.toml loads without a complaint":
     var
       dir = currentSourcePath().parentDir() / ".." / ".." / "configs"
@@ -289,10 +180,8 @@ suite "build presets at run time":
       var
         storage = loadGeistDefaults(dir / "default.toml")
         layered = runtimeOf(dir / "default.toml", @[f])
-        transport = loadTransportDefaults(f)
       check storage.ok
       check storage.defaults.loadedFrom.len > 0
       check layered.ok
-      check transport.ok
       n = n + 1
     check n >= 1

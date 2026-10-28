@@ -1,5 +1,5 @@
 ## ---------------------------------------------------------------------
-## Geist <- the public facade
+## Geist <- the public facade: a database on this machine
 ## ---------------------------------------------------------------------
 ##
 ##   import geist
@@ -27,24 +27,19 @@
 ## Name the STORE, not a file: a save publishes a new generation, so the
 ## live file name changes and `observeStore` re-resolves it every time.
 ##
-## THIS MODULE IS THE STORAGE HALF, and nothing here opens a socket. A
-## program that only writes rows to disk compiles only what that needs --
-## no handshake, no post-quantum KEM, no peer directory.
+## WHAT THIS LIBRARY IS. Reading, writing and checking rows on this
+## machine, and nothing else. No socket is opened here, no peer is known
+## here, and no row is sent anywhere. Bifrost is not a dependency of this
+## repository at all.
 ##
-## Talking to a peer is the other half, and it is one import away:
+## Talking to other machines is the job of geist-sync, which imports this
+## library and adds peers, pins, relays and daemons on top of it:
 ##
-##   import geist
-##   import geist/network
+##   import geist            this file: rows, files, keys, backups
+##   import geist_sync       geist-sync: links, sync, relays, daemons
 ##
-##   var me = geistIdentity("node-a")
-##   var link = connectGeist(remote, me, peerPin, defaultTierPolicy())
-##   discard link.link.send(Query(op: qoFind, collection: "notes"))
-##
-## `geist/network` re-exports this module, so the two lines above can be
-## the single line `import geist/network` when a program wants both.
-## Splitting them is what keeps an embedded, offline, disk-only build from
-## paying for a stack it never calls -- see `docs/nix.md` and the module
-## header of `geist/network.nim` for what each half contains.
+## The split is checked by `nimble checkModular`, which compiles a
+## program that imports only this file with no network stack on its path.
 
 import std/os
 
@@ -72,9 +67,6 @@ import ./geist/show
 import ./geist/transpose
 import ./geist/toml_read
 import ./geist/doc
-import ./geist/reconcile
-import ./geist/address
-import ./geist/route
 import ./geist/keystore
 import ./geist/secrets
 import ./geist/users
@@ -89,7 +81,7 @@ import ./geist/verify
 
 export types, secret, config, backup, session
 export toml_read, settings
-export doc, reconcile, address, route, keystore, layout
+export doc, keystore, layout
 ## The one crypto surface an application needs, so nothing outside Geist
 ## has to import Tyr to hash a password or unlock a store.
 export secrets, users, seal

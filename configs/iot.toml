@@ -28,5 +28,3 @@ transpose = "none"
 [runtime.backup]
 copies = 1
 
-[runtime.transport]
-startTier = "telemetry"
