@@ -9,9 +9,9 @@
 ##
 ##   what                          how it is read
 ##   ---------------------------   -----------------------------------------------
-##   plain store, untyped          openStore: the live data file is opened with
-##                                 the seek handle and rows are read from disk in
-##                                 the ranges the search asks for
+##   plain store, untyped          openStore: the live rows are found once from the
+##                                 identity columns (livePositions), then read from
+##                                 disk by position, in the ranges the search asks for
 ##   plain store, typed (a T)      typedSeekSource[T]: the same, one T per row
 ##   sealed store (needs T)       sealedSource[T]: a typed session, opened with
 ##                                 the password, reads rows from memory
@@ -22,16 +22,22 @@
 ## stores take a T, and plain stores do not.
 ##
 ## Def. 1 (untyped row): a row read with the schema the file carries. Each slot
-##   becomes one named field; the slot kind picks the value kind.
+##   becomes one named field; the slot kind picks the value kind. The identity
+##   columns (__rowId, __flags) are not fields: they name a row inside its own
+##   store, and say nothing about what the row holds.
 ## Def. 2 (typed row): a row read into a Nim object T; each object field becomes
 ##   one named field, by its type.
+## Def. 3 (live row): the newest version of a row that has not been removed. The
+##   log keeps every older version and every removal (a tombstone). A search sees
+##   only live rows, in the order a session presents them, so a plain store and a
+##   session give the same answer.
 ##
 ## Slot kinds that cannot be read without a key are shown, not hidden:
 ##   sealed field  -> the text "<sealed>"
 ##   reference     -> the text "<ref>"
 ## A predicate on either does not match a value it cannot see.
 
-import std/[os, strutils]
+import std/[os, strutils, tables]
 
 import runePragmas
 import null_query_apis as nq
@@ -42,6 +48,7 @@ import ./dynamic
 import ./config
 import ./sessionopen
 import ./sessioncore
+import ./rowid
 import ./store
 
 const
@@ -78,11 +85,16 @@ proc slotValue*(kind: SlotKind, text: string): nq.NullValue {.role: helper.} =
 
 proc rowObject*(schema: Schema, data: seq[uint8], number: int): nq.NullObject {.
     role: helper.} =
-  ## schema/data/number: one untyped row (Def. 1) as a Null object.
+  ## schema/data/number: one untyped row (Def. 1) as a Null object. The identity
+  ## columns are skipped, so the object holds what the row holds, and nothing
+  ## about where it sits in its store.
   var
     texts: seq[string] = renderRow(schema, data)
+    first: int = 0
+  if schema.hasIdentity():
+    first = identityColumnCount
   result.number = number
-  for j in 0 ..< schema.slots.len:
+  for j in first ..< schema.slots.len:
     result.fields.add nq.NullField(name: nameOf(schema, schema.slots[j].nameId),
       value: slotValue(schema.slots[j].kind, texts[j]))
 
@@ -115,20 +127,51 @@ proc refuseSealed(path: string): tuple[ok: bool, src: nq.NullSource, err: string
   result = (false, nil, "the store at " & path & " is sealed: search it with " &
     "sealedSource[T] and its password")
 
+proc livePositions*(h: SeekHandle): seq[uint32] {.role: dataFetcher,
+    tag: "storageIo|read".} =
+  ## h: an open plain store. The log positions of its live rows (Def. 3), in the
+  ## order a session presents them. Reads the two identity columns once, never
+  ## the row payloads. A store without identity columns has no updates and no
+  ## removals, so every row is live.
+  var
+    idx: LiveIndex = initLiveIndex()
+    ids: seq[uint64] = @[]
+    flags: seq[uint64] = @[]
+    at: uint32 = 0'u32
+    i: int = 0
+  if not h.schema.hasIdentity():
+    while i < int(h.rowCount):
+      result.add uint32(i)
+      i = i + 1
+    return
+  ids = h.seekFixedColumn(0)
+  flags = h.seekFixedColumn(1)
+  while i < ids.len:
+    idx.noteRow(ids[i], flags[i], uint32(i))
+    i = i + 1
+  i = 0
+  while i < idx.order.len:
+    at = idx.newest[idx.order[i]]
+    if not flags[int(at)].isTombstone():
+      result.add at
+    i = i + 1
+
 proc seekSource*(path: string): nq.NullOpen {.role: orchestrator,
     tag: "storageIo|read".} =
-  ## path: a data file of a plain store. Rows are read from disk, in whatever
-  ## ranges the search asks for. A sealed file is refused, with the reason.
+  ## path: a data file of a plain store. Only its live rows are shown (Def. 3),
+  ## read from disk in whatever ranges the search asks for. A sealed file is
+  ## refused, with the reason.
   var opened = openSeek(path)
   if not opened.ok:
     return (false, nil, opened.err)
   if looksSealed(opened.h):
     return refuseSealed(path)
-  var h = opened.h
-  result = nq.openRecords(path, int(h.rowCount), proc (first, n: int): seq[nq.NullObject] =
-    var rows = h.seekRange(uint32(first), uint32(n))
-    for k in 0 ..< rows.len:
-      result.add rowObject(h.schema, rows[k].data, first + k))
+  var
+    h = opened.h
+    live: seq[uint32] = h.livePositions()
+  result = nq.openRecords(path, live.len, proc (first, n: int): seq[nq.NullObject] =
+    for k in 0 ..< n:
+      result.add rowObject(h.schema, h.seekRow(live[first + k]).data, first + k))
 
 proc openStore*(dir: string): nq.NullOpen {.role: orchestrator,
     tag: "storageIo|read".} =
@@ -148,10 +191,12 @@ proc typedSeekSource*[T: object](path: string): nq.NullOpen {.role: orchestrator
     return (false, nil, opened.err)
   if looksSealed(opened.h):
     return refuseSealed(path)
-  var h = opened.h
-  result = nq.openRecords(path, int(h.rowCount), proc (first, n: int): seq[nq.NullObject] =
-    for i in first ..< first + n:
-      result.add toNullObject(seekObject[T](h, uint32(i)), i))
+  var
+    h = opened.h
+    live: seq[uint32] = h.livePositions()
+  result = nq.openRecords(path, live.len, proc (first, n: int): seq[nq.NullObject] =
+    for k in 0 ..< n:
+      result.add toNullObject(seekObject[T](h, live[first + k]), first + k))
 
 proc sealedSource*[T: object](dir: string, password: string,
     cfg: GeistConfig = appConfig()): nq.NullOpen {.role: orchestrator,
@@ -169,7 +214,7 @@ proc sealedSource*[T: object](dir: string, password: string,
   var
     holder = SessionHolder(db: move(db))
     count = int(holder.db.entryCount())
-    readFn: proc (first, n: int): seq[nq.NullObject] {.closure.}
+    readFn: proc (first, n: int): seq[nq.NullObject] {.closure.} = nil
   readFn = proc (first, n: int): seq[nq.NullObject] =
     for i in first ..< first + n:
       result.add toNullObject(objectAt[T](holder.db.entries, holder.db.livePosition(uint32(i))), i)
