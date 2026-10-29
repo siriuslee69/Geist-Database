@@ -1,6 +1,24 @@
 # Progress
 
-Commit Message: Storage only: network, sync and daemons move to Nebel-DecentralizedDB
+Commit Message: Search: plain stores show live rows only, identity columns left out
+
+## 2026-10-29 Search adapter for Null-QueryAPIs
+
+`src/geist/search.nim` puts Geist's stores behind the Null interface, so
+Null-QueryAPIs searches them. Plain, typed and sealed stores are sources, and
+so are text, JSON-lines and frame files. Nebel's `nebel search` uses it.
+
+Found while building, and fixed:
+
+- A plain store's search read the raw log. Superseded versions and removed
+  rows came back as hits. Both sources now read the live rows only, found from
+  the two identity columns, and the test "an updated row is searched at its
+  newest version" holds this down.
+- The identity columns (`__rowId`, `__flags`) were fields of every untyped
+  object. Two stores holding the same row then differed, and the neighbour
+  merge in Nebel could not match them. They are left out of the object now.
+
+Not done: `geist search` as a CLI command (search is used through Nebel for now).
 
 ## 2026-10-28 Storage only
 
