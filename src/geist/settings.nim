@@ -40,6 +40,13 @@ type
     ## belongs in `GeistConfig`, which a caller passes explicitly.
     preset*: string
     sidecarThreshold*: uint32
+    sidecars*: bool
+    sidecarsNamed*: bool
+      ## sidecarsNamed: whether the FILE said anything about sidecars. A bool has
+      ## no absent value, so this flag is what tells "off" from "not mentioned".
+    follow*: string
+      ## follow: how search reads a sidecar value: "never", "named" or "always"
+      ## (geist/search.nim, Def. 4). A runtime setting, `[default] follow`.
     backupCopies*: uint8
     backupEverySeconds*: uint32
     rowIdentity*: bool
@@ -80,6 +87,8 @@ proc builtinDefaults*(): GeistDefaults {.role: configurator, stage: stDone,
   ## without reading config.nim.
   result.preset = "app"
   result.sidecarThreshold = defaultSidecarThreshold
+  result.sidecars = true
+  result.follow = "named"
   result.backupCopies = 2'u8
   result.backupEverySeconds = 0'u32
   result.rowIdentity = true
@@ -107,6 +116,8 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   var
     doc: tuple[ok: bool, node: JsonNode, err: string] =
       (false, default(JsonNode), "")
+    rubric: tuple[ok: bool, node: JsonNode, err: string] =
+      (false, default(JsonNode), "")
     storage: JsonNode = default(JsonNode)
     backup: JsonNode = default(JsonNode)
     complaint: string = ""
@@ -114,6 +125,19 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   doc = runtimeOf(path)
   if not doc.ok:
     return (false, result.defaults, doc.err)
+  rubric = rubricOf(path)
+  if not rubric.ok:
+    return (false, result.defaults, rubric.err)
+  complaint = checkKeys(rubric.node, ["sidecars", "sidecarThreshold", "follow"],
+    "[default]")
+  if complaint.len > 0:
+    return (false, result.defaults, complaint)
+  result.defaults.sidecars = rubric.node.setting("sidecars",
+    result.defaults.sidecars)
+  result.defaults.sidecarsNamed = rubric.node.hasKey("sidecars")
+  result.defaults.sidecarThreshold = rubric.node.setting("sidecarThreshold",
+    result.defaults.sidecarThreshold)
+  result.defaults.follow = rubric.node.setting("follow", result.defaults.follow)
   storage = doc.node.section("storage")
   backup = doc.node.section("backup")
   complaint = checkKeys(storage,
@@ -165,6 +189,8 @@ proc applyDefaults*(c: GeistConfig, d: GeistDefaults): GeistConfig {.
   result = c
   if d.sidecarThreshold > 0'u32:
     result.sidecarThreshold = d.sidecarThreshold
+  if d.sidecarsNamed:
+    result.sidecars = d.sidecars
   # Only when the file actually said so. `iotConfig` and `streamConfig`
   # turn identity off on purpose -- 16 bytes of id on a 32-byte sensor row
   # is half again as much disk for a feature append-only telemetry never

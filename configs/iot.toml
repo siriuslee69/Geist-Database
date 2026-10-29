@@ -13,6 +13,16 @@ description = "Size-optimised; the iot storage preset; no search copy."
 [nim]
 opt = "size"
 
+[define]
+# Compile time: no sidecar code at all. A small device keeps every value in its
+# row, and a capped value that does not fit follows its column's overflow policy.
+# A build can still read inline values; a row that names a sidecar is refused.
+sidecars = false
+
+[default]
+# The same choice at run time, for a build that keeps sidecars compiled in.
+sidecars = false
+
 [passC]
 flags = ["-ffunction-sections", "-fdata-sections"]
 

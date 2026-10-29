@@ -88,13 +88,28 @@ proc isOmitted*(s: Schema, A: openArray[uint8], slot: int): bool {.
     return false
   result = bitGet(A, s.nullBase(), slot)
 
-proc isExternal*(s: Schema, A: openArray[uint8], slot: int): bool {.
-    role: parser, inline, tag: "codecBoundary|db|read".} =
-  ## s/A/slot: schema, row and column. True when a capped column took the
-  ## sidecar escape and holds a reference rather than a value.
-  if not s.hasCapped():
+const
+  varExternalFlag*: uint32 = 0x8000_0000'u32
+    ## Set in the length prefix of a variable column whose value moved to a
+    ## sidecar. The 31 bits below it then give the width of the reference.
+  varLengthMask*: uint32 = 0x7FFF_FFFF'u32
+    ## The length itself, with the external flag taken out.
+
+proc isExternal*(s: Schema, A: openArray[uint8], offsets: seq[int],
+    slot: int): bool {.role: parser, tag: "codecBoundary|db|read".} =
+  ## s/A/offsets/slot: true when the slot's value lives in a sidecar. A capped
+  ## column says so in its bitmap; a variable column says so in the flag of its
+  ## length prefix. Either way the column holds a reference, not the value.
+  ## An omitted column is never external.
+  if offsets[slot] < 0:
     return false
-  result = bitGet(A, s.cappedBase(), slot)
+  case s.slots[slot].column
+  of colVariable:
+    result = (A.getU32(offsets[slot]) and varExternalFlag) != 0'u32
+  of colCapped:
+    result = s.hasCapped() and bitGet(A, s.cappedBase(), slot)
+  of colFixed:
+    result = false
 
 ## ------------------------------ writing -----------------------------
 
@@ -193,11 +208,29 @@ proc writeCapped(W: var RowWriter, sl: Slot, A: openArray[uint8]): bool {.
   ## capped bit is what tells a reader which of the two it is looking at.
   var
     encoded: ByteSeq = @[]
-  if uint32(A.len) + uint32(cappedLengthBytes) <= sl.width:
+    keep: int = 0
+  if uint32(A.len) + uint32(cappedLengthBytes) <= sl.width and
+      not W.store.shouldExternalise(A.len):
     W.body.addU16(uint16(A.len))
     W.body.addBytes(A)
     W.padTo(int(sl.width) - cappedLengthBytes - A.len)
     return true
+  if not W.store.canEscape():
+    # Sidecars are off (runtime or build), so the value cannot leave the row.
+    # Too wide for the column, it follows the column's overflow policy, the
+    # same way a fixed column does: cut and counted, or refused.
+    if sl.onOverflow == opTruncate:
+      keep = int(sl.width) - cappedLengthBytes
+      W.body.addU16(uint16(keep))
+      W.body.addBytes(A.toOpenArray(0, keep - 1))
+      W.padTo(int(sl.width) - cappedLengthBytes - keep)
+      W.truncated = W.truncated + 1'u32
+      W.truncatedIn.add W.schema.nameOf(sl.nameId)
+      return true
+    W.err = "column '" & W.schema.nameOf(sl.nameId) & "' is " & $sl.width &
+      " B and the value is " & $A.len & " B; sidecars are off, so the value " &
+      "is refused. Turn sidecars on, or set onOverflow = opTruncate on the column"
+    return false
   encoded = encodeRef(W.store.putSidecar(@A))
   if uint32(encoded.len) > sl.width:
     W.err = "column '" & W.schema.nameOf(sl.nameId) & "' is " &
@@ -221,6 +254,7 @@ proc writeColumn*(W: var RowWriter, A: openArray[uint8]) {.role: dataWriter,
   var
     sl: Slot = default(Slot)
     written: bool = true
+    encoded: ByteSeq = @[]
   if W.cursor >= W.schema.slots.len:
     W.err = "more values than columns in " & W.schema.typeName
     return
@@ -235,8 +269,16 @@ proc writeColumn*(W: var RowWriter, A: openArray[uint8]) {.role: dataWriter,
     return
   case sl.column
   of colVariable:
-    W.body.addU32(uint32(A.len))
-    W.body.addBytes(A)
+    if W.store.shouldExternalise(A.len):
+      # At or above the sidecar threshold: the value goes to the sidecar and the
+      # column keeps a flagged length and the reference (see varExternalFlag).
+      encoded = encodeRef(W.store.putSidecar(@A))
+      W.body.addU32(varExternalFlag or uint32(encoded.len))
+      W.body.addBytes(encoded)
+      W.externalised = W.externalised + 1'u32
+    else:
+      W.body.addU32(uint32(A.len))
+      W.body.addBytes(A)
   of colFixed:
     written = W.writeFixed(sl, A)
   of colCapped:
@@ -305,7 +347,7 @@ proc fieldOffsets*(s: Schema, A: openArray[uint8]): seq[int] {.role: parser,
       result[i] = o
       case s.slots[i].column
       of colVariable:
-        n = int(A.getU32(o))
+        n = int(A.getU32(o) and varLengthMask)
         o = o + varLengthBytes + n
       of colFixed, colCapped:
         o = o + int(s.slots[i].width)
@@ -328,7 +370,7 @@ proc stepColumn(s: Schema, A: openArray[uint8], i, o: int): tuple[o: int,
     if at + varLengthBytes > A.len:
       return (0, "column '" & s.nameOf(s.slots[i].nameId) &
         "' has no room for its length prefix")
-    at = at + varLengthBytes + int(A.getU32(at))
+    at = at + varLengthBytes + int(A.getU32(at) and varLengthMask)
   of colFixed, colCapped:
     at = at + int(s.slots[i].width)
   if at > A.len:
@@ -383,12 +425,12 @@ proc rawAt*(s: Schema, A: openArray[uint8], offsets: seq[int],
   o = offsets[slot]
   case s.slots[slot].column
   of colVariable:
-    n = int(A.getU32(o))
+    n = int(A.getU32(o) and varLengthMask)
     o = o + varLengthBytes
   of colFixed:
     n = int(s.slots[slot].width)
   of colCapped:
-    if s.isExternal(A, slot):
+    if s.isExternal(A, offsets, slot):
       n = int(s.slots[slot].width)
     else:
       n = int(A.getU16(o))
@@ -408,7 +450,7 @@ proc resolve*(s: Schema, A: openArray[uint8], offsets: seq[int], slot: int,
     fetched: tuple[ok: bool, data: ByteSeq, err: string] =
       (false, default(ByteSeq), "")
   result = s.rawAt(A, offsets, slot)
-  if not s.isExternal(A, slot):
+  if not s.isExternal(A, offsets, slot):
     return
   fetched = store.getSidecar(decodeRef(result))
   if not fetched.ok:
@@ -638,12 +680,13 @@ proc rowStats*(s: Schema, A: openArray[uint8]): tuple[present: int,
   ## suits the data it is actually holding.
   var
     i: int = 0
+    offsets: seq[int] = fieldOffsets(s, A)
   while i < s.slots.len:
     if s.isOmitted(A, i):
       result.omitted = result.omitted + 1
     else:
       result.present = result.present + 1
-    if not s.isOmitted(A, i) and s.isExternal(A, i):
+    if s.isExternal(A, offsets, i):
       result.external = result.external + 1
     i = i + 1
   result.bytes = A.len

@@ -102,6 +102,25 @@ proc overlayNames*(path: string): seq[string] {.role: parser,
     result.add parentDir(path) / extractFilename(A[i])
     i = i + 1
 
+proc rubricOf*(path: string, overlays: seq[string] = overlayNames(path)):
+    tuple[ok: bool, node: JsonNode, err: string] {.role: parser,
+    tag: "config|parsing|read".} =
+  ## path: a settings file -> its top-level `[default]` table: the settings a
+  ## program MAY change while it runs, from a command-line flag, a daemon
+  ## option or a call in its own code. Everything else is compile time.
+  ## overlays: as for `runtimeOf`; the build preset's file is laid over it.
+  var
+    doc: tuple[ok: bool, node: JsonNode, err: string] = tomlOf(path)
+    layer: tuple[ok: bool, node: JsonNode, err: string] = (true, nil, "")
+  if not doc.ok:
+    return (false, newJObject(), doc.err)
+  result = (true, doc.node.section("default"), "")
+  for f in overlays:
+    layer = tomlOf(f)
+    if not layer.ok:
+      return (false, newJObject(), layer.err)
+    result.node.layOver(layer.node.section("default"))
+
 proc runtimeOf*(path: string, overlays: seq[string] = overlayNames(path)):
     tuple[ok: bool, node: JsonNode, err: string] {.role: parser,
     tag: "config|parsing|read".} =

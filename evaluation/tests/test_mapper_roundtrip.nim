@@ -162,7 +162,7 @@ suite "column kinds":
     s.slots[at].width = 48'u32
     var built = toRowBytes(Note(id: 1, title: "short"), s)
     check built.err == ""
-    check not s.isExternal(built.data, at)
+    check not s.isExternal(built.data, fieldOffsets(s, built.data), at)
     check fromRowBytes[Note](built.data, s).title == "short"
 
   # {.testKind: tkUnit.}
@@ -180,7 +180,7 @@ suite "column kinds":
       big[i] = char(ord('a') + (i mod 26))
     var built = toRowBytes(Note(id: 1, title: "t", body: big), s, store)
     check built.err == ""
-    check s.isExternal(built.data, at)
+    check s.isExternal(built.data, fieldOffsets(s, built.data), at)
     # The reference occupies the column's declared width, not more.
     var offs = fieldOffsets(s, built.data)
     check s.rawAt(built.data, offs, at).len == 48

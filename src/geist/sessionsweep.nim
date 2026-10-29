@@ -45,7 +45,7 @@ proc externalRefsOf(s: Schema, raw: openArray[uint8],
     offsets: seq[int] = fieldOffsets(s, raw)
     j: int = 0
   while j < s.slots.len:
-    if s.isExternal(raw, j):
+    if s.isExternal(raw, offsets, j):
       into.add refLocator(decodeRef(s.rawAt(raw, offsets, j)))
     j = j + 1
 
@@ -57,8 +57,6 @@ proc sidecarRefsIn(s: Schema, C: ClusterBuild,
   ##   asks whether a locator is present.
   var
     i: uint32 = 0'u32
-  if not s.hasCapped():
-    return
   while i < C.rowCount:
     externalRefsOf(s, C.rowBytesAt(i), into)
     i = i + 1

@@ -112,7 +112,7 @@ proc isReferenced*(schema: Schema, data: seq[uint8], offsets: seq[int],
   ## (Def. 4): a capped column that took the escape, or an own-file reference.
   if offsets[slot] < 0:
     return false
-  if schema.isExternal(data, slot):
+  if schema.isExternal(data, offsets, slot):
     return true
   if schema.slots[slot].kind == skRef:
     result = decodeRef(schema.rawAt(data, offsets, slot)).target == rtSidecar

@@ -60,12 +60,43 @@ threads = true
 [define]
 hasLibsodium = true      # Tyr may call the system libsodium; configs/android.toml
                          # turns it off, because Android has none to call
+sidecars = true          # compile time: false removes the sidecar code. The same
+                         # choice at run time is [default] sidecars below
 
 [passC]
 flags = []
 
 [passL]
 flags = []
+
+# ---------------------------------------------------------------------------
+# [default] <- the settings you may change WHILE THE PROGRAM RUNS.
+#
+#   A command-line flag (geist --sidecars off, nebel search --follow never,
+#   nebel-searchd --follow always), a daemon option, or a line of your own code
+#   (cfg.sidecars = false) overrides each of these for that run. The values
+#   here are only the starting point.
+#
+#   Everything else in this file is COMPILE TIME: [nim], [define], [passC],
+#   [passL], [preset], [project]. Changing one means building again. A run
+#   cannot switch a compile-time choice on or off.
+# ---------------------------------------------------------------------------
+[default]
+# Values at or above this many bytes move out of the row into a sidecar file,
+# addressed by their own content hash. 4294967295 keeps every value in its row.
+# Ignored while sidecars are off.
+sidecarThreshold = 1024
+
+# Off for this run: nothing new leaves its row, and a capped value that does not
+# fit follows its column's overflow policy (refused, or cut and counted). Existing
+# sidecar references stay readable. Small devices run with this off.
+sidecars = true
+
+# How search reads a value that a row keeps in a sidecar:
+#   never    the reference text is searched; the content is not
+#   named    the fields the query names are read (the default)
+#   always   every field is read; slower on large stores
+follow = "named"
 
 [runtime.storage]
 # Which storage preset openGeist uses when a caller names none.
@@ -90,9 +121,7 @@ flags = []
 # open, and the message lists the real ones.
 preset = "app"
 
-# Bytes. A capped column value at or above this moves out of the row and
-# into the sidecar tree, addressed by its own content hash.
-sidecarThreshold = 1024
+# The sidecar threshold moved to [default], where the run-time settings are.
 
 # Give every row the two reserved identity columns, so it can be replaced
 # and removed by name and exchanged with a peer. 16 bytes per row.

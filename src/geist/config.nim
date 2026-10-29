@@ -86,6 +86,12 @@ type
     autoCollapse*: bool
     columnPolicy*: seq[ColumnPolicy]
     sidecarThreshold*: uint32
+    sidecars*: bool
+      ## Runtime switch, `[default] sidecars` in configs/default.toml. False: a
+      ## new value never leaves its row, and a capped value that does not fit
+      ## follows its column's overflow policy. Existing sidecar references stay
+      ## readable. The build switch `[define] sidecars` is stronger: it removes
+      ## the feature, and this flag has no effect in such a build.
     keepHistory*: bool
     ## rowIdentity: give every row two reserved leading columns, `__rowId`
     ## and `__flags`, so it can be replaced and removed by name instead of
@@ -189,6 +195,7 @@ proc baseConfig(name: string, c: CipherKind): GeistConfig {.role: configurator,
   ## c: default cipher for this workload.
   result.name = name
   result.sidecarThreshold = defaultSidecarThreshold
+  result.sidecars = true
   result.keepHistory = true
   # Identity on by default: a database whose rows cannot be changed or
   # removed is a log, and most callers want a database. Presets whose

@@ -31,15 +31,22 @@ import ./format
 const
   sidecarFolderName*: string = ".geist-sidecar"
     ## The folder inside a store folder that holds the sidecar payloads.
+  sidecarsCompiled*: bool = defined(sidecars)
+    ## Compile-time switch: `[define] sidecars` in configs/default.toml, or
+    ## -d:sidecars. A build without it never writes a sidecar and refuses to
+    ## read a row that names one. Inline values work either way.
 
 type
   SidecarStore* {.role: truthState, tag: "sidecar|storageIo|types".} = object
     ## root: directory holding the fan-out tree; empty disables the store.
     ## threshold: byte size at or above which a value moves out of the row.
+    ## escapes: whether NEW values may leave their rows (the runtime setting
+    ##   `sidecars`). False still lets existing references be read.
     ## hash: content-hash family; the own-file tier addresses BY this hash.
     ## writes/reused: counters surfaced through database metadata.
     root*: string
     threshold*: uint32
+    escapes*: bool
     hash*: HashKind
     writes*: uint32
     reused*: uint32
@@ -57,6 +64,7 @@ proc initSidecarStore*(root: string,
   result.root = root
   result.threshold = if threshold == 0'u32: defaultSidecarThreshold
     else: threshold
+  result.escapes = true
   result.hash = hash
 
 proc hexOf(A: openArray[uint8]): string {.role: helper,
@@ -86,11 +94,18 @@ proc sidecarPath*(s: SidecarStore, locator: string): string {.role: helper,
   ## locator: fan-out relative path produced by `sidecarLocator`.
   result = s.root / locator
 
+proc canEscape*(s: SidecarStore): bool {.role: parser, inline,
+    tag: "sidecar|read".} =
+  ## s: sidecar store. True when NEW values may leave their rows: this build has
+  ## sidecars, the runtime setting allows them, and the store has a folder.
+  result = sidecarsCompiled and s.escapes and s.root.len > 0
+
 proc shouldExternalise*(s: SidecarStore, n: int): bool {.role: parser, inline,
     tag: "sidecar|read".} =
   ## s: sidecar store carrying the threshold.
-  ## n: candidate value length in bytes.
-  result = s.root.len > 0 and uint32(n) >= s.threshold
+  ## n: candidate value length in bytes. At or above the threshold, and only
+  ## when `canEscape` says a value may leave its row.
+  result = s.canEscape() and uint32(n) >= s.threshold
 
 proc describeRef*(r: Ref): string {.role: helper,
     tag: "formatting|sidecar".} =
@@ -142,6 +157,9 @@ proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
     tag: "sidecar|storageIo|read".} =
   ## s: sidecar store to read from.
   ## r: reference produced by `putSidecar`; its hash is re-verified.
+  when not sidecarsCompiled:
+    return (false, @[], "this build was compiled with sidecars off, so a row " &
+      "that names a sidecar cannot be read; build with [define] sidecars = true")
   var
     full: string = ""
     raw: string = ""

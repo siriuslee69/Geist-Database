@@ -116,7 +116,7 @@ proc fieldToString*(s: Schema, A: openArray[uint8], offsets: seq[int],
     raw: ByteSeq = @[]
   if offsets[slot] < 0:
     return ""
-  if s.isExternal(A, slot):
+  if s.isExternal(A, offsets, slot):
     return describeRef(decodeRef(s.rawAt(A, offsets, slot)))
   case s.slots[slot].kind
   of skInt:

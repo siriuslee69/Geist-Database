@@ -540,6 +540,7 @@ proc loadStore(S: var Session, baseDir, baseName: string, schemaIn: Schema,
     discard sweepUncommitted(baseDir, baseName, S.generation)
   S.sidecarStore = initSidecarStore(baseDir / sidecarFolderName,
     S.config.sidecarThreshold, S.config.contentHash)
+  S.sidecarStore.escapes = S.config.sidecars
   # Column policy is applied ONCE, here, so the schema written to disk is
   # already the one the policy asked for. A later reader needs no
   # configuration to interpret the file.

@@ -267,7 +267,7 @@ proc restampRow*(s: Schema, A: openArray[uint8], id: RowId,
     i: int = 0
   offsets = fieldOffsets(s, A)
   while i < s.slots.len:
-    if s.isExternal(A, i):
+    if s.isExternal(A, offsets, i):
       return (false, @[], "column '" & s.nameOf(s.slots[i].nameId) &
         "' holds a sidecar reference, so this row cannot be re-identified; " &
         "send it with the id its own database gave it")
