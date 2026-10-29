@@ -95,6 +95,26 @@ proc storeHasData*(dir, name: string): bool {.role: parser, tag: "storageIo|read
     return true
   result = false
 
+proc databaseNamesIn*(dir: string): seq[string] {.role: parser,
+    tag: "storageIo|read".} =
+  ## dir: the name of every database in the folder, each once. A name shows in a data
+  ## file (`<name>.ge1st...`) or in its parameters file (`<name>.params`).
+  var
+    base: string = ""
+    name: string = ""
+  if not dirExists(dir):
+    return
+  for f in walkFiles(dir / "*.ge1st*"):
+    base = extractFilename(f)
+    name = base[0 ..< base.find(".ge1st")]
+    if name notin result:
+      result.add name
+  for f in walkFiles(dir / ("*" & paramsSuffix)):
+    base = extractFilename(f)
+    name = base[0 ..< base.len - paramsSuffix.len]
+    if name notin result:
+      result.add name
+
 proc folderFilesOf(dir: string): tuple[version, permissions: string] {.
     role: helper, tag: "storageIo".} =
   result.version = dir / folderVersionName

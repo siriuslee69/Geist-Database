@@ -122,9 +122,10 @@ proc sidecarOf*(dir: string, cfg: GeistConfig): SidecarStore {.role: configurato
     tag: "sidecar|storageIo".} =
   ## dir/cfg: a store folder and the configuration it was written with. The
   ## content-hash family is not kept in the file, so a reader must be given it,
-  ## or every payload fails its hash check.
-  result = initSidecarStore(dir / sidecarFolderName, cfg.sidecarThreshold,
-    cfg.contentHash)
+  ## or every payload fails its hash check. The storage paths come from cfg too,
+  ## so the same folders are searched that a writer placed payloads in.
+  result = initSidecarRoots(storeRootsOf(dir, cfg.storagePaths), cfg.sidecarThreshold,
+    cfg.contentHash, cfg.storagePolicy)
 
 proc isReferenced*(schema: Schema, data: seq[uint8], offsets: seq[int],
     slot: int): bool {.role: parser, tag: "sidecar|read".} =

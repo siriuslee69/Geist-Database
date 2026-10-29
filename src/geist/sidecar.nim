@@ -2,20 +2,20 @@
 ## Sidecar <- content-addressed store for values too large to inline
 ## ---------------------------------------------------------------------
 ##
-##   capped column, value too wide for it  ->  <root>/ab/cd/abcdef...  ->  Ref in the row
-##                                                              `-> hash verified on read
+##   capped/variable column, value too large  ->  <root>/ab/cd/abcdef...  ->  Ref in the row
+##                                                                `-> hash verified on read
 ##
-## <root> is the store folder's `.geist-sidecar` (sidecarFolderName). This
-## replaces what the Koerper folder used to be: a value that takes the escape
-## never enters the cluster's overflow region, so that region stays small
-## enough to keep clusters cheap to rewrite and compact.
+## <root> is one of the store's roots (`roots` below): a folder inside a storage
+## path, or the store's own `.geist-sidecar` (storeRootsOf). That own folder is
+## the last root, so a store made before storage paths existed still reads.
 ##
-## WHICH values take the escape is decided by the column policy (config.nim,
-## cappedColumn): only a capped column whose value is wider than the column
-## does. Text and bytes columns are variable-length and always stay inline.
-## `sidecarThreshold` (1 KiB by default) is kept with the configuration, but no
-## write path reads it, so it does not move a value. A column of slot kind
-## "ref" is always an own-file reference to a payload here.
+## WHICH values leave their row (row.nim):
+##   variable column   a value at or above `sidecarThreshold` (1 KiB by default)
+##   capped column     the same, and also any value wider than the column
+##   fixed column      never: its width is fixed by the schema
+## Only while sidecars are on. With them off, a capped value that does not fit
+## follows the column's overflow policy (cut and counted, or refused). A column
+## of slot kind "ref" is always an own-file reference to a payload here.
 ##
 ## Naming is content-addressed with two levels of fan-out, so a directory
 ## never accumulates more than 256 children at either level and identical
@@ -30,6 +30,7 @@ import ./types
 import ./crypto/hashing
 import ./format
 import ./textfile
+import ./storage
 
 const
   sidecarFolderName*: string = ".geist-sidecar"
@@ -41,13 +42,17 @@ const
 
 type
   SidecarStore* {.role: truthState, tag: "sidecar|storageIo|types".} = object
-    ## root: directory holding the fan-out tree; empty disables the store.
+    ## roots: every folder payloads may live in, in the order they are tried. A new
+    ##   payload goes to the first root the policy picks; a read searches them all.
+    ##   Empty: the store has no folder, so no value may leave its row.
+    ## policy: how the root of a new payload is picked (storage.nim).
     ## threshold: byte size at or above which a value moves out of the row.
     ## escapes: whether NEW values may leave their rows (the runtime setting
     ##   `sidecars`). False still lets existing references be read.
     ## hash: content-hash family; the own-file tier addresses BY this hash.
     ## writes/reused: counters surfaced through database metadata.
-    root*: string
+    roots*: seq[string]
+    policy*: StoragePolicy
     threshold*: uint32
     escapes*: bool
     hash*: HashKind
@@ -55,20 +60,34 @@ type
     reused*: uint32
     bytesWritten*: uint64
 
-proc initSidecarStore*(root: string,
-    threshold: uint32 = defaultSidecarThreshold,
-    hash: HashKind = hkBlake3): SidecarStore {.
+proc initSidecarRoots*(roots: seq[string], threshold: uint32 = defaultSidecarThreshold,
+    hash: HashKind = hkBlake3, policy: StoragePolicy = spPriority): SidecarStore {.
     role: configurator, tag: "sidecar|storageIo".} =
-  ## root: sidecar directory; created lazily on first write.
+  ## roots: the folders payloads may live in, in the order they are tried. A new
+  ##   payload goes to the first root the policy picks. An empty list disables
+  ##   the store.
   ## threshold: size at or above which values are externalised.
   ## hash: content-hash family. Always applied at full width here, because
   ##   in this tier the digest is the path: truncating it would turn a
   ##   chosen-payload collision into a 2^64 search.
-  result.root = root
+  ## policy: how the root is picked (see storage.nim, Def. 1 and 2).
+  result.roots = roots
+  result.policy = policy
   result.threshold = if threshold == 0'u32: defaultSidecarThreshold
     else: threshold
   result.escapes = true
   result.hash = hash
+
+proc initSidecarStore*(root: string,
+    threshold: uint32 = defaultSidecarThreshold,
+    hash: HashKind = hkBlake3): SidecarStore {.
+    role: configurator, tag: "sidecar|storageIo".} =
+  ## root: one sidecar folder, created lazily on first write. "" disables the store.
+  var
+    roots: seq[string] = @[]
+  if root.len > 0:
+    roots.add root
+  result = initSidecarRoots(roots, threshold, hash)
 
 proc hexOf(A: openArray[uint8]): string {.role: helper,
     tag: "formatting|sidecar".} =
@@ -91,17 +110,63 @@ proc sidecarLocator*(A: openArray[uint8]): string {.role: helper,
   h = hexOf(A)
   result = h[0 .. 1] & "/" & h[2 .. 3] & "/" & h
 
-proc sidecarPath*(s: SidecarStore, locator: string): string {.role: helper,
+proc storeFolderName*(baseDir: string): string {.role: helper,
     tag: "sidecar|storageIo".} =
-  ## s: sidecar store whose root is joined with the locator.
-  ## locator: fan-out relative path produced by `sidecarLocator`.
-  result = s.root / locator
+  ## baseDir: a store folder. The name its sidecar folder takes inside a storage
+  ## path: the store's folder name, then 12 hex digits of the hash of its absolute
+  ## path. Two stores never share a name, so one store's sweep cannot delete the
+  ## payloads of another. Moving a store changes its absolute path, so its storage
+  ## folders must move with it, or their payloads read as missing (loudly).
+  var
+    full: string = absolutePath(baseDir).strip(chars = {'/', '\\'})
+    digest: ByteSeq = geistHash(hkBlake3, cast[ByteSeq](full), fullDigestBytes)
+  result = extractFilename(full) & "-" & hexOf(digest[0 ..< 6]) & ".geist-sidecar"
+
+proc storeRootsOf*(baseDir: string, paths: seq[string]): seq[string] {.
+    role: configurator, tag: "sidecar|storageIo".} =
+  ## baseDir/paths: the folders a store's payloads may live in: one folder inside each
+  ## storage path (named by storeFolderName), then the store's own folder LAST.
+  ## Payloads made before storage paths existed stay readable there, and it is the
+  ## fallback when no storage path has room.
+  for p in paths:
+    result.add p / storeFolderName(baseDir)
+  result.add baseDir / sidecarFolderName
+
+proc storedAt*(s: SidecarStore, locator: string): string {.role: helper,
+    tag: "sidecar|storageIo".} =
+  ## s/locator: the path of a stored file (payload or locator) in the first root
+  ## that holds it, or "" when no root does.
+  for r in s.roots:
+    if fileExists(r / locator):
+      return r / locator
+  result = ""
+
+proc writeRootFor*(s: SidecarStore, need: int64): string {.role: parser,
+    tag: "sidecar|storageIo".} =
+  ## s/need: the root a new payload of `need` bytes goes to, by the store's policy.
+  ## "" when no root can take it. A root is usable only when the folder holding it
+  ## exists, so a storage path on an unplugged drive is never written into.
+  var
+    free: Table[string, FreeSpace] = initTable[string, FreeSpace]()
+    speeds: Table[string, float] = initTable[string, float]()
+    order: seq[string] = @[]
+    storagePath: string = ""
+  for r in s.roots:
+    # Room and speed belong to the storage path the root sits in, not to the root.
+    storagePath = parentDir(r)
+    if dirExists(storagePath):
+      free[r] = freeSpaceOf(storagePath)
+    if absolutePath(storagePath) in gSpeeds:
+      speeds[r] = gSpeeds[absolutePath(storagePath)]
+  order = orderedByPolicy(s.roots, s.policy, free, uint64(max(need, 0'i64)), speeds)
+  if order.len > 0:
+    result = order[0]
 
 proc canEscape*(s: SidecarStore): bool {.role: parser, inline,
     tag: "sidecar|read".} =
   ## s: sidecar store. True when NEW values may leave their rows: this build has
   ## sidecars, the runtime setting allows them, and the store has a folder.
-  result = sidecarsCompiled and s.escapes and s.root.len > 0
+  result = sidecarsCompiled and s.escapes and s.roots.len > 0
 
 proc shouldExternalise*(s: SidecarStore, n: int): bool {.role: parser, inline,
     tag: "sidecar|read".} =
@@ -139,16 +204,21 @@ proc putSidecar*(S: var SidecarStore, A: openArray[uint8]): Ref {.
     hash: ByteSeq = @[]
     locator: string = ""
     full: string = ""
+    root: string = ""
     dir: string = ""
   hash = geistHash(S.hash, A, fullDigestBytes)
   locator = sidecarLocator(hash)
-  full = S.sidecarPath(locator)
-  dir = parentDir(full)
   result.target = rtSidecar
   result.hash = hash
-  if fileExists(full):
+  if S.storedAt(locator).len > 0:
     S.reused = S.reused + 1'u32
     return
+  root = S.writeRootFor(int64(A.len))
+  if root.len == 0:
+    raise newException(IOError, "no storage path has room for a sidecar of " &
+      $A.len & " bytes; add a folder to [default] storage or free some space")
+  full = root / locator
+  dir = parentDir(full)
   if not dirExists(dir):
     createDir(dir)
   writeFile(full, cast[string](@A))
@@ -177,7 +247,11 @@ type
 proc locatorPathOf*(s: SidecarStore, hash: ByteSeq): string {.role: helper,
     tag: "sidecar|storageIo".} =
   ## s/hash: where the locator for this content hash is kept.
-  result = s.sidecarPath(sidecarLocator(hash) & locatorSuffix)
+  var
+    root: string = s.writeRootFor(0'i64)
+  result = ""
+  if root.len > 0:
+    result = root / (sidecarLocator(hash) & locatorSuffix)
 
 proc locatorText*(l: SidecarLocator): string {.role: helper,
     tag: "sidecar|write".} =
@@ -226,6 +300,8 @@ proc putLocator*(s: SidecarStore, l: SidecarLocator): tuple[ok: bool, err: strin
     tmp: string = path & ".tmp"
   if not s.canEscape():
     return (false, "sidecars are off for this store, so no locator is written")
+  if path.len == 0:
+    return (false, "no storage path has room for a locator")
   createDir(parentDir(path))
   writeFile(tmp, locatorText(l))
   moveFile(tmp, path)
@@ -283,6 +359,7 @@ proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
       "that names a sidecar cannot be read; build with [define] sidecars = true")
   var
     full: string = ""
+    lf: string = ""
     raw: string = ""
     check: ByteSeq = @[]
     locator: string = ""
@@ -290,10 +367,11 @@ proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
     return (false, @[],
       "sidecar reference has no full-width hash, so it addresses nothing")
   locator = r.refLocator()
-  full = s.sidecarPath(locator)
-  if not fileExists(full):
-    if fileExists(s.sidecarPath(locator & locatorSuffix)):
-      return readLocated(s, r, s.sidecarPath(locator & locatorSuffix))
+  full = s.storedAt(locator)
+  if full.len == 0:
+    lf = s.storedAt(locator & locatorSuffix)
+    if lf.len > 0:
+      return readLocated(s, r, lf)
     return (false, @[], "sidecar payload is missing: " & locator)
   raw = readFile(full)
   result.data = cast[ByteSeq](raw)

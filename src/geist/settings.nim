@@ -29,6 +29,7 @@ import ./config
 import ./toml_read
 import ./layout
 import ./types
+import ./storage
 
 const
   userConfigName* = "userconfig.toml"
@@ -47,6 +48,10 @@ type
     follow*: string
       ## follow: how search reads a sidecar value: "never", "named" or "always"
       ## (geist/search.nim, Def. 4). A runtime setting, `[default] follow`.
+    storagePaths*: seq[string]
+      ## storagePaths: folders for sidecar payloads, preferred first. `[default] storage`.
+    storagePolicy*: string
+      ## storagePolicy: "priority" or "speed" (geist/storage.nim). `[default] storagePolicy`.
     backupCopies*: uint8
     backupEverySeconds*: uint32
     rowIdentity*: bool
@@ -89,6 +94,7 @@ proc builtinDefaults*(): GeistDefaults {.role: configurator, stage: stDone,
   result.sidecarThreshold = defaultSidecarThreshold
   result.sidecars = true
   result.follow = "named"
+  result.storagePolicy = "priority"
   result.backupCopies = 2'u8
   result.backupEverySeconds = 0'u32
   result.rowIdentity = true
@@ -128,8 +134,8 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   rubric = rubricOf(path)
   if not rubric.ok:
     return (false, result.defaults, rubric.err)
-  complaint = checkKeys(rubric.node, ["sidecars", "sidecarThreshold", "follow"],
-    "[default]")
+  complaint = checkKeys(rubric.node, ["sidecars", "sidecarThreshold", "follow",
+    "storage", "storagePolicy"], "[default]")
   if complaint.len > 0:
     return (false, result.defaults, complaint)
   result.defaults.sidecars = rubric.node.setting("sidecars",
@@ -138,6 +144,10 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   result.defaults.sidecarThreshold = rubric.node.setting("sidecarThreshold",
     result.defaults.sidecarThreshold)
   result.defaults.follow = rubric.node.setting("follow", result.defaults.follow)
+  result.defaults.storagePaths = rubric.node.setting("storage",
+    result.defaults.storagePaths)
+  result.defaults.storagePolicy = rubric.node.setting("storagePolicy",
+    result.defaults.storagePolicy)
   storage = doc.node.section("storage")
   backup = doc.node.section("backup")
   complaint = checkKeys(storage,
@@ -191,6 +201,9 @@ proc applyDefaults*(c: GeistConfig, d: GeistDefaults): GeistConfig {.
     result.sidecarThreshold = d.sidecarThreshold
   if d.sidecarsNamed:
     result.sidecars = d.sidecars
+  if d.storagePaths.len > 0:
+    result.storagePaths = d.storagePaths
+  result.storagePolicy = if d.storagePolicy == "speed": spSpeed else: spPriority
   # Only when the file actually said so. `iotConfig` and `streamConfig`
   # turn identity off on purpose -- 16 bytes of id on a 32-byte sensor row
   # is half again as much disk for a feature append-only telemetry never

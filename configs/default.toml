@@ -98,6 +98,16 @@ sidecars = true
 #   always   every field is read; slower on large stores
 follow = "named"
 
+# Folders where sidecar payloads may be written, preferred first. Each one gets a
+# folder for this store inside it. Empty: the store's own folder only. A folder
+# whose parent is not there (an unplugged drive) is skipped, never created.
+# storage = ["/mnt/nvme-5000", "/mnt/stash-8tb"]
+
+# How the folder for a new payload is picked (`geist storage bench` measures them):
+#   priority   the first folder in `storage` with room
+#   speed      the fastest MEASURED folder with room; unmeasured folders come last
+# storagePolicy = "priority"
+
 [runtime.storage]
 # Which storage preset openGeist uses when a caller names none.
 #

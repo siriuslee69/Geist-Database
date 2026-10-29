@@ -57,7 +57,7 @@ proc trackFile*(s: SidecarStore, path: string, name: string = ""): tuple[ok: boo
   loc.size = size
   loc.name = if name.len > 0: name else: extractFilename(path)
   loc.target = absolutePath(path)
-  if not fileExists(s.sidecarPath(sidecarLocator(hash))):
+  if s.storedAt(sidecarLocator(hash)).len == 0:
     put = putLocator(s, loc)
     if not put.ok:
       result.err = put.err

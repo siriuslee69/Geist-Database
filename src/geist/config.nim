@@ -24,6 +24,7 @@ import std/strutils
 import runePragmas
 import ./types
 import ./backup
+import ./storage
 import ./crypto/batch
 import ./crypto/hashing
 
@@ -86,6 +87,12 @@ type
     autoCollapse*: bool
     columnPolicy*: seq[ColumnPolicy]
     sidecarThreshold*: uint32
+    storagePaths*: seq[string]
+      ## Folders sidecar payloads may go to, in the order they are preferred.
+      ## Empty: the store's own folder only. `[default] storage` in default.toml.
+    storagePolicy*: StoragePolicy
+      ## priority: the first path with room. speed: the fastest measured path with
+      ## room (run `geist storage bench` first). `[default] storagePolicy`.
     sidecars*: bool
       ## Runtime switch, `[default] sidecars` in configs/default.toml. False: a
       ## new value never leaves its row, and a capped value that does not fit
@@ -196,6 +203,7 @@ proc baseConfig(name: string, c: CipherKind): GeistConfig {.role: configurator,
   result.name = name
   result.sidecarThreshold = defaultSidecarThreshold
   result.sidecars = true
+  result.storagePolicy = spPriority
   result.keepHistory = true
   # Identity on by default: a database whose rows cannot be changed or
   # removed is a log, and most callers want a database. Presets whose

@@ -142,37 +142,19 @@ proc backupSidecarRefs(s: Session): tuple[ok: bool, refs: seq[string],
     slot = slot + 1
   result.ok = true
 
-proc sweepSidecar*(S: var Session): tuple[ok: bool, removed: int,
-    bytes: uint64, err: string] {.role: orchestrator,
-    tag: "appApi|db|maintenance|sidecar|write".} =
-  ## S: session whose sidecar payloads are reclaimed.
-  ##
-  ## Deletes every payload no stored row references -- in this database or
-  ## in any of its backup slots. Needs the write lease: another process
-  ## could be storing a payload right now, and its row would not be
-  ## visible here until it saves.
-  ##
-  ## Returns how much went, so a caller can report it rather than guess.
+proc sweepRoot(root: string, reachable: seq[string]): tuple[removed: int,
+    bytes: uint64] {.role: actor, tag: "sidecar|storageIo|write|maintenance".} =
+  ## root/reachable: one sidecar folder, and the locators something still names.
+  ## Every file in the folder that nothing names is removed. A missing folder holds
+  ## nothing, so nothing is removed from it.
   var
-    reachable: seq[string] = @[]
-    fromBackups: tuple[ok: bool, refs: seq[string], err: string] =
-      (false, @[], "")
     locator: string = ""
     size: uint64 = 0'u64
-  if S.readOnly:
-    return (false, 0, 0'u64, S.writeRefusal())
-  if S.sidecarStore.root.len == 0 or not dirExists(S.sidecarStore.root):
-    return (true, 0, 0'u64, "")
-  reachable = S.sidecarRefs()
-  fromBackups = S.backupSidecarRefs()
-  if not fromBackups.ok:
-    # Refusing is the only safe answer: a slot that cannot be read might
-    # be the one referencing the payload about to be deleted.
-    return (false, 0, 0'u64, fromBackups.err)
-  reachable.add fromBackups.refs
-  for path in walkDirRec(S.sidecarStore.root):
+  if not dirExists(root):
+    return
+  for path in walkDirRec(root):
     # The locator is the fan-out path, which is how a reference names it.
-    locator = path.relativePath(S.sidecarStore.root).replace('\\', '/')
+    locator = path.relativePath(root).replace('\\', '/')
     # A locator is reachable exactly when the payload it names is reachable.
     if locator.endsWith(locatorSuffix):
       locator = locator[0 ..< locator.len - locatorSuffix.len]
@@ -185,5 +167,43 @@ proc sweepSidecar*(S: var Session): tuple[ok: bool, removed: int,
       result.bytes = result.bytes + size
     except CatchableError:
       discard
+
+proc sweepSidecar*(S: var Session): tuple[ok: bool, removed: int,
+    bytes: uint64, err: string] {.role: orchestrator,
+    tag: "appApi|db|maintenance|sidecar|write".} =
+  ## S: session whose sidecar payloads are reclaimed.
+  ##
+  ## Deletes every payload no stored row references -- in this database or
+  ## in any of its backup slots -- in every root of the store. Needs the write
+  ## lease: another process could be storing a payload right now, and its row
+  ## would not be visible here until it saves.
+  ##
+  ## Returns how much went, so a caller can report it rather than guess.
+  var
+    reachable: seq[string] = @[]
+    fromBackups: tuple[ok: bool, refs: seq[string], err: string] =
+      (false, @[], "")
+    swept: tuple[removed: int, bytes: uint64] = (0, 0'u64)
+  if S.readOnly:
+    return (false, 0, 0'u64, S.writeRefusal())
+  if S.sidecarStore.roots.len == 0:
+    return (true, 0, 0'u64, "")
+  if databaseNamesIn(S.baseDir).len > 1:
+    # The fallback folder, and any storage folder named for it, is shared by every
+    # database in the folder. This sweep reads only this database's rows, so it
+    # would delete the payloads of the others.
+    return (false, 0, 0'u64, "the folder " & S.baseDir & " holds more than one " &
+      "database, so its sidecars cannot be swept; keep one database per folder")
+  reachable = S.sidecarRefs()
+  fromBackups = S.backupSidecarRefs()
+  if not fromBackups.ok:
+    # Refusing is the only safe answer: a slot that cannot be read might
+    # be the one referencing the payload about to be deleted.
+    return (false, 0, 0'u64, fromBackups.err)
+  reachable.add fromBackups.refs
+  for root in S.sidecarStore.roots:
+    swept = sweepRoot(root, reachable)
+    result.removed = result.removed + swept.removed
+    result.bytes = result.bytes + swept.bytes
   result.ok = true
 
