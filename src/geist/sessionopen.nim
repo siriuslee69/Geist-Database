@@ -538,7 +538,7 @@ proc loadStore(S: var Session, baseDir, baseName: string, schemaIn: Schema,
   # because it holds the lease: nobody else can be building one right now.
   if S.writeLease.held:
     discard sweepUncommitted(baseDir, baseName, S.generation)
-  S.sidecarStore = initSidecarStore(baseDir / ".geist-sidecar",
+  S.sidecarStore = initSidecarStore(baseDir / sidecarFolderName,
     S.config.sidecarThreshold, S.config.contentHash)
   # Column policy is applied ONCE, here, so the schema written to disk is
   # already the one the policy asked for. A later reader needs no

@@ -2,13 +2,20 @@
 ## Sidecar <- content-addressed store for values too large to inline
 ## ---------------------------------------------------------------------
 ##
-##   value >= sidecarThreshold  ->  <root>/ab/cd/abcdef...  ->  Ref in the row
-##                                                     `-> hash verified on read
+##   capped column, value too wide for it  ->  <root>/ab/cd/abcdef...  ->  Ref in the row
+##                                                              `-> hash verified on read
 ##
-## This replaces what the Koerper folder used to be. A value at or above
-## the threshold (1 KiB by default) never enters the cluster's overflow
-## region; the row stores a `Ref` instead, so the overflow region stays
-## small enough to keep clusters cheap to rewrite and compact.
+## <root> is the store folder's `.geist-sidecar` (sidecarFolderName). This
+## replaces what the Koerper folder used to be: a value that takes the escape
+## never enters the cluster's overflow region, so that region stays small
+## enough to keep clusters cheap to rewrite and compact.
+##
+## WHICH values take the escape is decided by the column policy (config.nim,
+## cappedColumn): only a capped column whose value is wider than the column
+## does. Text and bytes columns are variable-length and always stay inline.
+## `sidecarThreshold` (1 KiB by default) is kept with the configuration, but no
+## write path reads it, so it does not move a value. A column of slot kind
+## "ref" is always an own-file reference to a payload here.
 ##
 ## Naming is content-addressed with two levels of fan-out, so a directory
 ## never accumulates more than 256 children at either level and identical
@@ -20,6 +27,10 @@ import runePragmas
 import ./types
 import ./crypto/hashing
 import ./format
+
+const
+  sidecarFolderName*: string = ".geist-sidecar"
+    ## The folder inside a store folder that holds the sidecar payloads.
 
 type
   SidecarStore* {.role: truthState, tag: "sidecar|storageIo|types".} = object

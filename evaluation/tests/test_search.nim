@@ -16,6 +16,7 @@ import std/[unittest, os, strutils]
 import runePragmas
 import geist
 import geist/search
+import geist/sidecar
 import null_query_apis as nq
 
 type
@@ -171,6 +172,139 @@ suite "sealed stores":
       opened = sealedSource[Note](dir, "wrong", secureAppConfig())
     check not opened.ok
     check opened.err.len > 0
+    removeDir(dir)
+
+proc cappedConfig(): GeistConfig {.role: configurator.} =
+  ## A configuration where `title` is capped narrow, so a longer title takes the
+  ## sidecar escape (Def. 4 in search.nim).
+  result = appConfig()
+  result.columnPolicy = @[cappedColumn("title", 64'u32)]
+  result.backup.enabled = false
+
+proc writeCappedStore(dir: string) {.role: helper.} =
+  ## Two notes: a short title, and a long title that ends in "needle".
+  removeDir(dir)
+  var
+    db: Session = openGeist[Note](dir, cappedConfig(), "")
+  discard db.put(Note(id: 0, title: "short", score: 0.0, done: true))
+  discard db.put(Note(id: 1, title: "x".repeat(120) & " needle", score: 1.0, done: false))
+  doAssert db.save().ok
+  db.close()
+
+proc sidecarPayloads(dir: string): seq[string] {.role: helper.} =
+  ## Every payload file in the store's sidecar folder.
+  for f in walkDirRec(dir / sidecarFolderName):
+    result.add f
+
+suite "sidecars":
+
+  # {.testKind: tkRegression, covers: "rowObject|typedSeekSource|searchStore".}
+  test "a capped column's long value is searched by its real text, not by its reference":
+    var
+      cfg: GeistConfig = appConfig()
+    cfg.columnPolicy = @[cappedColumn("title", 64'u32)]
+    cfg.backup.enabled = false
+    var
+      dir = getTempDir() / "geist_search_sidecar"
+    removeDir(dir)
+    var
+      db: Session = openGeist[Note](dir, cfg, "")
+    discard db.put(Note(id: 0, title: "short", score: 0.0, done: true))
+    discard db.put(Note(id: 1, title: "x".repeat(120) & " needle", score: 1.0, done: false))
+    doAssert db.save().ok
+    db.close()
+    var
+      q = nq.initNullQuery(@[nq.parsePredicateSpec("title:contains=needle").p])
+      found = searchStore(dir, q)
+    check found.ok
+    check found.res.hits.len == 1
+    if found.res.hits.len == 1:
+      check nq.valueText(found.res.hits[0].obj.fieldOf("title").value).endsWith("needle")
+    var
+      typed = typedSeekSource[Note](liveDataPath(dir, storeBaseName))
+    check typed.ok
+    check nq.nullSearchAll(@[typed.src], q).hits.len == 1
+    nq.close(typed.src)
+    removeDir(dir)
+
+  # {.testKind: tkEdgeCase, covers: "searchStore|FollowSidecars".}
+  test "a search that never follows sidecars sees the reference text, and keeps the row":
+    var
+      dir = getTempDir() / "geist_search_sidecar_never"
+    writeCappedStore(dir)
+    var
+      needle = nq.initNullQuery(@[nq.parsePredicateSpec("title:contains=needle").p])
+      everything = nq.initNullQuery(@[nq.parsePredicateSpec("id:range=0..1").p])
+      never = searchStore(dir, needle, follow = fsNever)
+      rows = searchStore(dir, everything, follow = fsNever)
+    check never.ok
+    check never.res.hits.len == 0
+    check rows.res.hits.len == 2
+    if rows.res.hits.len == 2:
+      check nq.valueText(rows.res.hits[1].obj.fieldOf("title").value).startsWith("<sidecar ")
+    removeDir(dir)
+
+  # {.testKind: tkRegression, covers: "searchStore|rowObjectFollowing".}
+  test "a sidecar value is read for the fields a query names, or for every field when asked":
+    var
+      dir = getTempDir() / "geist_search_sidecar_named"
+    writeCappedStore(dir)
+    var
+      byId = nq.initNullQuery(@[nq.parsePredicateSpec("id:range=0..1").p])
+      named = searchStore(dir, byId)
+      always = searchStore(dir, byId, follow = fsAlways)
+    check named.res.hits.len == 2
+    check always.res.hits.len == 2
+    if named.res.hits.len == 2:
+      check nq.valueText(named.res.hits[1].obj.fieldOf("title").value).startsWith("<sidecar ")
+    if always.res.hits.len == 2:
+      check nq.valueText(always.res.hits[1].obj.fieldOf("title").value).endsWith("needle")
+    removeDir(dir)
+
+  # {.testKind: tkEdgeCase, covers: "sidecarValue".}
+  test "a damaged sidecar payload is shown as its reason, and the untyped search goes on":
+    var
+      dir = getTempDir() / "geist_search_sidecar_damaged"
+    writeCappedStore(dir)
+    var
+      payloads: seq[string] = sidecarPayloads(dir)
+    check payloads.len == 1
+    if payloads.len == 1:
+      writeFile(payloads[0], "damaged")
+    var
+      needle = nq.initNullQuery(@[nq.parsePredicateSpec("title:contains=needle").p])
+      everything = nq.initNullQuery(@[nq.parsePredicateSpec("id:range=0..1").p])
+      found = searchStore(dir, needle)
+      rows = searchStore(dir, everything, follow = fsAlways)
+    check found.ok
+    check found.res.hits.len == 0
+    check rows.ok
+    check rows.res.hits.len == 2
+    if rows.res.hits.len == 2:
+      check nq.valueText(rows.res.hits[1].obj.fieldOf("title").value).startsWith("<sidecar: ")
+    removeDir(dir)
+
+  # {.testKind: tkEdgeCase, covers: "typedSeekSource".}
+  test "a typed search stops with the reason when a sidecar payload is damaged":
+    var
+      dir = getTempDir() / "geist_search_sidecar_typed_damaged"
+    writeCappedStore(dir)
+    var
+      payloads: seq[string] = sidecarPayloads(dir)
+    check payloads.len == 1
+    if payloads.len == 1:
+      writeFile(payloads[0], "damaged")
+    var
+      typed = typedSeekSource[Note](liveDataPath(dir, storeBaseName), cappedConfig())
+      q = nq.initNullQuery(@[nq.parsePredicateSpec("id:range=0..1").p])
+      raised: string = ""
+    check typed.ok
+    try:
+      discard nq.nullSearchAll(@[typed.src], q)
+    except IOError as e:
+      raised = e.msg
+    check raised.contains("sidecar")
+    nq.close(typed.src)
     removeDir(dir)
 
 suite "files":
