@@ -64,6 +64,7 @@ import ./sessionopen
 import ./sessioncore
 import ./rowid
 import ./store
+import ./settings
 
 const
   storeBaseName*: string = "main"
@@ -79,6 +80,24 @@ type
   SessionHolder {.role: truthState.} = ref object
     ## The session, behind a reference, so the source's closures can share it.
     db: Session
+
+proc followFromWord*(word: string): FollowSidecars {.role: parser,
+    tag: "appApi|config|read".} =
+  ## word: "never", "named" or "always", as written in `[default] follow` or on a
+  ## command line. Any other word means "named", the default.
+  case word
+  of "never":
+    result = fsNever
+  of "always":
+    result = fsAlways
+  else:
+    result = fsWhenNamed
+
+proc defaultFollow*(): FollowSidecars {.role: configurator, tag: "appApi|config|read".} =
+  ## The run-time default for how search reads sidecar values: `[default] follow`
+  ## in configs/default.toml, "named" when the file does not say. A caller who
+  ## passes `follow` explicitly always wins over this default.
+  result = followFromWord(geistDefaults().follow)
 
 proc queryFields*(q: nq.NullQuery): seq[string] {.role: parser,
     tag: "appApi|read".} =
@@ -251,7 +270,7 @@ proc sidecarStoreOf*(path: string, cfg: GeistConfig): SidecarStore {.role: confi
   ## path: a live data file of a plain store. Its store folder holds the sidecar.
   result = sidecarOf(parentDir(path), cfg)
 
-proc seekSource*(path: string, follow: FollowSidecars = fsAlways,
+proc seekSource*(path: string, follow: FollowSidecars = defaultFollow(),
     cfg: GeistConfig = appConfig(), named: seq[string] = @[]): nq.NullOpen {.
     role: orchestrator, tag: "storageIo|read".} =
   ## path: a data file of a plain store. Only its live rows are shown (Def. 3),
@@ -272,7 +291,7 @@ proc seekSource*(path: string, follow: FollowSidecars = fsAlways,
       result.add rowObjectFollowing(h.schema, h.seekRow(live[first + k]).data,
         first + k, store, follow, named))
 
-proc openStore*(dir: string, follow: FollowSidecars = fsAlways,
+proc openStore*(dir: string, follow: FollowSidecars = defaultFollow(),
     cfg: GeistConfig = appConfig(), named: seq[string] = @[]): nq.NullOpen {.
     role: orchestrator, tag: "storageIo|read".} =
   ## dir: a plain Geist store folder. Opens its live data file for streaming.
@@ -284,7 +303,7 @@ proc openStore*(dir: string, follow: FollowSidecars = fsAlways,
     return (false, nil, "no store at " & dir)
   result = seekSource(path, follow, cfg, named)
 
-proc openStoreFor*(dir: string, q: nq.NullQuery, follow: FollowSidecars = fsWhenNamed,
+proc openStoreFor*(dir: string, q: nq.NullQuery, follow: FollowSidecars = defaultFollow(),
     cfg: GeistConfig = appConfig()): nq.NullOpen {.role: orchestrator,
     tag: "storageIo|read".} =
   ## dir/q: a plain store opened for one query. With fsWhenNamed, a sidecar value
@@ -336,7 +355,7 @@ proc sealedSource*[T: object](dir: string, password: string,
     result.src.closeFn = proc () = close(holder.db)
 
 proc searchStore*(dir: string, q: nq.NullQuery, capacity: int = 0,
-    follow: FollowSidecars = fsWhenNamed, cfg: GeistConfig = appConfig()): tuple[
+    follow: FollowSidecars = defaultFollow(), cfg: GeistConfig = appConfig()): tuple[
     ok: bool, res: nq.NullResult, err: string] {.role: orchestrator,
     tag: "storageIo|read".} =
   ## dir/q/capacity/follow/cfg: search one plain store. capacity 0 reads everything
