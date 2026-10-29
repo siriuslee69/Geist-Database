@@ -216,6 +216,57 @@ proc refFromText*(text: string): tuple[ok: bool, data: ByteSeq, err: string] {.
   result.data = encodeRef(Ref(target: rtSidecar, hash: hash))
   result.ok = true
 
+proc wireRow*(s: Schema, r: Row, store: SidecarStore): Row {.role: truthBuilder,
+    tag: "codecBoundary|sidecar|read".} =
+  ## s/r/store: a stored row, as it leaves for a peer. A variable-length value that
+  ## the row keeps in a sidecar is written back into the row, so the peer gets the
+  ## whole value: a row is self-contained on the wire (Def. 5).
+  ##
+  ## Not written back, so the row goes out with its reference:
+  ##   - a capped column's value (Def. 5): its column has a fixed width, and cannot
+  ##     hold a value wider than itself;
+  ##   - a reference column: a reference names a payload where it lies.
+  ## A payload that cannot be read is left as its reference, never guessed. When
+  ## nothing needs writing back, the row is returned as it is.
+  var
+    offsets: seq[int] = fieldOffsets(s, r.data)
+    needs: bool = false
+    i: int = 0
+    W: RowWriter = initRowWriter(s)
+    value: ByteSeq = @[]
+    got: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
+  result = r
+  while i < s.slots.len:
+    if s.isExternal(r.data, offsets, i):
+      if s.slots[i].column != colVariable:
+        return r
+      needs = true
+    i = i + 1
+  if not needs:
+    return r
+  i = 0
+  if s.hasIdentityColumns():
+    W.writeU64(s.u64At(r.data, offsets, 0))
+    W.writeU64(s.u64At(r.data, offsets, 1))
+    i = identityColumnCount
+  while i < s.slots.len:
+    if offsets[i] < 0:
+      W.writeColumn(@[])
+    elif s.slots[i].kind in {skInt, skFloat}:
+      W.writeU64(s.u64At(r.data, offsets, i))
+    else:
+      value = s.rawAt(r.data, offsets, i)
+      if s.isExternal(r.data, offsets, i):
+        got = store.getSidecar(decodeRef(value))
+        if not got.ok:
+          return r
+        value = got.data
+      W.writeColumn(value)
+    if W.err.len > 0:
+      return r
+    i = i + 1
+  result = Row(schemaId: r.schemaId, data: W.finish())
+
 proc buildRow*(s: Schema, values: Table[string, string],
     store: SidecarStore = SidecarStore(), id: RowId = 0'u64,
     flags: uint64 = 0'u64): tuple[ok: bool, data: ByteSeq,
