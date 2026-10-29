@@ -1,6 +1,23 @@
 # Progress
 
-Commit Message: Search: plain stores show live rows only, identity columns left out
+Commit Message: Search: follow sidecar values by an option; typed searches read them
+
+## 2026-10-29 Sidecar values in search
+
+A capped column that is too wide keeps its value in `<store>/.geist-sidecar/`,
+and the row keeps a reference. Search read only the reference text, so a
+predicate on a long value matched nothing, and a typed search raised "sidecar
+payload is missing" (it opened the sidecar under a relative path).
+
+`FollowSidecars` (src/geist/search.nim) now says how a value is read: `fsNever`,
+`fsWhenNamed` (the default of `searchStore`: the fields the query names) and
+`fsAlways` (the default of `openStore`). A typed source reads every value in
+full. A damaged payload is shown as `<sidecar: reason>`, and a typed search
+stops with the reason.
+
+Found in the code, not changed: `sidecarThreshold` (1 KiB by default) is stored
+with the configuration, but no write path calls `shouldExternalise`. Only the
+column policy moves a value out. The sidecar header said otherwise; corrected.
 
 ## 2026-10-29 Search adapter for Null-QueryAPIs
 
