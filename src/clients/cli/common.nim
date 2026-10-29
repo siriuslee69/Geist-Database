@@ -5,10 +5,11 @@
 ## Part of the `geist` command line client; src/clients/geist_cli.nim is
 ## the entry point and says how the parts fit:
 ##
-##   common   options, userconfig, opening a store, printing rows
-##   direct   commands that open the files in this process (--path)
-##   keys     the symmetric keys in the key folder (`geist keys ...`)
-##   tables   export and import: the database as a JSON or TOML file
+##   common    options, userconfig, opening a store, printing rows
+##   direct    commands that open the files in this process (--path)
+##   keys      the symmetric keys in the key folder (`geist keys ...`)
+##   tables    export and import: the database as a JSON or TOML file
+##   sidecars  track, folder and storage: the files beside a database
 ##
 ## Network options (--remote, --hop, --identity, --peer-pin, ...) are NOT
 ## here. They belong to nebel, which strips them from the command line
@@ -18,6 +19,7 @@ import std/[os, strutils]
 
 import runePragmas
 import ../../geist/args
+import ../../geist/storage
 import ../../geist
 
 type
@@ -57,6 +59,18 @@ type
     sealPasswordFile*: string
     binary*: string
     freshIds*: bool
+    ## sidecars/storage/storagePolicy: this run's values for the runtime settings
+    ##   of the same names (`--sidecars on|off`, `--storage a,b`,
+    ##   `--storage-policy priority|speed`). Empty: the [default] value stands.
+    sidecars*: string
+    storage*: string
+    storagePolicy*: string
+    ## megabytes: the size of the write `storage bench` measures (`--mb`).
+    megabytes*: int
+    ## top/suffix: `track` only the files directly in a folder (`--top`), and only
+    ##   names that end with suffix (`--suffix .txt`).
+    top*: bool
+    suffix*: string
     config*: string
     args*: seq[string]
     command*: string
@@ -89,6 +103,14 @@ geist <command> [options]
   --binary hex|escaped    `export`: how bytes and sealed values are written,
                           "486900ff" or "Hi\u0000ÿ"; default hex
   --fresh-ids             `import`: new ids instead of the file's
+  --sidecars on|off       this run only: values may (on) or may not (off) leave
+                          their rows; overrides [default] sidecars
+  --storage "a,b"         this run only: folders for sidecar payloads, preferred
+                          first; overrides [default] storage
+  --storage-policy priority|speed  this run only; overrides [default] storagePolicy
+  --mb <n>                `storage bench`: megabytes written and read, default 16
+  --top                   `track`: only the files directly in the folder
+  --suffix <text>         `track`: only names that end with this, e.g. .txt
   --config <file>         userconfig.toml to read; defaults to the one in
                           the working directory, then ~/.config/geist
 
@@ -137,6 +159,21 @@ commands
                           database from the file's schema when there is
                           none. A row keeps the file's id, so importing
                           twice replaces rather than doubles
+  track <file|folder>     reference a file or a folder where it lies, without
+                          writing it: one row per file with its name, path,
+                          size and a reference. The database needs the columns
+                          name:text,path:text,size:int,file:ref
+                          (make it with: init --schema "name:text,path:text,
+                          size:int,file:ref"). A changed file is refused when
+                          it is read, and the row says so.
+  folder show <dir>       force read: the folder's files and every database's
+                          rows, as text or with --json. No checks, no writes
+  folder adopt <dir>      give a folder without files its two files, so Geist
+                          reads and writes it. Refused when it has files
+  storage list            the drives found, and the storage folders in use,
+                          with their free space and recorded speed
+  storage bench <dir>     measure write and read speed in <dir> (--mb), and
+                          record it in the folder, so the speed policy can use it
   presets                 list configuration presets
   help                    this text
 """
@@ -165,8 +202,8 @@ proc resolvePassword*(o: Options): string {.role: sanitizer,
   result = o.password
 
 const
-  cliFlags*: array[7, string] = ["json", "transposed", "t", "help", "h",
-    "secret", "fresh-ids"]
+  cliFlags*: array[8, string] = ["json", "transposed", "t", "help", "h",
+    "secret", "fresh-ids", "top"]
     ## The options that take NO value; every other option takes one.
 
 proc addWord*(o: var Options, word: string) {.role: truthBuilder, inline,
@@ -188,6 +225,7 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
   result.preset = ""   # "" = whatever configs/default.toml names
   result.limit = 20
   result.slot = 1
+  result.megabytes = 16
   while i < argv.len:
     try:
       step = nextOption(argv, i, cliFlags)
@@ -220,6 +258,12 @@ proc parseOptions*(argv: openArray[string]): Options {.role: parser,
     of "seal-password-file": result.sealPasswordFile = value
     of "binary": result.binary = value
     of "fresh-ids": result.freshIds = true
+    of "sidecars": result.sidecars = value
+    of "storage": result.storage = value
+    of "storage-policy": result.storagePolicy = value
+    of "mb": result.megabytes = parseInt(value)
+    of "top": result.top = true
+    of "suffix": result.suffix = value
     of "config": result.config = value
     of "help", "h": result.command = "help"
     else: fail("unknown option --" & key)
@@ -276,6 +320,48 @@ proc livePath*(o: Options): string {.role: parser,
     sp = storePaths(o)
   result = liveDataPath(sp.dir, sp.name)
 
+proc onOffOf*(word: string): bool {.role: parser, tag: "cli|parsing".} =
+  ## word: "on" or "off". Anything else is refused by name, so a typo cannot pass
+  ## for off.
+  case word
+  of "on":
+    result = true
+  of "off":
+    result = false
+  else:
+    fail("--sidecars takes on or off, got '" & word & "'")
+
+proc policyOf*(word: string): StoragePolicy {.role: parser, tag: "cli|parsing".} =
+  ## word: "priority" or "speed". Anything else is refused by name.
+  case word
+  of "priority":
+    result = spPriority
+  of "speed":
+    result = spSpeed
+  else:
+    fail("--storage-policy takes priority or speed, got '" & word & "'")
+
+proc listOf*(text: string): seq[string] {.role: parser, tag: "cli|parsing".} =
+  ## text: comma-separated values. Blanks are dropped: "a, b,,c" gives a, b, c.
+  for part in text.split(','):
+    if part.strip().len > 0:
+      result.add part.strip()
+
+proc withRunOptions*(o: Options, c: GeistConfig): GeistConfig {.role: configurator,
+    tag: "cli|config|parsing".} =
+  ## o/c: the configuration with this run's typed options put over it. An option
+  ## that was not typed leaves its value in c as it is.
+  result = c
+  if o.sidecars.len > 0:
+    result.sidecars = onOffOf(o.sidecars)
+    if result.sidecars and not sidecarsCompiled:
+      fail("this build has sidecars compiled out, so --sidecars on has no effect; " &
+        "build with [define] sidecars = true")
+  if o.storage.len > 0:
+    result.storagePaths = listOf(o.storage)
+  if o.storagePolicy.len > 0:
+    result.storagePolicy = policyOf(o.storagePolicy)
+
 proc openDirect*(o: Options, schema: Schema = Schema(),
     forWriting: bool = false): Session {.
     role: orchestrator, tag: "cli|db|orchestrator".} =
@@ -296,6 +382,7 @@ proc openDirect*(o: Options, schema: Schema = Schema(),
         else: applyDefaults(geistConfigPreset(o.preset), geistDefaults())
   except ValueError as exc:
     fail(exc.msg)
+  c = withRunOptions(o, c)
   result = openSessionWithSchema(sp.dir, sp.name, schema, c,
     resolvePassword(o), readOnly = not forWriting)
   if forWriting and result.readOnly:

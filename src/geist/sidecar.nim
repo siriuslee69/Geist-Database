@@ -156,8 +156,7 @@ proc writeRootFor*(s: SidecarStore, need: int64): string {.role: parser,
     storagePath = parentDir(r)
     if dirExists(storagePath):
       free[r] = freeSpaceOf(storagePath)
-    if absolutePath(storagePath) in gSpeeds:
-      speeds[r] = gSpeeds[absolutePath(storagePath)]
+      speeds[r] = measuredSpeedOf(storagePath)
   order = orderedByPolicy(s.roots, s.policy, free, uint64(max(need, 0'i64)), speeds)
   if order.len > 0:
     result = order[0]

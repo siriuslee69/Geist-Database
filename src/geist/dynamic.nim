@@ -21,6 +21,8 @@ import ./types
 import ./mapper
 import ./row
 import ./sidecar
+import ./textfile
+import ./crypto/hashwidths
 
 proc slotKindFromName*(s: string): tuple[ok: bool, kind: SlotKind,
     err: string] {.role: parser, tag: "cli|parsing|read".} =
@@ -188,6 +190,32 @@ proc numberBits(k: SlotKind, name, text: string): tuple[bits: uint64,
       (if k == skFloat: "a number" else: "an integer") & ", got '" & text &
       "'"
 
+proc refFromText*(text: string): tuple[ok: bool, data: ByteSeq, err: string] {.
+    role: parser, tag: "cli|db|parsing".} =
+  ## text: what a reference column takes as text.
+  ##
+  ##   ""              no reference: the column holds zero bytes
+  ##   sidecar:<hex>   a payload by its full content hash, as `track` makes them
+  ##
+  ## data: the bytes the column stores, as sidecar.nim's `encodeRef` writes them.
+  const
+    prefix: string = "sidecar:"
+  var
+    hash: ByteSeq = @[]
+  if text.len == 0:
+    result.ok = true
+    return
+  if not text.startsWith(prefix):
+    result.err = "a reference column takes sidecar:<hash>, got '" & text & "'"
+    return
+  hash = unhexText(text[prefix.len .. ^1])
+  if hash.len != fullDigestBytes:
+    result.err = "a sidecar reference needs the full " & $(fullDigestBytes * 2) &
+      "-digit hash, got '" & text & "'"
+    return
+  result.data = encodeRef(Ref(target: rtSidecar, hash: hash))
+  result.ok = true
+
 proc buildRow*(s: Schema, values: Table[string, string],
     store: SidecarStore = SidecarStore(), id: RowId = 0'u64,
     flags: uint64 = 0'u64): tuple[ok: bool, data: ByteSeq,
@@ -207,6 +235,7 @@ proc buildRow*(s: Schema, values: Table[string, string],
     name: string = ""
     text: string = ""
     number: tuple[bits: uint64, err: string] = (0'u64, "")
+    reference: tuple[ok: bool, data: ByteSeq, err: string] = (true, @[], "")
   for key in values.keys:
     if s.slotIndex(key) < 0:
       return (false, @[], "no field '" & key & "' in schema (" &
@@ -223,12 +252,17 @@ proc buildRow*(s: Schema, values: Table[string, string],
     of skInt, skFloat:
       number = numberBits(s.slots[i].kind, name, text)
       W.writeU64(number.bits)
-    of skText, skBytes, skSealed, skRef:
+    of skRef:
+      reference = refFromText(text)
+      W.writeColumn(reference.data)
+    of skText, skBytes, skSealed:
       W.writeColumn(textBytes(text))
     of skNull:
       W.writeColumn(@[])
     if number.err.len > 0:
       return (false, @[], number.err)
+    if not reference.ok:
+      return (false, @[], "field '" & name & "': " & reference.err)
     if W.err.len > 0:
       return (false, @[], W.err)
     i = i + 1

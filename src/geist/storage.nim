@@ -19,6 +19,9 @@
 ##   for the user running Geist. A path whose free space cannot be read is taken
 ##   as having room: the write itself says so if it does not. A path whose
 ##   folder is not there is never used (sidecar.nim, writeRootFor).
+## Def. 3 (recorded speed): a speed test's result, kept in `.geist-speed` INSIDE
+##   the storage path, so the drive keeps its speed wherever it is mounted. A run
+##   reads that file once, the first time it needs the speed of the path.
 
 import std/[os, strutils, tables, times]
 
@@ -26,6 +29,11 @@ when defined(posix):
   import std/posix
 
 import runePragmas
+import ./textfile
+
+const
+  speedFileName*: string = ".geist-speed"
+    ## The recorded speed test of a storage path. Written by `recordSpeed`.
 
 type
   StoragePolicy* {.role: configurator, tag: "appApi|config|types".} = enum
@@ -49,8 +57,8 @@ type
 
 var
   gSpeeds*: Table[string, float] = initTable[string, float]()
-    ## Write speed in MB/s, measured this run, by storage path. Filled by
-    ## `speedTestOf`; the speed policy reads it and never measures by itself.
+    ## Write speed in MB/s by absolute storage path, as this run has read it
+    ## (Def. 3). The speed policy reads it and never measures by itself.
 
 proc freeSpaceOf*(path: string): FreeSpace {.role: parser, tag: "storageIo|read".} =
   ## path: a folder. Its free and total bytes for the user running Geist.
@@ -113,12 +121,51 @@ proc speedTestOf*(path: string, sizeMb: int = 16): SpeedResult {.role: orchestra
     result.writeMBs = float(sizeMb) / max(writeSeconds, 1e-6)
     result.readMBs = float(sizeMb) / max(readSeconds, 1e-6)
     result.ok = true
-    gSpeeds[absolutePath(path)] = result.writeMBs
   except CatchableError as e:
     result.err = "speed test failed in " & path & ": " & e.msg
   finally:
     if fileExists(tmp):
       removeFile(tmp)
+
+proc recordSpeed*(path: string, r: SpeedResult): tuple[ok: bool, err: string] {.
+    role: dataWriter, tag: "storageIo|write".} =
+  ## path/r: keep the result of a speed test in the storage path (Def. 3), so the
+  ## speed policy of later runs can use it. Refused for a failed test, or when the
+  ## folder is not there.
+  var
+    pairs: seq[tuple[key, value: string]] = @[]
+    file: string = path / speedFileName
+    tmp: string = file & ".tmp"
+  if not r.ok:
+    return (false, "a failed speed test is not recorded: " & r.err)
+  if not dirExists(path):
+    return (false, "no folder at " & path & ", so its speed is not recorded")
+  pairs = @[("geist-speed", "1"), ("writeMBs", $r.writeMBs),
+    ("readMBs", $r.readMBs), ("sizeMb", $r.sizeMb)]
+  writeFile(tmp, renderFile(pairs))
+  moveFile(tmp, file)
+  gSpeeds[absolutePath(path)] = r.writeMBs
+  result = (true, "")
+
+proc measuredSpeedOf*(path: string): float {.role: parser, tag: "storageIo|read".} =
+  ## path: a storage path. Its recorded write speed in MB/s, or 0.0 when it was
+  ## never measured or its file does not check out (a speed is advice, so a bad
+  ## file is ignored rather than refused). The file is read once per run.
+  var
+    full: string = absolutePath(path)
+    got: tuple[ok: bool, pairs: Table[string, string], err: string] =
+      (false, initTable[string, string](), "")
+  if full in gSpeeds:
+    return gSpeeds[full]
+  if not fileExists(path / speedFileName):
+    return 0.0
+  got = parseKeyFile(readFile(path / speedFileName))
+  if got.ok and got.pairs.hasKey("writeMBs"):
+    try:
+      result = parseFloat(got.pairs["writeMBs"])
+    except ValueError:
+      result = 0.0
+  gSpeeds[full] = result
 
 proc floatBack(R: var seq[tuple[path: string, mbs: float]], i: int) {.
     role: helper, tag: "appApi|storageIo|read".} =

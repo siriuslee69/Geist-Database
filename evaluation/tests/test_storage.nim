@@ -61,7 +61,30 @@ suite "the speed test":
     check got.writeMBs > 0.0
     check got.readMBs > 0.0
     check countFiles(dir) == 0
-    check gSpeeds[absolutePath(dir)] == got.writeMBs
+    # Measuring records nothing: recording is a separate step, done by bench.
+    check not fileExists(dir / speedFileName)
+
+  # {.testKind: tkUnit.}
+  test "a recorded speed is read back by a later run":
+    var
+      dir = freshDir("geist_t_storage_record")
+      got = speedTestOf(dir, 1)
+    check recordSpeed(dir, got).ok
+    check fileExists(dir / speedFileName)
+    # A later run starts with nothing remembered, and reads the file.
+    gSpeeds.del(absolutePath(dir))
+    check measuredSpeedOf(dir) == got.writeMBs
+
+  # {.testKind: tkEdgeCase.}
+  test "a damaged speed file counts as unmeasured, and a failed test is not recorded":
+    var
+      dir = freshDir("geist_t_storage_damaged")
+      got = speedTestOf(dir, 1)
+    check recordSpeed(dir, got).ok
+    writeFile(dir / speedFileName, "writeMBs = 999\n")
+    gSpeeds.del(absolutePath(dir))
+    check measuredSpeedOf(dir) == 0.0
+    check not recordSpeed(dir, SpeedResult(ok: false, err: "broke")).ok
 
   # {.testKind: tkEdgeCase.}
   test "a speed test refuses a folder that is not there, and makes none":
@@ -172,8 +195,10 @@ suite "several roots":
       rf: Ref
     createDir(slow)
     createDir(fast)
-    gSpeeds[absolutePath(slow)] = 5.0
-    gSpeeds[absolutePath(fast)] = 500.0
+    check recordSpeed(slow, SpeedResult(ok: true, path: slow, sizeMb: 1,
+      writeMBs: 5.0, readMBs: 5.0)).ok
+    check recordSpeed(fast, SpeedResult(ok: true, path: fast, sizeMb: 1,
+      writeMBs: 500.0, readMBs: 500.0)).ok
     rf = store.putSidecar(bytesOf("a payload for the fast disk"))
     check store.storedAt(refLocator(rf)).startsWith(fast)
 

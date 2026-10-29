@@ -20,12 +20,13 @@
 ## carries the library defaults a preset is adjusted by. An option on the
 ## command line always wins over either.
 ##
-## The code is in four parts under src/clients/cli/:
+## The code is in five parts under src/clients/cli/:
 ##
-##   common   options, userconfig, opening a store, printing rows
-##   direct   commands that open the files in this process
-##   keys     the symmetric keys in the key folder (`geist keys ...`)
-##   tables   export and import: the database as a JSON or TOML file
+##   common    options, userconfig, opening a store, printing rows
+##   direct    commands that open the files in this process
+##   keys      the symmetric keys in the key folder (`geist keys ...`)
+##   tables    export and import: the database as a JSON or TOML file
+##   sidecars  track (files kept in place), folder (force read), storage (drives)
 ##
 ## This file holds only the entry point: which part answers which command.
 
@@ -37,6 +38,7 @@ import ./cli/common
 import ./cli/direct
 import ./cli/keys
 import ./cli/tables
+import ./cli/sidecars
 
 export common
 
@@ -52,11 +54,13 @@ type
     run*: proc(o: Options) {.nimcall.}
 
 const
-  anyCommands*: array[3, Command] = [
+  anyCommands*: array[5, Command] = [
     Command(name: "convert", run: cmdConvert),
     Command(name: "presets", run: cmdPresets),
-    Command(name: "keys", run: cmdKeys)]
-  directOnly*: array[22, Command] = [
+    Command(name: "keys", run: cmdKeys),
+    Command(name: "folder", run: cmdFolder),
+    Command(name: "storage", run: cmdStorage)]
+  directOnly*: array[23, Command] = [
     Command(name: "inspect", run: cmdInspect),
     Command(name: "verify", run: cmdVerify),
     Command(name: "schema", run: cmdSchema),
@@ -78,7 +82,8 @@ const
     Command(name: "restore", run: cmdRestore),
     Command(name: "rekey", run: cmdRekey),
     Command(name: "export", run: cmdExport),
-    Command(name: "import", run: cmdImport)]
+    Command(name: "import", run: cmdImport),
+    Command(name: "track", run: cmdTrack)]
 
 proc commandAt*(C: openArray[Command], name: string): int {.role: parser,
     tag: "cli|parsing".} =
