@@ -30,9 +30,9 @@ import std/[os, strutils]
 
 const
   repoRoot: string = thisDir()
-  pinnedDeps: array[6, string] = ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
+  pinnedDeps: array[7, string] = ["Fylgia-Utils", "SIMD-Nexus", "Tyr-Crypto",
     "Eir-CompressionAndECC", "nimsimd",
-    "Otter-RepoEvaluation"]
+    "Otter-RepoEvaluation", "Null-QueryAPIs"]
 
 proc addPathIfExists(p: string) =
   ## p: a folder; put on the Nim path when it is there.

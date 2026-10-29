@@ -33,3 +33,6 @@
 [submodule "submodules/nimsimd"]
 	path = submodules/nimsimd
 	url = https://github.com/guzba/nimsimd.git
+[submodule "submodules/Null-QueryAPIs"]
+	path = submodules/Null-QueryAPIs
+	url = /mnt/temp/CodingMain/Null-QueryAPIs
