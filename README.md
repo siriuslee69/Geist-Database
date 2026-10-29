@@ -1199,8 +1199,12 @@ surface:
 ```text
   section               key                 default      meaning
   -------------------   ------------------  -----------  -------
+  [default]             sidecarThreshold    1024         bytes before a value moves out
+  [default]             sidecars            true         off: nothing new leaves its row
+  [default]             follow              "named"      how search reads a sidecar value
+  [default]             storage             []           folders for sidecar payloads, preferred first
+  [default]             storagePolicy       "priority"   "priority" or "speed"; docs/SIDECARS.md, section 3
   [runtime.storage]     preset              "app"        starting preset name
-  [runtime.storage]     sidecarThreshold    1024         bytes before a value moves out
   [runtime.storage]     rowIdentity         (unset)      force id on/off; unset keeps the preset
   [runtime.storage]     transpose           "none"       column copy: none / onSave / interval / manual
   [runtime.storage]     transposeEverySeconds  0         rebuild window for "interval", in seconds

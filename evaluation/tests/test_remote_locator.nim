@@ -70,8 +70,8 @@ suite "a payload held elsewhere":
     var
       root = getTempDir() / "geist_t_remote_read"
       payload = bytesOf("held on the nas, not here")
-      store: SidecarStore
-      rf: Ref
+      store: SidecarStore = SidecarStore()
+      rf: Ref = Ref()
     removeDir(root)
     createDir(root)
     store = initSidecarStore(root / ".geist-sidecar")
@@ -94,8 +94,8 @@ suite "a payload held elsewhere":
     var
       root = getTempDir() / "geist_t_remote_nohook"
       payload = bytesOf("held elsewhere")
-      store: SidecarStore
-      rf: Ref
+      store: SidecarStore = SidecarStore()
+      rf: Ref = Ref()
     removeDir(root)
     createDir(root)
     store = initSidecarStore(root / ".geist-sidecar")
@@ -114,9 +114,9 @@ suite "dropping a local payload":
     var
       root = getTempDir() / "geist_t_remote_drop"
       payload = bytesOf("kept until a locator names it")
-      store: SidecarStore
-      rf: Ref
-      dropped: tuple[ok: bool, err: string]
+      store: SidecarStore = SidecarStore()
+      rf: Ref = Ref()
+      dropped: tuple[ok: bool, err: string] = (false, "")
     removeDir(root)
     createDir(root)
     store = initSidecarStore(root / ".geist-sidecar")

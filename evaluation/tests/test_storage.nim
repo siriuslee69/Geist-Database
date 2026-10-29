@@ -149,7 +149,7 @@ suite "several roots":
       first = base / "first"
       second = base / "second"
       store: SidecarStore = initSidecarRoots(@[first / "p", second / "p"], 32'u32)
-      rf: Ref
+      rf: Ref = Ref()
       moved: string = ""
     createDir(first)
     createDir(second)
@@ -169,7 +169,7 @@ suite "several roots":
       here = base / "here"
       store: SidecarStore = initSidecarRoots(@[base / "not-plugged-in" / "p",
         here / "p"], 32'u32)
-      rf: Ref
+      rf: Ref = Ref()
     createDir(here)
     rf = store.putSidecar(bytesOf("a payload long enough to matter"))
     check not dirExists(base / "not-plugged-in")
@@ -192,7 +192,7 @@ suite "several roots":
       fast = base / "fast"
       store: SidecarStore = initSidecarRoots(@[slow / "p", fast / "p"], 32'u32,
         hkBlake3, spSpeed)
-      rf: Ref
+      rf: Ref = Ref()
     createDir(slow)
     createDir(fast)
     check recordSpeed(slow, SpeedResult(ok: true, path: slow, sizeMb: 1,

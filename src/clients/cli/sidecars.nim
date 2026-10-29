@@ -134,8 +134,11 @@ proc roomText(r: FreeSpace): string {.role: helper, tag: "formatting".} =
 proc printStorage(o: Options) {.role: actor, tag: "cli|storageIo|read".} =
   ## o: lists the drives found, and the storage folders in use, with room and speed.
   var
-    paths: seq[string] = if o.storage.len > 0: listOf(o.storage)
-      else: geistDefaults().storagePaths
+    paths: seq[string] = @[]
+  if o.storage.len > 0:
+    paths = listOf(o.storage)
+  else:
+    paths = geistDefaults().storagePaths
   echo "drives found (the first mount point of each disk):"
   for d in listDrives():
     echo "  ", d, "   ", roomText(freeSpaceOf(d)), "   ", speedText(measuredSpeedOf(d))

@@ -1,6 +1,63 @@
 # Progress
 
-Commit Message: Search: follow sidecar values by an option; typed searches read them
+Commit Message: Docs: sidecars, storage paths, tracking and remote payloads; README defaults
+
+## 2026-10-30 Storage paths, tracking, CLI, remote locators, wire rows
+
+What was asked: a sidecar threshold; a `[default]` table of settings that may
+change while the program runs; storage paths with a speed test and a priority
+list; tracking files in place; folder files that fail closed; sidecars on or
+off; payloads kept on another machine.
+
+Built (commits fd9586e, ce2ddc3, a987b66, ffe2ed2):
+
+- `[default]` in configs/default.toml: sidecarThreshold, sidecars, follow,
+  storage, storagePolicy. One command may override them: `--sidecars`,
+  `--storage`, `--storage-policy`.
+- Storage paths (src/geist/storage.nim, sidecar.nim): one folder per store
+  inside each path, named `<store>-<12 hex of the store's full path>`. A path
+  whose parent folder is missing is never written to. Speeds are recorded in
+  `.geist-speed` inside the path and read once per run.
+- `track` (src/geist/track.nim) and the CLI commands `track`, `folder show|adopt`,
+  `storage list|bench` (src/clients/cli/sidecars.nim).
+- Remote locators (sidecar.nim): kind `remote` with peer, signer and signature
+  text; the fetch is a hook (`gRemoteFetch`) that nebel installs.
+- `wireRow` (dynamic.nim): a row that leaves for a peer carries its long text.
+
+Found and fixed while building:
+
+- The sidecar folder was named after the store's base name. Two stores with the
+  same base name (`main` in two folders) shared it, and one store's sweep would
+  delete the other's payloads. The name now carries a hash of the full path.
+- A sweep could delete the payloads of other databases in the same folder. It
+  now refuses when a folder holds more than one database.
+- writeRootFor measured the nearest existing parent of a storage path, so an
+  unplugged drive could be written into. A root is used only when its parent
+  exists.
+- buildRow stored a `ref` value as plain text bytes. It now takes
+  `sidecar:<hash>` and stores the encoded reference.
+- The speed policy looked up speeds by root, but speed tests record by path.
+  Both are keyed by the absolute storage path now.
+- With sidecars on in the Nebel build, a reply carried `<sidecar ...>` in place
+  of a 200 KB text: test_daemon_live failed. `wireRow` writes variable values
+  back in. Capped values and references still go out as references (see
+  docs/SIDECARS.md, section 9).
+
+Corrected: the note in the 2026-10-29 section below says that no write path
+reads `sidecarThreshold`. That was true then. row.nim reads it now
+(`shouldExternalise`) for variable and capped columns.
+
+Not done:
+
+- Geist's own CLI cannot fetch a remote payload: it has no hook. Reads of such
+  a payload go through nebel, which installs the hook.
+- Payloads above 8 MiB (nebel Def. 4) need a streaming transfer, which does not
+  exist yet.
+- An empty `ref` cell reads as a reference to an all-zero hash, because the
+  first member of RefTarget is rtSidecar and zero bytes decode as it. Fixing it
+  changes the stored format, so it waits for a format bump.
+- Moving a store folder leaves its payloads in storage paths behind (SIDECARS.md,
+  section 10). Reads of those then fail, loudly.
 
 ## 2026-10-29 Sidecar values in search
 

@@ -31,10 +31,10 @@ suite "a row on the wire":
     var
       root = getTempDir() / "geist_t_wire_text"
       long = repeat("w", 3000)
-      store: SidecarStore
-      schema: Schema
-      built: tuple[ok: bool, data: ByteSeq, err: string]
-      wire: Row
+      store: SidecarStore = SidecarStore()
+      schema: Schema = Schema()
+      built: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
+      wire: Row = Row()
     removeDir(root)
     createDir(root)
     store = storeIn(root)
@@ -51,10 +51,10 @@ suite "a row on the wire":
   test "a row with nothing in a sidecar goes out unchanged":
     var
       root = getTempDir() / "geist_t_wire_plain"
-      store: SidecarStore
-      schema: Schema
-      built: tuple[ok: bool, data: ByteSeq, err: string]
-      wire: Row
+      store: SidecarStore = SidecarStore()
+      schema: Schema = Schema()
+      built: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
+      wire: Row = Row()
     removeDir(root)
     createDir(root)
     store = storeIn(root)
@@ -69,10 +69,10 @@ suite "what stays a reference":
   test "a reference column stays a reference, while the text beside it is written back":
     var
       root = getTempDir() / "geist_t_wire_ref"
-      store: SidecarStore
-      schema: Schema
-      built: tuple[ok: bool, data: ByteSeq, err: string]
-      wire: Row
+      store: SidecarStore = SidecarStore()
+      schema: Schema = Schema()
+      built: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
+      wire: Row = Row()
       hex = newString(64)
     removeDir(root)
     createDir(root)
@@ -92,10 +92,10 @@ suite "what stays a reference":
   test "a payload that cannot be read stays a reference, and is not guessed":
     var
       root = getTempDir() / "geist_t_wire_gone"
-      store: SidecarStore
-      schema: Schema
-      built: tuple[ok: bool, data: ByteSeq, err: string]
-      wire: Row
+      store: SidecarStore = SidecarStore()
+      schema: Schema = Schema()
+      built: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
+      wire: Row = Row()
     removeDir(root)
     createDir(root)
     store = storeIn(root)
