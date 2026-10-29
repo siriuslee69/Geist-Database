@@ -37,6 +37,7 @@ import ./format
 import ./crypto/hashing
 import ./seek
 import ./dynamic
+import ./textfile
 
 const
   folderVersionName*: string = "geist.version"
@@ -77,72 +78,6 @@ type
     found*: bool
     params*: StoreParams
     err*: string
-
-proc hexText(A: openArray[uint8]): string {.role: helper, tag: "formatting|read".} =
-  ## A: bytes rendered as lowercase hex.
-  const digits = "0123456789abcdef"
-  var
-    i: int = 0
-  result = newString(A.len * 2)
-  while i < A.len:
-    result[i * 2] = digits[int(A[i] shr 4)]
-    result[i * 2 + 1] = digits[int(A[i] and 0x0F'u8)]
-    i = i + 1
-
-proc digestOf*(body: string): string {.role: helper, tag: "cryptoBoundary|read".} =
-  ## body: the text a file carries above its digest line. Its hash, in hex.
-  var
-    bytes: ByteSeq = cast[ByteSeq](body)
-  result = hexText(geistHash(hkBlake3, bytes, 32))
-
-proc renderFile(pairs: seq[tuple[key, value: string]]): string {.
-    role: helper, tag: "formatting|write".} =
-  ## pairs: the key/value lines, in order. Returns the file text, digest last.
-  var
-    body: string = ""
-  for p in pairs:
-    body.add p.key & " = " & p.value & "\n"
-  result = body & "digest = " & digestOf(body) & "\n"
-
-proc splitFile(text: string): tuple[ok: bool, pairs: Table[string, string],
-    err: string] {.role: parser, tag: "formatting|read".} =
-  ## text: a folder or params file. The digest must be the last line and must
-  ## match the lines above it. Returns the key/value pairs, or why not.
-  var
-    lines: seq[string] = text.splitLines()
-    body: string = ""
-    stated: string = ""
-    i: int = 0
-    eq: int = -1
-    key: string = ""
-    value: string = ""
-  result.pairs = initTable[string, string]()
-  while lines.len > 0 and lines[^1].strip().len == 0:
-    lines.setLen(lines.len - 1)
-  if lines.len == 0:
-    result.err = "the file is empty"
-    return
-  if not lines[^1].startsWith("digest = "):
-    result.err = "the file does not end with a digest line"
-    return
-  stated = lines[^1]["digest = ".len .. ^1].strip()
-  while i < lines.len - 1:
-    body.add lines[i] & "\n"
-    i = i + 1
-  if digestOf(body) != stated:
-    result.err = "the digest does not match the file: it was changed or damaged"
-    return
-  for line in lines[0 .. ^2]:
-    eq = line.find(" = ")
-    if line.strip().len == 0 or line.startsWith("#"):
-      continue
-    if eq <= 0:
-      result.err = "a line is not 'key = value': " & line
-      return
-    key = line[0 ..< eq].strip()
-    value = line[eq + 3 .. ^1].strip().strip(chars = {'"'})
-    result.pairs[key] = value
-  result.ok = true
 
 proc hasDatabase(dir: string): bool {.role: parser, tag: "storageIo|read".} =
   ## dir: true when the folder already holds a database file or a params file.
@@ -210,7 +145,7 @@ proc checkFolder*(dir: string, forWrite: bool): FolderCheck {.role: parser,
     result.err = "the folder " & dir & " has one of " & folderVersionName & " and " &
       folderPermissionsName & " but not both, so it is refused"
     return
-  version = splitFile(readFile(files.version))
+  version = parseKeyFile(readFile(files.version))
   if not version.ok:
     result.err = folderVersionName & ": " & version.err
     return
@@ -226,7 +161,7 @@ proc checkFolder*(dir: string, forWrite: bool): FolderCheck {.role: parser,
     result.err = "the folder uses format " & $format & ", newer than this build " &
       "reads (" & $int(geistFormatVersion) & "); refused"
     return
-  perms = splitFile(readFile(files.permissions))
+  perms = parseKeyFile(readFile(files.permissions))
   if not perms.ok:
     result.err = folderPermissionsName & ": " & perms.err
     return
@@ -333,7 +268,7 @@ proc loadParams*(dir, name: string): ParamsLoad {.role: parser, tag: "storageIo|
     result.ok = true
     return
   result.found = true
-  got = splitFile(readFile(path))
+  got = parseKeyFile(readFile(path))
   if not got.ok:
     result.err = name & paramsSuffix & ": " & got.err
     return

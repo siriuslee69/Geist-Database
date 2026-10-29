@@ -48,6 +48,10 @@ proc externalRefsOf(s: Schema, raw: openArray[uint8],
   while j < s.slots.len:
     if s.isExternal(raw, offsets, j):
       into.add refLocator(decodeRef(s.rawAt(raw, offsets, j)))
+    elif s.slots[j].kind == skRef and offsets[j] >= 0 and
+        decodeRef(s.rawAt(raw, offsets, j)).target == rtSidecar:
+      # A reference column names its payload directly, so the payload is in use.
+      into.add refLocator(decodeRef(s.rawAt(raw, offsets, j)))
     j = j + 1
 
 proc sidecarRefsIn(s: Schema, C: ClusterBuild,
@@ -169,6 +173,9 @@ proc sweepSidecar*(S: var Session): tuple[ok: bool, removed: int,
   for path in walkDirRec(S.sidecarStore.root):
     # The locator is the fan-out path, which is how a reference names it.
     locator = path.relativePath(S.sidecarStore.root).replace('\\', '/')
+    # A locator is reachable exactly when the payload it names is reachable.
+    if locator.endsWith(locatorSuffix):
+      locator = locator[0 ..< locator.len - locatorSuffix.len]
     if locator in reachable:
       continue
     try:

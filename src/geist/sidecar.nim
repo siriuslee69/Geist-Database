@@ -21,12 +21,15 @@
 ## never accumulates more than 256 children at either level and identical
 ## payloads deduplicate for free.
 
-import std/os
+import std/[os, strutils, tables]
+
+import tyr
 
 import runePragmas
 import ./types
 import ./crypto/hashing
 import ./format
+import ./textfile
 
 const
   sidecarFolderName*: string = ".geist-sidecar"
@@ -152,6 +155,124 @@ proc putSidecar*(S: var SidecarStore, A: openArray[uint8]): Ref {.
   S.writes = S.writes + 1'u32
   S.bytesWritten = S.bytesWritten + uint64(A.len)
 
+const
+  locatorSuffix*: string = ".locator"
+    ## A locator names a payload that is NOT in the sidecar folder: a tracked
+    ## file, where it lies. It sits beside where the payload would be.
+
+type
+  SidecarLocator* {.role: truthState, tag: "sidecar|types".} = object
+    ## kind: "path", a tracked file read where it lies. Another kind names a
+    ##   payload held elsewhere; reading that needs a network layer.
+    ## hash: the content hash the row keeps. The payload must hash to it.
+    ## size: bytes when the file was tracked. A different size means it changed.
+    ## name: what the file is called, for a person reading the listing.
+    ## target: the path, for kind "path".
+    kind*: string
+    hash*: ByteSeq
+    size*: int64
+    name*: string
+    target*: string
+
+proc locatorPathOf*(s: SidecarStore, hash: ByteSeq): string {.role: helper,
+    tag: "sidecar|storageIo".} =
+  ## s/hash: where the locator for this content hash is kept.
+  result = s.sidecarPath(sidecarLocator(hash) & locatorSuffix)
+
+proc locatorText*(l: SidecarLocator): string {.role: helper,
+    tag: "sidecar|write".} =
+  ## l: the locator as text, with its digest last (see textfile.nim).
+  var
+    pairs: seq[tuple[key, value: string]] = @[
+      ("geist-locator", "1"), ("kind", l.kind), ("hash", hexText(l.hash)),
+      ("size", $l.size), ("name", l.name), ("target", l.target)]
+  result = renderFile(pairs)
+
+proc parseLocator*(text: string): tuple[ok: bool, loc: SidecarLocator,
+    err: string] {.role: parser, tag: "sidecar|read".} =
+  ## text: a locator file. Refused when the digest does not match or a field is
+  ## missing: a locator that cannot be trusted names nothing.
+  var
+    got: tuple[ok: bool, pairs: Table[string, string], err: string] =
+      parseKeyFile(text)
+  if not got.ok:
+    result.err = got.err
+    return
+  for key in ["kind", "hash", "size", "target"]:
+    if not got.pairs.hasKey(key):
+      result.err = "a locator must say " & key
+      return
+  result.loc.kind = got.pairs["kind"]
+  result.loc.hash = unhexText(got.pairs["hash"])
+  if result.loc.hash.len == 0:
+    result.err = "a locator's hash is not hex"
+    return
+  try:
+    result.loc.size = parseBiggestInt(got.pairs["size"])
+  except ValueError:
+    result.err = "a locator's size is not a number"
+    return
+  result.loc.name = got.pairs.getOrDefault("name", "")
+  result.loc.target = got.pairs["target"]
+  result.ok = true
+
+proc putLocator*(s: SidecarStore, l: SidecarLocator): tuple[ok: bool, err: string] {.
+    role: dataWriter, tag: "sidecar|storageIo|write".} =
+  ## s/l: write the locator for a payload that lives outside the sidecar folder.
+  ## Written beside its name and renamed into place, so a crash leaves the old file
+  ## or the new one. Refused while sidecars are off for this store.
+  var
+    path: string = locatorPathOf(s, l.hash)
+    tmp: string = path & ".tmp"
+  if not s.canEscape():
+    return (false, "sidecars are off for this store, so no locator is written")
+  createDir(parentDir(path))
+  writeFile(tmp, locatorText(l))
+  moveFile(tmp, path)
+  result = (true, "")
+
+proc hashFileFor*(k: HashKind, path: string): ByteSeq {.role: parser,
+    tag: "cryptoBoundary|storageIo|read".} =
+  ## k/path: the content hash of a file under family k. BLAKE3 is streamed, so a
+  ## large file is hashed without being read whole. The other families read it.
+  if k == hkBlake3:
+    result = blake3HashFile(path, fullDigestBytes)
+  else:
+    result = geistHash(k, cast[ByteSeq](readFile(path)), fullDigestBytes)
+
+proc readLocated*(s: SidecarStore, r: Ref, lf: string): tuple[ok: bool,
+    data: ByteSeq, err: string] {.role: dataFetcher, tag: "sidecar|storageIo|read".} =
+  ## s/r/lf: the payload of a reference whose locator is `lf`. Its locator names
+  ## where the bytes lie, and they are verified against the row's hash before they
+  ## are returned. A file that changed since it was tracked is refused.
+  var
+    parsed: tuple[ok: bool, loc: SidecarLocator, err: string] =
+      parseLocator(readFile(lf))
+    check: ByteSeq = @[]
+  if not parsed.ok:
+    result.err = "locator " & lf & " cannot be trusted: " & parsed.err
+    return
+  if parsed.loc.hash != r.hash:
+    result.err = "locator " & lf & " names another payload than the row does"
+    return
+  if parsed.loc.kind != "path":
+    result.err = "the payload is held by " & parsed.loc.target &
+      "; reading it over the network needs nebel"
+    return
+  if not fileExists(parsed.loc.target):
+    result.err = "tracked file is missing: " & parsed.loc.target
+    return
+  if getFileSize(parsed.loc.target) != parsed.loc.size:
+    result.err = "tracked file changed size since it was tracked: " & parsed.loc.target
+    return
+  check = hashFileFor(s.hash, parsed.loc.target)
+  if not constantTimeEq(check, r.hash):
+    result.err = "tracked file failed hash verification (its content changed): " &
+      parsed.loc.target
+    return
+  result.data = cast[ByteSeq](readFile(parsed.loc.target))
+  result.ok = true
+
 proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
     err: string] {.role: dataFetcher,
     tag: "sidecar|storageIo|read".} =
@@ -171,6 +292,8 @@ proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
   locator = r.refLocator()
   full = s.sidecarPath(locator)
   if not fileExists(full):
+    if fileExists(s.sidecarPath(locator & locatorSuffix)):
+      return readLocated(s, r, s.sidecarPath(locator & locatorSuffix))
     return (false, @[], "sidecar payload is missing: " & locator)
   raw = readFile(full)
   result.data = cast[ByteSeq](raw)
