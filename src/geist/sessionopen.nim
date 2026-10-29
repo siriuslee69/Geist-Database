@@ -25,6 +25,7 @@ import ./mapper
 import ./rowid
 import ./row
 import ./sidecar
+import ./folder
 import ./store
 import ./config
 import ./backup
@@ -618,10 +619,33 @@ proc openSessionWithSchema*(baseDir, baseName: string, schemaIn: Schema,
     validated: tuple[ok: bool, err: string] = (false, "")
     claimed: tuple[ok: bool, lease: Lease, err: string] =
       (false, default(Lease), "")
+    folderCheck: FolderCheck = default(FolderCheck)
+    paramsLoaded: ParamsLoad = default(ParamsLoad)
   result.config = normalizeGeistConfig(c)
   validated = validateGeistConfig(result.config)
   if not validated.ok:
     raise newException(ValueError, validated.err)
+  # Fail closed: a folder whose files do not validate is neither read nor written.
+  folderCheck = checkFolder(baseDir, forWrite = not readOnly)
+  if not folderCheck.ok:
+    raise newException(IOError, folderCheck.err)
+  if folderCheck.fresh and not readOnly:
+    writeFolderFiles(baseDir, FolderPolicy(read: true, write: true, sidecars: true))
+  # The store decides how its own bytes are read: its parameters file wins over
+  # the reader's preset. A database made before parameters existed keeps the
+  # reader's values, as it always did.
+  paramsLoaded = loadParams(baseDir, baseName)
+  if not paramsLoaded.ok:
+    raise newException(IOError, paramsLoaded.err)
+  if paramsLoaded.found:
+    result.config = applyParams(result.config, paramsLoaded.params)
+    validated = validateGeistConfig(result.config)
+    if not validated.ok:
+      raise newException(ValueError, validated.err)
+  elif not readOnly and not storeHasData(baseDir, baseName):
+    saveParams(baseDir, baseName, result.config)
+  if not folderCheck.policy.sidecars:
+    result.config.sidecars = false
   result.encrypted = result.config.cipher != ckNone
   if result.encrypted and password.len == 0:
     raise newException(ValueError, result.config.name &

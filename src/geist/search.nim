@@ -65,6 +65,7 @@ import ./sessioncore
 import ./rowid
 import ./store
 import ./settings
+import ./folder
 
 const
   storeBaseName*: string = "main"
@@ -298,10 +299,24 @@ proc openStore*(dir: string, follow: FollowSidecars = defaultFollow(),
   ## Never takes the write lease: a search must not block a running writer.
   ## The default follows every sidecar, because a source does not know the
   ## query it will be given. searchStore asks for the fields a query names.
-  var path = liveDataPath(dir, storeBaseName)
+  var
+    path: string = liveDataPath(dir, storeBaseName)
+    folderCheck: FolderCheck = default(FolderCheck)
+    paramsLoaded: ParamsLoad = default(ParamsLoad)
+    readCfg: GeistConfig = cfg
   if not fileExists(path):
     return (false, nil, "no store at " & dir)
-  result = seekSource(path, follow, cfg, named)
+  # Fail closed, as an open of a session does: a folder that does not validate is
+  # not read. The store's own parameters decide how its values are checked.
+  folderCheck = checkFolder(dir, forWrite = false)
+  if not folderCheck.ok:
+    return (false, nil, folderCheck.err)
+  paramsLoaded = loadParams(dir, storeBaseName)
+  if not paramsLoaded.ok:
+    return (false, nil, paramsLoaded.err)
+  if paramsLoaded.found:
+    readCfg = applyParams(cfg, paramsLoaded.params)
+  result = seekSource(path, follow, readCfg, named)
 
 proc openStoreFor*(dir: string, q: nq.NullQuery, follow: FollowSidecars = defaultFollow(),
     cfg: GeistConfig = appConfig()): nq.NullOpen {.role: orchestrator,

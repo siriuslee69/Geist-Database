@@ -13,6 +13,7 @@ import runePragmas
 import ./types
 import ./row
 import ./sidecar
+import ./folder
 import ./store
 import ./backup
 import ./keys
@@ -93,6 +94,11 @@ proc refsInSlot(s: Session, slot: int, src: openArray[string]): tuple[
     removeDir(scratch)
     createDir(scratch)
     copyFile(src[0], g.dataPath)
+    # The scratch copy belongs to the same folder, so it carries the folder's
+    # files and parameters too; without them the copy would fail its own check.
+    for f in [folderVersionName, folderPermissionsName, s.baseName & paramsSuffix]:
+      if fileExists(s.baseDir / f):
+        copyFile(s.baseDir / f, scratch / f)
     if s.encrypted:
       copyFile(src[1], g.keyPath)
       copyFile(src[2], g.ledgerPath)
