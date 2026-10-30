@@ -38,18 +38,23 @@ Def. 5 (sweep)        deletes every payload that no live row and no backup
                       the payload. Refused when the folder holds more than one
                       database, because they would delete each other's files.
 
-Def. 6 (note)         a file  <hash><suffix>  beside a payload, put there by a
-                      program with leaveNote. The payload's own file is removed
-                      in the same step. Geist keeps a note while its payload is
-                      referenced, and does not read what it says.
+Def. 6 (note)         a file  <hash>.note  beside a payload, put there by a
+                      program with leaveNote. It is a signed note (trust.nim): a
+                      list of fields and a signature. The payload's own file is
+                      removed in the same step. Geist reads the note, grades its
+                      signature (Def. 9) and keeps it while its payload is used.
 
 Def. 7 (provider)     a function a program installs (gSidecarProvider). When a
-                      payload has no file in any root, and no locator names one,
-                      Geist asks the provider for its bytes. Geist checks them
-                      against the row's hash; a provider that returns other bytes
-                      is refused.
+                      payload has no file and no locator, Geist asks the provider
+                      for its bytes, passing the note and its grade. Geist checks
+                      the bytes against the row's hash; other bytes are refused.
 
 Def. 8 (fail closed)  when a check cannot be made, Geist refuses. See section 5.
+
+Def. 9 (grade)        how far a note is believed: trusted (every trusted key of its
+                      signer verifies), unsigned (no signature, or a signer no
+                      trusted key names), bad (a part does not verify, or is
+                      missing), none (no note). Section 6 gives what each allows.
 ```
 
 ## 2. Where the files go
@@ -63,7 +68,7 @@ Def. 8 (fail closed)  when a check cannot be made, Geist refuses. See section 5.
   |-- .geist-sidecar/        the fallback folder, always last
   |     ab/cd/abcd...        a payload
   |     ab/cd/abef...locator a locator (a tracked file, Def. 4)
-  |     ab/cd/abcd....offset a note (Def. 6), its payload is elsewhere
+  |     ab/cd/abcd....note   a signed note (Def. 6), its payload is elsewhere
   |
   storage path  /mnt/fast/                       (from [default] storage)
   |-- notes-3fa19c02d7e1.geist-sidecar/          one folder per store
@@ -140,18 +145,20 @@ needs to see what is there.
 `geist folder adopt <dir>` gives a folder without files its two files. It is
 refused when the folder already has files, so it can never replace a check.
 
-## 6. Payloads taken out of the folder
+## 6. Payloads taken out of the folder, and trusted notes
 
-A program may take a payload out of the folder and leave a note in its place
-(Def. 6). Later, a read finds the row, finds no file for the payload, and asks
-the provider (Def. 7) for the bytes:
+A program may take a payload out of the folder and leave a signed note in its place
+(Def. 6). A read then finds the row, finds no file, and reads the note:
 
 ```
   Geist reads a row
      |
-     |  the payload file is here?      -> read it, check the hash
-     |  no file, but a locator?        -> read the tracked file, check the hash
-     |  no file, no locator?           -> ask the provider (if one is installed)
+     |  the payload file is here?       -> read it, check the hash
+     |  no file, a tracked locator?     -> read the tracked file, check the hash
+     |  no file, a note?               -> read the note; grade its signature
+     |        bad                       -> refuse
+     |        unsigned / no note        -> refuse, unless [default] unsafeRetrieval
+     |        trusted                   -> ask the provider (if one is installed)
      v
   the provider returns bytes, or says why not
      |
@@ -159,17 +166,46 @@ the provider (Def. 7) for the bytes:
   Geist checks the bytes against the row's hash, whatever came back
 ```
 
-Geist does not know what the note says, or where the provider gets the bytes.
-The provider is a hook a program installs. Without one, a missing payload is
-an error that says no provider is installed. Nebel uses both: its page
-`nebel/docs/remote_sidecars.md` describes the note, the signature, and the
-holder that keeps the bytes.
+The grade comes from the trusted keys file (`[default] trustedKeys`, default
+`<config>/geist/trusted.keys`), one line per key: `signer algorithm public-key-hex`.
+Geist checks each part of the note's signature with Tyr. Every trusted key of the
+signer must have a part that verifies over the note's fields (Def. 1 and 2 in
+`src/geist/trust.nim`).
+
+| grade     | refused?                                   | counted as unsafe? |
+|-----------|--------------------------------------------|--------------------|
+| trusted   | no                                         | no                 |
+| unsigned  | yes, unless `unsafeRetrieval = true`       | yes, when allowed  |
+| none      | yes, unless `unsafeRetrieval = true`       | yes, when allowed  |
+| bad       | always                                     | -                  |
+
+A trusted keys file that cannot be read refuses every note. Geist does not know what
+a note's fields mean, and does not know where the provider gets the bytes. An unsafe
+read is counted in `gUnsafeReads`, so a tool can report it.
+
+## 6a. Versions and metadata of a folder
+
+A program that keeps data in a Geist folder can record its version and a value in the
+folder's own version file, beside Geist's lines:
+
+```
+  setFolderVersion(dir, "nebel", 1)     version.nebel = 1
+  folderVersionOf(dir, "nebel")         1, or 0 when none
+  setFolderMeta(dir, "made-by", "...")  meta.made-by = ...
+  folderMetaOf(dir, "made-by")
+```
+
+Both write only after the folder check, and fail closed: a folder whose files do not
+check is not changed. Geist's own lines (format, library, digest) are not touched.
+Nebel uses this to mark its databases (nebel `nebeldb.nim`).
 
 ## 7. Settings
 
 ```
   [default] (may change while the program runs)
     sidecarThreshold = 1024      bytes at or above which a value moves
+    unsafeRetrieval = false      fetch a payload on an unsigned note, or with no note
+    trustedKeys = ""            the trusted keys file; "" is the default place
     sidecars = true              off: nothing new leaves its row
     follow = "named"             how search reads a sidecar value
     storage = []                 storage paths, preferred first

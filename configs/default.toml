@@ -108,6 +108,15 @@ follow = "named"
 #   speed      the fastest MEASURED folder with room; unmeasured folders come last
 # storagePolicy = "priority"
 
+# A payload that a note names, or has no note for, is fetched only when the note is
+# trusted. Turn this on to fetch by hash alone, from a note that is unsigned or none at
+# all (counted as unsafe). A signature that does not verify is always refused.
+# unsafeRetrieval = false
+
+# The trusted keys file: one line per key, "signer algorithm public-key-hex".
+# "" means <config>/geist/trusted.keys.
+# trustedKeys = ""
+
 [runtime.storage]
 # Which storage preset openGeist uses when a caller names none.
 #

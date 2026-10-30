@@ -1,6 +1,42 @@
 # Progress
 
-Commit Message: Sidecars: Geist knows notes and a provider, not remote payloads
+Commit Message: Trust: signed notes are checked against a trusted keys file; unsafe retrieval is a setting
+
+## 2026-10-30 Trusted notes, unsafe retrieval, folder versions
+
+What was asked: Geist checks the signatures of notes against a trusted keys file;
+a payload may be fetched by hash alone when the note is unsigned, as a setting;
+Geist can record a program's version and a value in a folder, so nebel can mark
+its databases.
+
+Built (commit 9425bd4):
+
+- `src/geist/trust.nim`: the trusted keys file (`signer algorithm hex` per line),
+  the signed note (fields, a signature per trusted key, the signed text rebuilt from
+  the fields), and the grade of a note: trusted, unsigned, bad, none. Signatures
+  are checked with Tyr, the same library nebel signs with.
+- `src/geist/sidecar.nim`: `leaveNote(store, hash, text)` writes `<hash>.note`. The
+  provider gets the parsed note and its grade. A bad signature is refused always; an
+  unsigned note or no note is refused unless `unsafeRetrieval`; each such read is
+  counted in `gUnsafeReads`. A trusted keys file that cannot be read refuses notes.
+- `src/geist/folder.nim`: `setFolderVersion` / `folderVersionOf` (`version.<name>`)
+  and `setFolderMeta` / `folderMetaOf` (`meta.<key>`), both behind the folder check.
+- Settings: `[default] unsafeRetrieval` (default false) and `[default] trustedKeys`
+  (default `<config>/geist/trusted.keys`); they are in the rubric and documented.
+- Tests: `test_trust.nim` (12 checks, real Dilithium signatures from Tyr),
+  `test_sidecar_provider.nim`, `test_sidecar_sweep.nim` updated.
+
+Found while building:
+
+- A signature check on an edited note must re-render the note with the old
+  signature. Editing the file text leaves the digest stale, and the note then reads
+  as damaged, which is the right answer, but it is not a signature failure.
+
+Not done:
+
+- Geist does not know what a note's fields mean. The holder, the address and the
+  database are nebel's fields, read by nebel's provider.
+
 
 ## 2026-10-30 Storage paths, tracking, CLI, remote locators, wire rows
 
