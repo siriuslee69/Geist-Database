@@ -155,9 +155,8 @@ proc sweepRoot(root: string, reachable: seq[string]): tuple[removed: int,
   for path in walkDirRec(root):
     # The locator is the fan-out path, which is how a reference names it.
     locator = path.relativePath(root).replace('\\', '/')
-    # A locator is reachable exactly when the payload it names is reachable.
-    if locator.endsWith(locatorSuffix):
-      locator = locator[0 ..< locator.len - locatorSuffix.len]
+    # A locator or a note beside a payload is reachable exactly when its payload is.
+    locator = noteOfPayload(locator)
     if locator in reachable:
       continue
     try:

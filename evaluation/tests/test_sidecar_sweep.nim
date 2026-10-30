@@ -10,6 +10,8 @@
 import runePragmas
 import std/[os, strutils, unittest]
 import geist
+import geist/sidecar
+import geist/textfile
 
 type
   Doc = object
@@ -138,4 +140,29 @@ suite "sidecar sweep":
     var swept = db.sweepSidecar()
     check swept.ok
     check swept.removed == 0
+    db.close()
+
+  # {.testKind: tkIntegration.}
+  test "a note beside a referenced payload survives a sweep, and goes with it":
+    var
+      root = freshRoot("geist_t_sw6")
+      db = openGeist[Doc](root, cappedConfig())
+      a = db.put(Doc(docId: 1, title: "noted", blob: repeat("N", 4096)))
+    check db.save().ok
+    var
+      hashes = db.sidecarRefs()
+      hex: string = hashes[0].rsplit('/')[^1]
+    # A program puts a note in the payload's place. Its payload is still referenced.
+    check db.sidecarStore.leaveNote(unhexText(hex), ".offset", "held elsewhere").ok
+    var swept = db.sweepSidecar()
+    check swept.ok
+    check swept.removed == 0
+    check fileExists(db.sidecarStore.storedAt(hashes[0] & ".offset"))
+    # Once the row is gone, the payload's note is unreferenced and goes with it.
+    check db.delete(a)
+    check db.compact().ok
+    check db.save().ok
+    swept = db.sweepSidecar()
+    check swept.removed == 1
+    check sidecarFiles(root) == 0
     db.close()

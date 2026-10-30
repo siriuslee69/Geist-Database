@@ -9,6 +9,13 @@
 ## path, or the store's own `.geist-sidecar` (storeRootsOf). That own folder is
 ## the last root, so a store made before storage paths existed still reads.
 ##
+## A payload may have no file in any root. Geist then knows only two things:
+##   <hash>.locator   a tracked file where it lies (track.nim)
+##   <hash>.<suffix>  a note a program left in its place (leaveNote);
+##                    Geist does not read it, only keeps it while its hash is used
+## and when neither is there, it asks `gSidecarProvider` for the bytes.
+## Geist never knows where those bytes come from.
+##
 ## WHICH values leave their row (row.nim):
 ##   variable column   a value at or above `sidecarThreshold` (1 KiB by default)
 ##   capped column     the same, and also any value wider than the column
@@ -229,41 +236,32 @@ const
     ## A locator names a payload that is NOT in the sidecar folder: a tracked
     ## file, where it lies. It sits beside where the payload would be.
 
-const
-  remoteKind*: string = "remote"
-    ## The locator kind of a payload held by another machine (Def. 4).
-
 type
   SidecarLocator* {.role: truthState, tag: "sidecar|types".} = object
-    ## kind: "path", a tracked file read where it lies; "remote", a payload another
-    ##   machine holds (see RemoteFetch below).
+    ## kind: "path", a tracked file read where it lies.
     ## hash: the content hash the row keeps. The payload must hash to it.
     ## size: bytes when the file was tracked. A different size means it changed.
     ## name: what the file is called, for a person reading the listing.
-    ## target: the path, for kind "path"; the holder's address, for kind "remote".
-    ## peer: for "remote", the name the holder must prove it has.
-    ## signer: for "remote", the name that signed this locator.
-    ## sig: for "remote", the signature(s) of `signer` over `locatorSigned`,
-    ##   comma-separated hex. Geist does not check it; the hook does.
+    ## target: the path the file lies at.
     kind*: string
     hash*: ByteSeq
     size*: int64
     name*: string
     target*: string
-    peer*: string
-    signer*: string
-    sig*: string
 
-  RemoteFetch* {.role: dataFetcher, tag: "sidecar|cryptoBoundary|read".} = proc (
-    loc: SidecarLocator): tuple[ok: bool, data: ByteSeq, err: string] {.
+  SidecarProvider* {.role: dataFetcher, tag: "sidecar|storageIo|read".} = proc (
+    s: SidecarStore, hash: ByteSeq): tuple[ok: bool, data: ByteSeq, err: string] {.
     closure, gcsafe.}
-    ## loc: a remote locator. Returns the payload the holder sent, or why not. The
-    ## caller checks the hash; a hook that returns the wrong bytes is refused.
+    ## s/hash: asked for the payload of a hash that `s` has no file for. Returns the
+    ## bytes, or why not. Geist does not care where the bytes come from. The caller
+    ## checks them against the hash, so a provider that returns other bytes is
+    ## refused.
 
 var
-  gRemoteFetch*: RemoteFetch = nil
-    ## Installed by nebel (nebel/remote_sidecar.nim) in a program that talks to
-    ## peers. Without it a remote payload is named, not read.
+  gSidecarProvider*: SidecarProvider = nil
+    ## Installed by a program that can supply payloads this store does not hold
+    ## (nebel does, see nebel/remote_sidecar.nim). Unset: a missing payload is an
+    ## error, and the error says so.
 
 proc locatorPathOf*(s: SidecarStore, hash: ByteSeq): string {.role: helper,
     tag: "sidecar|storageIo".} =
@@ -274,28 +272,14 @@ proc locatorPathOf*(s: SidecarStore, hash: ByteSeq): string {.role: helper,
   if root.len > 0:
     result = root / (sidecarLocator(hash) & locatorSuffix)
 
-proc locatorPairs(l: SidecarLocator, withSig: bool): seq[tuple[key, value: string]] {.
-    role: helper, tag: "sidecar|write".} =
-  ## l/withSig: the fields of a locator as key-value pairs. A remote locator adds
-  ## its peer and signer, and its signature when `withSig` is set.
-  result = @[("geist-locator", "1"), ("kind", l.kind), ("hash", hexText(l.hash)),
-    ("size", $l.size), ("name", l.name), ("target", l.target)]
-  if l.kind == remoteKind:
-    result.add ("peer", l.peer)
-    result.add ("signer", l.signer)
-    if withSig:
-      result.add ("sig", l.sig)
-
-proc locatorSigned*(l: SidecarLocator): string {.role: helper,
-    tag: "sidecar|write".} =
-  ## l: the text a remote locator's signature covers: every field except `sig`.
-  ## Signer and holder sign and check this same text.
-  result = renderFile(locatorPairs(l, false))
-
 proc locatorText*(l: SidecarLocator): string {.role: helper,
     tag: "sidecar|write".} =
   ## l: the locator as text, with its digest last (see textfile.nim).
-  result = renderFile(locatorPairs(l, true))
+  var
+    pairs: seq[tuple[key, value: string]] = @[
+      ("geist-locator", "1"), ("kind", l.kind), ("hash", hexText(l.hash)),
+      ("size", $l.size), ("name", l.name), ("target", l.target)]
+  result = renderFile(pairs)
 
 proc parseLocator*(text: string): tuple[ok: bool, loc: SidecarLocator,
     err: string] {.role: parser, tag: "sidecar|read".} =
@@ -323,9 +307,6 @@ proc parseLocator*(text: string): tuple[ok: bool, loc: SidecarLocator,
     return
   result.loc.name = got.pairs.getOrDefault("name", "")
   result.loc.target = got.pairs["target"]
-  result.loc.peer = got.pairs.getOrDefault("peer", "")
-  result.loc.signer = got.pairs.getOrDefault("signer", "")
-  result.loc.sig = got.pairs.getOrDefault("sig", "")
   result.ok = true
 
 proc putLocator*(s: SidecarStore, l: SidecarLocator): tuple[ok: bool, err: string] {.
@@ -345,17 +326,38 @@ proc putLocator*(s: SidecarStore, l: SidecarLocator): tuple[ok: bool, err: strin
   moveFile(tmp, path)
   result = (true, "")
 
-proc dropSidecar*(s: SidecarStore, hash: ByteSeq): tuple[ok: bool, err: string] {.
-    role: dataWriter, tag: "sidecar|storageIo|write".} =
-  ## s/hash: remove the payload of this content hash, because a locator now names
-  ## it (Def. 4). Refused when no locator names it: a payload with nothing else
-  ## pointing at it must not be the thing that disappears.
+proc noteOfPayload*(path: string): string {.role: parser, tag: "sidecar|storageIo".} =
+  ## path: a file inside a sidecar folder, relative to it, with '/' between parts.
+  ## Returns the payload it belongs to. A payload is named by its hash, which has no
+  ## dot, and a file beside it is named <hash><suffix>, so the name is cut at the
+  ## first dot after the last '/':
+  ##
+  ##   ab/cd/<hash>.locator   ->  ab/cd/<hash>
+  ##   ab/cd/<hash>           ->  ab/cd/<hash>
+  var
+    dot: int = path.find('.', path.rfind('/') + 1)
+  result = if dot < 0: path else: path[0 ..< dot]
+
+proc leaveNote*(s: SidecarStore, hash: ByteSeq, suffix: string,
+    text: string): tuple[ok: bool, err: string] {.role: dataWriter,
+    tag: "sidecar|storageIo|write".} =
+  ## s/hash/suffix/text: put a note in the place of the payload of `hash`.
+  ## The note is written beside the payload as <hash><suffix>, and the payload file is
+  ## removed. The note is renamed into place first, so a crash leaves the payload or
+  ## the note, never neither. The sweep keeps a note while its payload is referenced.
+  ## Refused when the payload is not stored here, or when `suffix` does not start
+  ## with a dot.
   var
     full: string = s.storedAt(sidecarLocator(hash))
+    tmp: string = ""
+  if suffix.len < 2 or suffix[0] != '.':
+    return (false, "a note's name must start with a dot, like .offset")
   if full.len == 0:
-    return (false, "no payload with that hash is stored here")
-  if s.storedAt(sidecarLocator(hash) & locatorSuffix).len == 0:
-    return (false, "no locator names the payload yet, so it is kept")
+    return (false, "no payload with that hash is stored here, so there is nothing " &
+      "to leave a note for")
+  tmp = full & suffix & ".tmp"
+  writeFile(tmp, text)
+  moveFile(tmp, full & suffix)
   removeFile(full)
   result = (true, "")
 
@@ -368,25 +370,26 @@ proc hashFileFor*(k: HashKind, path: string): ByteSeq {.role: parser,
   else:
     result = geistHash(k, cast[ByteSeq](readFile(path)), fullDigestBytes)
 
-proc readRemote*(s: SidecarStore, r: Ref, loc: SidecarLocator): tuple[ok: bool,
-    data: ByteSeq, err: string] {.role: dataFetcher,
-    tag: "sidecar|cryptoBoundary|read".} =
-  ## s/r/loc: a payload another machine holds. The fetch is the hook's job; the hash
-  ## is checked here, whatever the hook returned.
+proc readProvided*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
+    err: string] {.role: dataFetcher, tag: "sidecar|storageIo|read".} =
+  ## s/r: the payload of a row that has no file here, from the provider a program
+  ## installed. The bytes are checked against the row's hash, whatever the
+  ## provider returned.
   var
     got: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
     check: ByteSeq = @[]
-  if gRemoteFetch.isNil:
-    result.err = "the payload is held by " & loc.target &
-      "; fetching it needs nebel, which installs gRemoteFetch"
+  if gSidecarProvider.isNil:
+    result.err = "sidecar payload is missing: " & hexText(r.hash)[0 .. 15] &
+      "... and no provider is installed to supply it"
     return
-  got = gRemoteFetch(loc)
+  got = gSidecarProvider(s, r.hash)
   if not got.ok:
     result.err = got.err
     return
   check = geistHash(s.hash, got.data, r.hash.len)
   if not constantTimeEq(check, r.hash):
-    result.err = "the payload from " & loc.target & " failed hash verification"
+    result.err = "the provider returned bytes that fail hash verification for " &
+      hexText(r.hash)[0 .. 15] & "..."
     return
   result.data = got.data
   result.ok = true
@@ -406,8 +409,6 @@ proc readLocated*(s: SidecarStore, r: Ref, lf: string): tuple[ok: bool,
   if parsed.loc.hash != r.hash:
     result.err = "locator " & lf & " names another payload than the row does"
     return
-  if parsed.loc.kind == remoteKind:
-    return readRemote(s, r, parsed.loc)
   if parsed.loc.kind != "path":
     result.err = "locator " & lf & " has an unknown kind '" & parsed.loc.kind & "'"
     return
@@ -448,7 +449,7 @@ proc getSidecar*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
     lf = s.storedAt(locator & locatorSuffix)
     if lf.len > 0:
       return readLocated(s, r, lf)
-    return (false, @[], "sidecar payload is missing: " & locator)
+    return readProvided(s, r)
   raw = readFile(full)
   result.data = cast[ByteSeq](raw)
   # Re-hashing is the integrity check, not overhead: the path only says

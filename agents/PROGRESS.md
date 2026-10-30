@@ -1,6 +1,6 @@
 # Progress
 
-Commit Message: Docs: sidecars, storage paths, tracking and remote payloads; README defaults
+Commit Message: Sidecars: Geist knows notes and a provider, not remote payloads
 
 ## 2026-10-30 Storage paths, tracking, CLI, remote locators, wire rows
 
@@ -20,9 +20,15 @@ Built (commits fd9586e, ce2ddc3, a987b66, ffe2ed2):
   `.geist-speed` inside the path and read once per run.
 - `track` (src/geist/track.nim) and the CLI commands `track`, `folder show|adopt`,
   `storage list|bench` (src/clients/cli/sidecars.nim).
-- Remote locators (sidecar.nim): kind `remote` with peer, signer and signature
-  text; the fetch is a hook (`gRemoteFetch`) that nebel installs.
+- Geist's view of a payload that left its folder (sidecar.nim): a note beside it,
+  `leaveNote` (the note is written, then the payload file is removed), and a
+  provider hook (`gSidecarProvider`) that is asked for the bytes when no file is
+  here. Geist checks what the provider returns against the row's hash. Geist
+  does not know what a note says or where the provider gets the bytes.
+- The sweep keeps a note while its payload is referenced (`noteOfPayload`).
 - `wireRow` (dynamic.nim): a row that leaves for a peer carries its long text.
+- Removed again: the remote locator kind, its signed fields and its fetch hook
+  (a987b66). Remote payloads are nebel's, and Geist must not know about them.
 
 Found and fixed while building:
 
@@ -49,8 +55,8 @@ reads `sidecarThreshold`. That was true then. row.nim reads it now
 
 Not done:
 
-- Geist's own CLI cannot fetch a remote payload: it has no hook. Reads of such
-  a payload go through nebel, which installs the hook.
+- Geist's own CLI cannot supply a payload that left its folder: it installs no
+  provider. Reads of such a payload go through nebel, which installs one.
 - Payloads above 8 MiB (nebel Def. 4) need a streaming transfer, which does not
   exist yet.
 - An empty `ref` cell reads as a reference to an all-zero hash, because the

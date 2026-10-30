@@ -3,7 +3,8 @@
 A row is a fixed box. A long text does not fit a box well, so Geist moves the
 long value into a small file of its own, and the row keeps a short reference.
 This page explains that, where the files go, how to track files you already
-have, how the folder is protected, and how a file can live on another machine.
+have, how the folder is protected, and how a program can take a payload out of
+the folder and supply it later. Geist itself never talks to other machines.
 
 ```
   ROW (fixed size)                    SIDECAR FILE (the long value)
@@ -29,15 +30,26 @@ Def. 3 (storage path) a folder in [default] storage. The store puts ONE
                       where the hex is the hash of the store's full path.
                       Two stores never share that folder.
 
-Def. 4 (locator)      a small text file  <hash>.locator  that stands in for a
-                      payload kept elsewhere: a tracked file (kind "path") or a
-                      payload on another machine (kind "remote").
+Def. 4 (locator)      a small text file  <hash>.locator  that says where a
+                      tracked file lies. Geist reads the file where it lies.
 
 Def. 5 (sweep)        deletes every payload that no live row and no backup
-                      slot names. Refused when the folder holds more than one
+                      slot names. A note or locator beside a payload goes with
+                      the payload. Refused when the folder holds more than one
                       database, because they would delete each other's files.
 
-Def. 6 (fail closed)  when a check cannot be made, Geist refuses. See section 5.
+Def. 6 (note)         a file  <hash><suffix>  beside a payload, put there by a
+                      program with leaveNote. The payload's own file is removed
+                      in the same step. Geist keeps a note while its payload is
+                      referenced, and does not read what it says.
+
+Def. 7 (provider)     a function a program installs (gSidecarProvider). When a
+                      payload has no file in any root, and no locator names one,
+                      Geist asks the provider for its bytes. Geist checks them
+                      against the row's hash; a provider that returns other bytes
+                      is refused.
+
+Def. 8 (fail closed)  when a check cannot be made, Geist refuses. See section 5.
 ```
 
 ## 2. Where the files go
@@ -50,7 +62,8 @@ Def. 6 (fail closed)  when a check cannot be made, Geist refuses. See section 5.
   |-- geist.permissions      read / write / sidecars, digest
   |-- .geist-sidecar/        the fallback folder, always last
   |     ab/cd/abcd...        a payload
-  |     ab/cd/abef...locator a locator (tracked or remote)
+  |     ab/cd/abef...locator a locator (a tracked file, Def. 4)
+  |     ab/cd/abcd....offset a note (Def. 6), its payload is elsewhere
   |
   storage path  /mnt/fast/                       (from [default] storage)
   |-- notes-3fa19c02d7e1.geist-sidecar/          one folder per store
@@ -127,25 +140,30 @@ needs to see what is there.
 `geist folder adopt <dir>` gives a folder without files its two files. It is
 refused when the folder already has files, so it can never replace a check.
 
-## 6. Remote payloads
+## 6. Payloads taken out of the folder
 
-A payload can be kept by another machine. The local folder then holds a
-locator of kind `remote`, with the holder's address, the holder's name, the
-name of the machine that signed the locator, and the signature.
+A program may take a payload out of the folder and leave a note in its place
+(Def. 6). Later, a read finds the row, finds no file for the payload, and asks
+the provider (Def. 7) for the bytes:
 
 ```
-  Geist finds only a locator
+  Geist reads a row
      |
+     |  the payload file is here?      -> read it, check the hash
+     |  no file, but a locator?        -> read the tracked file, check the hash
+     |  no file, no locator?           -> ask the provider (if one is installed)
      v
-  hook (installed by nebel)  --> fetch from the holder
+  the provider returns bytes, or says why not
      |
      v
   Geist checks the bytes against the row's hash, whatever came back
 ```
 
-Geist does not talk to the network. The fetch is a hook that a program
-installs. Without the hook, a remote payload is named in the error, not read.
-Nebel's page `Nebel docs/remote_sidecars.md` describes the sending side.
+Geist does not know what the note says, or where the provider gets the bytes.
+The provider is a hook a program installs. Without one, a missing payload is
+an error that says no provider is installed. Nebel uses both: its page
+`nebel/docs/remote_sidecars.md` describes the note, the signature, and the
+holder that keeps the bytes.
 
 ## 7. Settings
 
