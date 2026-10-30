@@ -11,8 +11,8 @@
 ##
 ## A payload may have no file in any root. Geist then knows only two things:
 ##   <hash>.locator   a tracked file where it lies (track.nim)
-##   <hash>.<suffix>  a note a program left in its place (leaveNote);
-##                    Geist does not read it, only keeps it while its hash is used
+##   <hash>.note     a note a program left in its place (leaveNote). Geist reads it
+##                    and checks its signature (trust.nim); it keeps it while in use
 ## and when neither is there, it asks `gSidecarProvider` for the bytes.
 ## Geist never knows where those bytes come from.
 ##
@@ -38,6 +38,7 @@ import ./crypto/hashing
 import ./format
 import ./textfile
 import ./storage
+import ./trust
 
 const
   sidecarFolderName*: string = ".geist-sidecar"
@@ -66,6 +67,15 @@ type
     writes*: uint32
     reused*: uint32
     bytesWritten*: uint64
+    ## trust: the keys whose signatures on notes this store believes (trust.nim).
+    ## trustUnsigned: whether a payload may be fetched on a note that is unsigned,
+    ##   or on no note at all, by its hash alone (`[default] unsafeRetrieval`).
+
+    trust*: TrustTable
+    trustUnsigned*: bool
+    trustErr*: string
+      ## trustErr: why the trusted keys file could not be read, "" when it could. A
+      ## store with such an error refuses every note rather than trust by accident.
 
 proc initSidecarRoots*(roots: seq[string], threshold: uint32 = defaultSidecarThreshold,
     hash: HashKind = hkBlake3, policy: StoragePolicy = spPriority): SidecarStore {.
@@ -250,18 +260,28 @@ type
     target*: string
 
   SidecarProvider* {.role: dataFetcher, tag: "sidecar|storageIo|read".} = proc (
-    s: SidecarStore, hash: ByteSeq): tuple[ok: bool, data: ByteSeq, err: string] {.
-    closure, gcsafe.}
-    ## s/hash: asked for the payload of a hash that `s` has no file for. Returns the
-    ## bytes, or why not. Geist does not care where the bytes come from. The caller
-    ## checks them against the hash, so a provider that returns other bytes is
-    ## refused.
+    s: SidecarStore, hash: ByteSeq, note: SidecarNote, trust: NoteTrust): tuple[
+    ok: bool, data: ByteSeq, err: string] {.closure, gcsafe.}
+    ## s/hash: asked for the payload of a hash that `s` has no file for.
+    ## note/trust: the note beside it, already parsed, and how far Geist trusts it.
+    ##   With no note at all, note.hash is empty and trust is ntNone.
+    ## Returns the bytes, or why not. Geist does not care where the bytes come from.
+    ## The caller checks them against the hash, so a provider that returns other
+    ## bytes is refused.
 
 var
+  gUnsafeReads*: uint32 = 0'u32
+    ## Payloads this run took WITHOUT a trusted signature (hash alone, allowed by
+    ## `trustUnsigned`). A tool can report it, so unsafe reads are never silent.
   gSidecarProvider*: SidecarProvider = nil
     ## Installed by a program that can supply payloads this store does not hold
     ## (nebel does, see nebel/remote_sidecar.nim). Unset: a missing payload is an
     ## error, and the error says so.
+
+const
+  noteSuffix*: string = ".note"
+    ## A note a program left in place of a payload (Def. 6). It is named after the
+    ## payload, and Geist reads it with parseNote (trust.nim).
 
 proc locatorPathOf*(s: SidecarStore, hash: ByteSeq): string {.role: helper,
     tag: "sidecar|storageIo".} =
@@ -326,10 +346,26 @@ proc putLocator*(s: SidecarStore, l: SidecarLocator): tuple[ok: bool, err: strin
   moveFile(tmp, path)
   result = (true, "")
 
+proc applyTrust*(s: var SidecarStore, path: string, trustUnsigned: bool) {.
+    role: configurator, tag: "cryptoBoundary|storageIo|read".} =
+  ## s/path/trustUnsigned: the keys this store believes, from the trusted keys file at
+  ## `path` ("" is the default place), and the unsafe-retrieval policy. A file that
+  ## cannot be read is recorded in trustErr, and notes are then refused.
+  var
+    loaded: tuple[ok: bool, table: TrustTable, err: string] = (false, TrustTable(), "")
+  loaded = loadTrustFile(path)
+  if loaded.ok:
+    s.trust = loaded.table
+    s.trustErr = ""
+  else:
+    s.trust = TrustTable()
+    s.trustErr = loaded.err
+  s.trustUnsigned = trustUnsigned
+
 proc noteOfPayload*(path: string): string {.role: parser, tag: "sidecar|storageIo".} =
   ## path: a file inside a sidecar folder, relative to it, with '/' between parts.
   ## Returns the payload it belongs to. A payload is named by its hash, which has no
-  ## dot, and a file beside it is named <hash><suffix>, so the name is cut at the
+  ## dot, and a file beside it is named <hash>.note, so the name is cut at the
   ## first dot after the last '/':
   ##
   ##   ab/cd/<hash>.locator   ->  ab/cd/<hash>
@@ -338,26 +374,22 @@ proc noteOfPayload*(path: string): string {.role: parser, tag: "sidecar|storageI
     dot: int = path.find('.', path.rfind('/') + 1)
   result = if dot < 0: path else: path[0 ..< dot]
 
-proc leaveNote*(s: SidecarStore, hash: ByteSeq, suffix: string,
-    text: string): tuple[ok: bool, err: string] {.role: dataWriter,
-    tag: "sidecar|storageIo|write".} =
-  ## s/hash/suffix/text: put a note in the place of the payload of `hash`.
-  ## The note is written beside the payload as <hash><suffix>, and the payload file is
-  ## removed. The note is renamed into place first, so a crash leaves the payload or
-  ## the note, never neither. The sweep keeps a note while its payload is referenced.
-  ## Refused when the payload is not stored here, or when `suffix` does not start
-  ## with a dot.
+proc leaveNote*(s: SidecarStore, hash: ByteSeq, text: string): tuple[ok: bool,
+    err: string] {.role: dataWriter, tag: "sidecar|storageIo|write".} =
+  ## s/hash/text: put a note in the place of the payload of `hash`. `text` is a note
+  ## as trust.nim renders it. The note is written beside the payload as <hash>.note,
+  ## and the payload file is removed. The note is renamed into place first, so a crash
+  ## leaves the payload or the note, never neither. The sweep keeps a note while its
+  ## payload is referenced. Refused when the payload is not stored here.
   var
     full: string = s.storedAt(sidecarLocator(hash))
     tmp: string = ""
-  if suffix.len < 2 or suffix[0] != '.':
-    return (false, "a note's name must start with a dot, like .offset")
   if full.len == 0:
     return (false, "no payload with that hash is stored here, so there is nothing " &
       "to leave a note for")
-  tmp = full & suffix & ".tmp"
+  tmp = full & noteSuffix & ".tmp"
   writeFile(tmp, text)
-  moveFile(tmp, full & suffix)
+  moveFile(tmp, full & noteSuffix)
   removeFile(full)
   result = (true, "")
 
@@ -372,17 +404,54 @@ proc hashFileFor*(k: HashKind, path: string): ByteSeq {.role: parser,
 
 proc readProvided*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
     err: string] {.role: dataFetcher, tag: "sidecar|storageIo|read".} =
-  ## s/r: the payload of a row that has no file here, from the provider a program
-  ## installed. The bytes are checked against the row's hash, whatever the
-  ## provider returned.
+  ## s/r: the payload of a row that has no file here. Its note, if there is one, is
+  ## read and checked first (trust.nim):
+  ##   a note that does not read, or names another payload -> refused
+  ##   a note whose signature does not verify (ntBad)       -> refused
+  ##   an unsigned note, or no note (ntUnsigned / ntNone)    -> refused unless
+  ##       `trustUnsigned` says a hash alone is enough; then it is counted
+  ## Only then the provider is asked. Its bytes are checked against the row's hash.
   var
     got: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
+    parsed: tuple[ok: bool, note: SidecarNote, err: string] = (false, SidecarNote(),
+      "")
+    note: SidecarNote = SidecarNote()
+    trust: NoteTrust = ntNone
     check: ByteSeq = @[]
-  if gSidecarProvider.isNil:
-    result.err = "sidecar payload is missing: " & hexText(r.hash)[0 .. 15] &
-      "... and no provider is installed to supply it"
+    path: string = s.storedAt(r.refLocator() & noteSuffix)
+  if path.len > 0 and s.trustErr.len > 0:
+    result.err = "the note beside payload " & hexText(r.hash)[0 .. 15] &
+      "... cannot be checked: " & s.trustErr
     return
-  got = gSidecarProvider(s, r.hash)
+  if path.len > 0:
+    parsed = parseNote(readFile(path))
+    if not parsed.ok:
+      result.err = "the note beside payload " & hexText(r.hash)[0 .. 15] &
+        "... cannot be trusted: " & parsed.err
+      return
+    if parsed.note.hash != r.hash:
+      result.err = "the note beside payload " & hexText(r.hash)[0 .. 15] &
+        "... names another payload"
+      return
+    note = parsed.note
+    trust = trustOf(note, s.trust)
+  if trust == ntBad:
+    result.err = "the note for payload " & hexText(r.hash)[0 .. 15] &
+      "... has a signature that does not verify under the trusted keys"
+    return
+  if trust != ntSigned and not s.trustUnsigned:
+    result.err = "payload " & hexText(r.hash)[0 .. 15] & "... has no trusted " &
+      "signature, and unsafe retrieval is off ([default] unsafeRetrieval)"
+    return
+  if gSidecarProvider.isNil:
+    if path.len > 0:
+      result.err = "the payload is held elsewhere (its note is " & path &
+        "), and no provider is installed to fetch it"
+    else:
+      result.err = "sidecar payload is missing: " & hexText(r.hash)[0 .. 15] &
+        "... and no provider is installed to supply it"
+    return
+  got = gSidecarProvider(s, r.hash, note, trust)
   if not got.ok:
     result.err = got.err
     return
@@ -391,6 +460,8 @@ proc readProvided*(s: SidecarStore, r: Ref): tuple[ok: bool, data: ByteSeq,
     result.err = "the provider returned bytes that fail hash verification for " &
       hexText(r.hash)[0 .. 15] & "..."
     return
+  if trust != ntSigned:
+    gUnsafeReads = gUnsafeReads + 1'u32
   result.data = got.data
   result.ok = true
 

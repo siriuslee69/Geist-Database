@@ -51,6 +51,11 @@ type
     storagePaths*: seq[string]
       ## storagePaths: folders for sidecar payloads, preferred first. `[default] storage`.
     storagePolicy*: string
+    unsafeRetrieval*: bool
+      ## unsafeRetrieval: may a payload be fetched on an unsigned note, or with no note,
+      ## by its hash alone (Def. 2 and 4 of trust.nim). `[default] unsafeRetrieval`.
+    trustedKeys*: string
+      ## trustedKeys: the trusted keys file; "" is the default place. `[default] trustedKeys`.
       ## storagePolicy: "priority" or "speed" (geist/storage.nim). `[default] storagePolicy`.
     backupCopies*: uint8
     backupEverySeconds*: uint32
@@ -95,6 +100,8 @@ proc builtinDefaults*(): GeistDefaults {.role: configurator, stage: stDone,
   result.sidecars = true
   result.follow = "named"
   result.storagePolicy = "priority"
+  result.unsafeRetrieval = false
+  result.trustedKeys = ""
   result.backupCopies = 2'u8
   result.backupEverySeconds = 0'u32
   result.rowIdentity = true
@@ -134,7 +141,7 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   rubric = rubricOf(path)
   if not rubric.ok:
     return (false, result.defaults, rubric.err)
-  complaint = checkKeys(rubric.node, ["sidecars", "sidecarThreshold", "follow",
+  complaint = checkKeys(rubric.node, ["sidecars", "sidecarThreshold", "follow", "unsafeRetrieval", "trustedKeys",
     "storage", "storagePolicy"], "[default]")
   if complaint.len > 0:
     return (false, result.defaults, complaint)
@@ -146,6 +153,10 @@ proc loadGeistDefaults*(path: string = libraryConfigName): tuple[ok: bool,
   result.defaults.follow = rubric.node.setting("follow", result.defaults.follow)
   result.defaults.storagePaths = rubric.node.setting("storage",
     result.defaults.storagePaths)
+  result.defaults.unsafeRetrieval = rubric.node.setting("unsafeRetrieval",
+    result.defaults.unsafeRetrieval)
+  result.defaults.trustedKeys = rubric.node.setting("trustedKeys",
+    result.defaults.trustedKeys)
   result.defaults.storagePolicy = rubric.node.setting("storagePolicy",
     result.defaults.storagePolicy)
   storage = doc.node.section("storage")
@@ -204,6 +215,8 @@ proc applyDefaults*(c: GeistConfig, d: GeistDefaults): GeistConfig {.
   if d.storagePaths.len > 0:
     result.storagePaths = d.storagePaths
   result.storagePolicy = if d.storagePolicy == "speed": spSpeed else: spPriority
+  result.trustUnsigned = d.unsafeRetrieval
+  result.trustedKeys = d.trustedKeys
   # Only when the file actually said so. `iotConfig` and `streamConfig`
   # turn identity off on purpose -- 16 bytes of id on a 32-byte sensor row
   # is half again as much disk for a feature append-only telemetry never

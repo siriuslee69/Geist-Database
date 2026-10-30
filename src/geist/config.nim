@@ -93,6 +93,11 @@ type
     storagePolicy*: StoragePolicy
       ## priority: the first path with room. speed: the fastest measured path with
       ## room (run `geist storage bench` first). `[default] storagePolicy`.
+    trustUnsigned*: bool
+      ## Whether a payload may be fetched on an unsigned note, or with no note, by its
+      ## hash alone (`[default] unsafeRetrieval`). Off: such a payload is refused.
+    trustedKeys*: string
+      ## The trusted keys file (`[default] trustedKeys`); "" is the default place.
     sidecars*: bool
       ## Runtime switch, `[default] sidecars` in configs/default.toml. False: a
       ## new value never leaves its row, and a capped value that does not fit

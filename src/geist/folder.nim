@@ -392,3 +392,136 @@ proc inspectFolder*(dir: string, asJson: bool): string {.role: orchestrator,
   report["files"] = %(describeFolder(dir, true).parseJson())
   report["rows"] = dbs
   result = report.pretty()
+
+## ------------------------- versions and metadata -------------------------
+##
+## A program that keeps its own data in a Geist folder (nebel, for one) records what
+## it is in the folder's version file, beside Geist's own lines:
+##
+##   geist.version:
+##     format = 4                    Geist's format (not ours to change)
+##     version.nebel = 1             a version a program added
+##     meta.note = made by nebel     a value a program wants kept with the folder
+##     digest = ...
+##
+## Both are written only through the functions below, which first run the folder
+## check (Def. 1): a folder that fails the check is not changed.
+
+const
+  versionPrefix*: string = "version."
+  metaPrefix*: string = "meta."
+
+proc validEntryName(name: string): bool {.role: sanitizer.} =
+  ## name: what follows the prefix. Lower case letters, digits, '-' and '_' only.
+  result = name.len > 0
+  for c in name:
+    if c notin {'a'..'z', '0'..'9', '-', '_'}:
+      result = false
+
+proc orderedPairs(text: string): seq[tuple[key, value: string]] {.role: parser,
+    tag: "storageIo|read".} =
+  ## text: a key file's lines in the order they are written, without the digest.
+  var
+    at: int = 0
+  for line in text.splitLines():
+    at = line.find(" = ")
+    if at < 0 or line[0 ..< at] == "digest":
+      continue
+    result.add (key: line[0 ..< at], value: line[at + 3 .. ^1])
+
+proc putFolderEntry(dir, key, value: string): tuple[ok: bool, err: string] {.
+    role: dataWriter, tag: "storageIo|write".} =
+  ## dir/key/value: set one line in the folder's version file, after the folder check.
+  ## A new key is added at the end; an existing one is replaced in place.
+  var
+    check: FolderCheck = checkFolder(dir, forWrite = true)
+    files: tuple[version, permissions: string] = folderFilesOf(dir)
+    pairs: seq[tuple[key, value: string]] = @[]
+    replaced: bool = false
+  if not check.ok:
+    return (false, check.err)
+  if check.fresh:
+    writeFolderFiles(dir, FolderPolicy(read: true, write: true, sidecars: true))
+  pairs = orderedPairs(readFile(files.version))
+  for i in 0 ..< pairs.len:
+    if pairs[i].key == key:
+      pairs[i].value = value
+      replaced = true
+  if not replaced:
+    pairs.add (key: key, value: value)
+  writeAtomic(files.version, renderFile(pairs))
+  result = (true, "")
+
+proc setFolderVersion*(dir, name: string, version: int): tuple[ok: bool,
+    err: string] {.role: dataWriter, tag: "storageIo|write".} =
+  ## dir/name/version: record that the folder holds data of program `name` at this
+  ## version. Geist's own format is not changed. A program uses its own name, such as
+  ## "nebel". Refused when the folder fails the check, or the name is not a plain word.
+  if not validEntryName(name):
+    return (false, "a version name is lower case letters, digits, - or _: '" & name &
+      "'")
+  if version < 0:
+    return (false, "a version is not negative")
+  result = putFolderEntry(dir, versionPrefix & name, $version)
+
+proc folderVersionOf*(dir, name: string): tuple[ok: bool, version: int,
+    err: string] {.role: parser, tag: "storageIo|read".} =
+  ## dir/name: the version of program `name` recorded in the folder; 0 when there is
+  ## none, or when the folder holds no data yet. A folder that fails the check is an
+  ## error: its files cannot be believed.
+  var
+    check: FolderCheck = checkFolder(dir, forWrite = false)
+    files: tuple[version, permissions: string] = folderFilesOf(dir)
+    got: tuple[ok: bool, pairs: Table[string, string], err: string] =
+      (false, initTable[string, string](), "")
+  if check.fresh:
+    result.ok = true
+    return
+  if not check.ok:
+    result.err = check.err
+    return
+  got = parseKeyFile(readFile(files.version))
+  if not got.ok:
+    result.err = got.err
+    return
+  if got.pairs.hasKey(versionPrefix & name):
+    try:
+      result.version = parseInt(got.pairs[versionPrefix & name])
+    except ValueError:
+      result.err = "the version of " & name & " is not a number"
+      return
+  result.ok = true
+
+proc setFolderMeta*(dir, key, value: string): tuple[ok: bool, err: string] {.
+    role: dataWriter, tag: "storageIo|write".} =
+  ## dir/key/value: keep a value with the folder (a note of who made it, for one). The
+  ## value is one line of text. Refused like setFolderVersion.
+  if not validEntryName(key):
+    return (false, "a metadata key is lower case letters, digits, - or _: '" & key &
+      "'")
+  if value.contains('\n') or value.contains('\r'):
+    return (false, "a metadata value is one line of text")
+  result = putFolderEntry(dir, metaPrefix & key, value)
+
+proc folderMetaOf*(dir, key: string): tuple[ok: bool, found: bool, value: string,
+    err: string] {.role: parser, tag: "storageIo|read".} =
+  ## dir/key: the metadata value kept with the folder. `found` is false when there is none.
+  var
+    check: FolderCheck = checkFolder(dir, forWrite = false)
+    files: tuple[version, permissions: string] = folderFilesOf(dir)
+    got: tuple[ok: bool, pairs: Table[string, string], err: string] =
+      (false, initTable[string, string](), "")
+  if check.fresh:
+    result.ok = true
+    return
+  if not check.ok:
+    result.err = check.err
+    return
+  got = parseKeyFile(readFile(files.version))
+  if not got.ok:
+    result.err = got.err
+    return
+  if got.pairs.hasKey(metaPrefix & key):
+    result.found = true
+    result.value = got.pairs[metaPrefix & key]
+  result.ok = true

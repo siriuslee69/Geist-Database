@@ -2,15 +2,16 @@
 ## Provider tests <- a payload with no file here, supplied by a program above Geist
 ## -------------------------------------------------------------------------
 ##
-## Geist knows nothing about where a payload went. A program may leave a note in
-## its place (leaveNote), and a program may install a provider (gSidecarProvider)
-## that supplies the bytes when no file is here. These tests use a fake provider.
+## Geist knows nothing about where a payload went. A program leaves a note in its
+## place (leaveNote) and may install a provider (gSidecarProvider) that supplies the
+## bytes. The grading of the note's signature is tested in test_trust.nim; here the
+## stores allow unsigned retrieval, so the provider's part is what is tested.
 ##
 ##   suite                                  what it holds down
 ##   -------------------------------------  -----------------------------------------
-##   "a note takes the payload's place"     the payload file goes, the note stays, and
-##                                          only a real payload with a dotted name
-##                                          leaves a note
+##   "a note takes the payload's place"     the payload file goes, the note stays,
+##                                          and a payload with no file cannot leave
+##                                          a note
 ##   "a payload with no file here"          the provider is asked, and its bytes are
 ##                                          checked against the row's hash
 ##   "the provider is asked only then"      a payload that has a file never asks
@@ -21,6 +22,9 @@ import std/[os, strutils, unittest]
 import runePragmas
 import geist/types
 import geist/sidecar
+import geist/trust
+import geist/textfile
+import geist/crypto/hashwidths
 
 proc bytesOf(s: string): ByteSeq {.role: helper.} =
   ## s: text as the bytes a payload is made of.
@@ -28,23 +32,31 @@ proc bytesOf(s: string): ByteSeq {.role: helper.} =
 
 proc providerReturning(bytes: ByteSeq): SidecarProvider {.role: helper.} =
   ## bytes: what the fake provider answers with, whatever is asked.
-  result = proc (s: SidecarStore, hash: ByteSeq): tuple[ok: bool, data: ByteSeq,
-      err: string] {.closure, gcsafe.} =
+  result = proc (s: SidecarStore, hash: ByteSeq, note: SidecarNote,
+      trust: NoteTrust): tuple[ok: bool, data: ByteSeq, err: string] {.closure,
+      gcsafe.} =
     result = (true, bytes, "")
 
 proc providerRefusing(why: string): SidecarProvider {.role: helper.} =
   ## why: the reason the fake provider gives for having nothing.
-  result = proc (s: SidecarStore, hash: ByteSeq): tuple[ok: bool, data: ByteSeq,
-      err: string] {.closure, gcsafe.} =
+  result = proc (s: SidecarStore, hash: ByteSeq, note: SidecarNote,
+      trust: NoteTrust): tuple[ok: bool, data: ByteSeq, err: string] {.closure,
+      gcsafe.} =
     result = (false, @[], why)
 
+proc unsignedNote(hash: ByteSeq): string {.role: helper.} =
+  ## A note with no signature, as a program may leave when it has nothing to sign.
+  result = renderNote(noteFields(hash, @[(key: "signer", value: "phone"),
+    (key: "holder", value: "nas")]), "")
+
 proc freshStore(name: string): SidecarStore {.role: helper.} =
-  ## A store with a folder of its own, emptied first.
+  ## A store with a folder of its own, emptied first, that allows unsigned retrieval.
   var
     root = getTempDir() / name
   removeDir(root)
   createDir(root)
   result = initSidecarStore(root / ".geist-sidecar")
+  result.trustUnsigned = true
 
 suite "a note takes the payload's place":
   # {.testKind: tkUnit.}
@@ -54,24 +66,23 @@ suite "a note takes the payload's place":
       payload = bytesOf("a payload that leaves for a while")
       rf: Ref = Ref()
       left: tuple[ok: bool, err: string] = (false, "")
+      note = unsignedNote(newSeq[uint8](fullDigestBytes))
     rf = store.putSidecar(payload)
-    left = store.leaveNote(rf.hash, ".offset", "where it went")
+    note = unsignedNote(rf.hash)
+    left = store.leaveNote(rf.hash, note)
     check left.ok
     check store.storedAt(refLocator(rf)).len == 0
-    check store.storedAt(refLocator(rf) & ".offset").len > 0
-    check readFile(store.storedAt(refLocator(rf) & ".offset")) == "where it went"
+    check store.storedAt(refLocator(rf) & noteSuffix).len > 0
+    check readFile(store.storedAt(refLocator(rf) & noteSuffix)) == note
 
   # {.testKind: tkEdgeCase.}
-  test "a note is refused without its payload, and without a dotted name":
+  test "a note is refused for a payload that is not stored here":
     var
       store = freshStore("geist_t_provider_refuse")
-      payload = bytesOf("refused twice")
       rf: Ref = Ref()
-    rf = store.putSidecar(payload)
-    check not store.leaveNote(rf.hash, "offset", "no dot").ok
-    check fileExists(store.storedAt(refLocator(rf)))
-    check store.leaveNote(rf.hash, ".offset", "first").ok
-    check not store.leaveNote(rf.hash, ".offset", "second").ok
+    rf = store.putSidecar(bytesOf("stored once"))
+    check store.leaveNote(rf.hash, unsignedNote(rf.hash)).ok
+    check not store.leaveNote(rf.hash, unsignedNote(rf.hash)).ok
 
 suite "a payload with no file here":
   # {.testKind: tkIntegration.}
@@ -82,7 +93,7 @@ suite "a payload with no file here":
       rf: Ref = Ref()
       got: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
     rf = store.putSidecar(payload)
-    check store.leaveNote(rf.hash, ".offset", "elsewhere").ok
+    check store.leaveNote(rf.hash, unsignedNote(rf.hash)).ok
     gSidecarProvider = providerReturning(payload)
     got = store.getSidecar(rf)
     check got.ok
@@ -101,11 +112,11 @@ suite "a payload with no file here":
       rf: Ref = Ref()
       got: tuple[ok: bool, data: ByteSeq, err: string] = (false, @[], "")
     rf = store.putSidecar(bytesOf("nobody holds this"))
-    check store.leaveNote(rf.hash, ".offset", "gone").ok
+    check store.leaveNote(rf.hash, unsignedNote(rf.hash)).ok
     gSidecarProvider = nil
     got = store.getSidecar(rf)
     check not got.ok
-    check got.err.contains("no provider is installed")
+    check got.err.contains("held elsewhere")
     gSidecarProvider = providerRefusing("the holder has no such payload")
     got = store.getSidecar(rf)
     check not got.ok
@@ -133,6 +144,6 @@ suite "a note knows its payload":
     var
       hex: string = repeat("ab", 32)
     check noteOfPayload("ab/ab/" & hex) == "ab/ab/" & hex
-    check noteOfPayload("ab/ab/" & hex & ".offset") == "ab/ab/" & hex
-    check noteOfPayload("ab/ab/" & hex & ".offset.tmp") == "ab/ab/" & hex
+    check noteOfPayload("ab/ab/" & hex & ".note") == "ab/ab/" & hex
+    check noteOfPayload("ab/ab/" & hex & ".note.tmp") == "ab/ab/" & hex
     check noteOfPayload("ab/ab/" & hex & ".locator") == "ab/ab/" & hex

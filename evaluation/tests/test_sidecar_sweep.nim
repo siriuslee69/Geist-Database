@@ -12,6 +12,7 @@ import std/[os, strutils, unittest]
 import geist
 import geist/sidecar
 import geist/textfile
+import geist/trust
 
 type
   Doc = object
@@ -153,11 +154,11 @@ suite "sidecar sweep":
       hashes = db.sidecarRefs()
       hex: string = hashes[0].rsplit('/')[^1]
     # A program puts a note in the payload's place. Its payload is still referenced.
-    check db.sidecarStore.leaveNote(unhexText(hex), ".offset", "held elsewhere").ok
+    check db.sidecarStore.leaveNote(unhexText(hex), renderNote(noteFields(unhexText(hex), @[(key: "signer", value: "phone")]), "")).ok
     var swept = db.sweepSidecar()
     check swept.ok
     check swept.removed == 0
-    check fileExists(db.sidecarStore.storedAt(hashes[0] & ".offset"))
+    check fileExists(db.sidecarStore.storedAt(hashes[0] & ".note"))
     # Once the row is gone, the payload's note is unreferenced and goes with it.
     check db.delete(a)
     check db.compact().ok
