@@ -1,7 +1,8 @@
 # Blind store <- a place that keeps other people's sealed data and cannot read it
 
-DESIGN. Nothing in this page is built yet. It is written first so the calls can be
-judged before any code exists (see section 9 for what is still open).
+STATE. Steps 1 to 4 of section 10 are built (`src/geist/blind.nim`, 26 checks in
+`evaluation/tests/test_blind.nim`). Trim, the `[blind]` settings table and the
+benchmark are not (section 9 and 10).
 
 A person sends us their data after sealing it themselves. We keep it, we hand it
 back to them on request, and we never hold a key that opens it. This page says how
@@ -55,8 +56,8 @@ var
   R: BlindResult = default(BlindResult)
   F: FetchResult = default(FetchResult)
 
-# 1. make a store that belongs to one owner (an owner = signer name + public keys)
-R = S.createBlind(dir, "alice-main", owner = aliceKeys)
+# 1. make a store that belongs to one owner (a BlindOwner = signer name + public keys)
+R = S.createBlind(dir, "alice-main", aliceOwner)
 if not R.ok: echo R.err
 
 # 2. later runs open it
@@ -77,21 +78,31 @@ What the owner's program writes (it holds the private key; Geist never does):
 ```nim
 import geist/blind
 
+import tyr/signatures
+
 var
-  label: string = ""
-  ask: string = ""
+  f: Fields = @[]
+  sig: ByteSeq = @[]
+  entryText: string = ""
+  requestText: string = ""
 
-# the text the owner must sign, for a blob that is already sealed
-label = entryToSign(storeId, blob, prev = lastHead, sentAt = nowMs())
-# ... sign `label` with Tyr, once per key of the owner ...
-entryText = sealEntryText(label, sigs)
+# the label of a blob that is already sealed; the owner signs its signed text
+f = entryFields(storeId, "alice", blob, prev = lastHead, sentAt = nowMs())
+sig = sign(dilithium65, textBytes(noteSignedText(f)), secretKey)
+entryText = renderNote(f, "dilithium65:" & hexText(sig))
+# with several owner keys: one part per key, "alg:hex,alg:hex"
 
-ask = fetchToSign(storeId, sinceMs = lastSeen, limit = 100, askedAt = nowMs())
-requestText = sealEntryText(ask, sigs)
+f = fetchFields(storeId, "alice", sinceMs = lastSeen, untilMs = 0, limit = 100,
+  askedAt = nowMs())
+sig = sign(dilithium65, textBytes(noteSignedText(f)), secretKey)
+requestText = renderNote(f, "dilithium65:" & hexText(sig))
 ```
 
-`entryToSign` and `fetchToSign` return text and do nothing else. Signing is done
-with the keys library (Tyr) by whoever holds the private key.
+`entryFields` and `fetchFields` return the fields and do nothing else. `noteSignedText`
+and `renderNote` are the ones of `trust.nim`. Signing is done with the keys library
+(Tyr) by whoever holds the private key. The owner keeps `lastHead`: it is the head
+that `append` leaves in `S.head`, and the owner learns it from the entries it fetches
+(the hash of the newest label's signed text).
 
 ## 3. Definitions
 
@@ -142,9 +153,13 @@ Def. 10 (soft limit)  a size past which Geist keeps working and says so in
   ├─ geist.permissions           / write = deny stops append, read = deny stops fetch
   ├─ alice-main.owner            who owns the store (Def. 2), with a digest
   ├─ alice-main.ge1st.g1 ...     the index: ONE plain table (below)
-  └─ <store>-<12 hex>.geist-sidecar/
+  └─ alice-main.blobs/
        └─ ab/cd/abcd...          the blobs, each named by its own hash
 ```
+
+The blob folder belongs to the blind store alone and is not the index's own sidecar
+folder. The index's sweep deletes payloads that no row names, and it would delete
+blobs, which the index names only by hash text.
 
 The blobs are NOT sealed again by Geist. They are already sealed, and a second seal
 under a key we hold would put a key on our side for no reason. So the index is a
@@ -160,14 +175,16 @@ The index table has one row per entry:
   sentAt       int    the owner's clock, milliseconds, signed
   hash         text   64 hex: BLAKE3 of the blob
   size         int    blob length in bytes
-  note         ref    the signed label, kept to hand back (can be 9 KB of hex
-                      with a Dilithium signature, so it lives in a sidecar)
-  blob         ref    -> sidecar file named by `hash`
+  note         text   the signed label, kept to hand back (about 9 KB of hex
+                      with a Dilithium-87 signature)
 ```
 
+The blob is not a column: it is the file `<name>.blobs/ab/cd/<hash>`.
+
 Why the blobs are not rows: saving a Geist table rewrites the whole file
-(workloads.md, Def. 2). Rows stay small; big bytes stay in sidecar files that are
-written once and never touched again.
+(workloads.md, Def. 2). Rows stay small; big bytes stay in files that are written
+once and never touched again. The label text is the one larger value left in a row;
+a long-text column that moves it out of the row is a later improvement (point 4).
 
 The signed label of an entry, exactly as text (digest = BLAKE3 of the lines above):
 
@@ -307,10 +324,13 @@ folder allows writing. The host app puts its own checks in front of it.
 
 ## 9. Open points
 
-1. **Fetch needs a field for a request.** `parseNote` insists on a `hash` field,
-   and a fetch request has no blob. Either the request carries the hash of its own
-   other fields, or `parseNote` learns the two kinds. The second is cleaner, and it
-   is what Def. 9 already says.
+1. **Settled: a request has no hash.** `parseNote(text, needHash = false)` reads
+   a signed text that stands for no payload. Every other check is the same. The
+   `kind` field keeps a label and a request apart (tests "a request cannot be handed
+   in as an entry" and "a label cannot be used as a request").
+1a. **Limits are an object, not yet a settings table.** `BlindLimits` is passed to
+   `createBlind` / `openBlind` (`defaultBlindLimits()`). A `[blind]` table in
+   `configs/default.toml` is not wired, so a daemon sets them in code.
 2. **Freeing space.** A store that only grows reaches its hard limit. The owner needs
    a signed `kind = trim` request: "drop every entry before seq N", which keeps the
    head and records the hash of the last dropped entry as a new base so the chain
@@ -328,15 +348,15 @@ folder allows writing. The host app puts its own checks in front of it.
 ## 10. What gets built, in order
 
 ```
-  step  what                                                          tests
-  ────  ────────────────────────────────────────────────────────────  ──────────────
-  1     <name>.owner file + createBlind / openBlind                    test_blind_owner
-  2     entryToSign / sealEntryText, append with all refusals          test_blind_append
-  3     fetch with the signed request, time range, byte budget         test_blind_fetch
-  4     limits, [blind] settings, warnings                             test_blind_limits
-  5     trim (point 2)                                                 test_blind_trim
-  6     benchmark of the index at 10^5 entries                         bench_blind
+  step  what                                                   state
+  ────  ─────────────────────────────────────────────────────  ─────────────────
+  1     <name>.owner file + createBlind / openBlind             built, tested
+  2     entryFields, append with all refusals                   built, tested
+  3     fetchFields, fetch: signed request, range, byte budget  built, tested
+  4     BlindLimits, warnings (settings table not wired)        built, tested
+  5     trim (point 2)                                          not built
+  6     benchmark of the index at 10^5 entries                  not built
 ```
 
-Every refusal in Section 5 and 6 gets its own test, and each test names the
-refusal it holds down.
+All tests are in `evaluation/tests/test_blind.nim` (`nimble testBlind`). Every
+refusal in Section 5 and 6 has a test that names it.

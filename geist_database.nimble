@@ -162,6 +162,9 @@ task testApiSurface, "Run the collection, seek, column storage and table file te
   runTestFiles(["test_collection_seek", "test_hash_agility",
     "test_column_storage", "test_tabletext"])
 
+task testBlind, "Run the blind store tests (docs/BLIND_STORE.md) and the signed-note tests it builds on":
+  runTestFiles(["test_blind", "test_trust"])
+
 # ---------------------------------------------------------------------
 # One benchmark group (`nimble runBenchmarks` runs all of them)
 # ---------------------------------------------------------------------

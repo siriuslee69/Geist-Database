@@ -189,11 +189,13 @@ proc renderNote*(fields: seq[tuple[key, value: string]], sig: string): string {.
     all.add (key: "sig", value: sig)
   result = renderFile(all)
 
-proc parseNote*(text: string): tuple[ok: bool, note: SidecarNote, err: string] {.
-    role: parser, tag: "cryptoBoundary|read".} =
+proc parseNote*(text: string, needHash: bool = true): tuple[ok: bool,
+    note: SidecarNote, err: string] {.role: parser, tag: "cryptoBoundary|read".} =
   ## text: a note file. Refused when the digest does not match, the marker is not
   ## there, or the hash is not a full hash: a note that cannot be trusted names
   ## nothing.
+  ## needHash: false for a signed text that stands for no payload (a request, see
+  ##   blind.nim). Its hash may be missing; every other check stays the same.
   var
     got: tuple[ok: bool, pairs: Table[string, string], err: string] =
       parseKeyFile(text)
@@ -203,11 +205,11 @@ proc parseNote*(text: string): tuple[ok: bool, note: SidecarNote, err: string] {
   if got.pairs.getOrDefault(noteMarker, "") != "1":
     result.err = "not a note this build reads (no " & noteMarker & " = 1)"
     return
-  if not got.pairs.hasKey("hash"):
+  if needHash and not got.pairs.hasKey("hash"):
     result.err = "a note must say its hash"
     return
-  result.note.hash = unhexText(got.pairs["hash"])
-  if result.note.hash.len != fullDigestBytes:
+  result.note.hash = unhexText(got.pairs.getOrDefault("hash", ""))
+  if needHash and result.note.hash.len != fullDigestBytes:
     result.err = "a note's hash is not a full hash"
     return
   result.note.sig = got.pairs.getOrDefault("sig", "")

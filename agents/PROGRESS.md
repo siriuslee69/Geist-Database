@@ -1,32 +1,38 @@
-# Progress
+Commit Message: Blind store: sealed entries kept for one public key, fetched only with a signed request
 
-Commit Message: Docs: design of the blind store (sealed entries kept for one public key)
-
-## 2026-11-01 Blind store, design only
+## 2026-11-01 Blind store
 
 What was asked: simple databases that keep data the owner sealed themselves. The host
 has no key. They are bound to the owner's public key, every entry is signed, entries
 are indexed by time only, and only a request signed by the owner can fetch.
 
-Written: `docs/BLIND_STORE.md` (examples first, definitions, on-disk layout, refusals,
-limits). No code yet. Planned module: `src/geist/blind.nim`, built on `trust.nim`
-(signed notes) and the sidecar store (blobs named by hash).
+Built (steps 1 to 4 of docs/BLIND_STORE.md section 10):
+
+- `src/geist/blind.nim`: `createBlind` / `openBlind` (owner file with store id, signer and
+  public keys), `append` (stamp, store, kind, blob hash, chain head, hard and soft
+  limits, two clocks), `fetch` (signed request, clock window, since/until/limit, byte
+  budget), `entryFields` / `fetchFields` (the text an owner signs), `closeBlind`.
+  Blobs are files named by their hash in `<name>.blobs/`; the index is a plain Geist
+  collection of `BlindRow`.
+- `src/geist/trust.nim`: `parseNote(text, needHash = false)` reads a signed text that
+  stands for no payload (a request). Default unchanged.
+- `evaluation/tests/test_blind.nim`: 26 checks, real Dilithium signatures. `nimble
+  testBlind` runs it with `test_trust` (38 checks in all, none failing).
 
 Decided with the owner of the repo:
 
-- Fetch needs a request signed by the owner's key.
-- Two times per entry: the owner's (signed) and ours (the index uses ours).
-- Hard and soft size limits; a soft limit only warns. Who may make a store (IP limits,
-  fake accounts) is the host app's job and comes later.
+- Fetch needs a request signed by the owner's key. Two times per entry; the index uses
+  ours. Hard and soft size limits; a soft limit only warns. Who may make a store (IP
+  limits, fake accounts) is the host app's job and comes later.
 
-Not done: all six build steps in BLIND_STORE.md section 10. Open: a `fetch` kind that
-`parseNote` accepts, `trim`, two-device writes, index size at 100,000 entries.
+Not done: `trim` (freeing space), a `[blind]` table in configs/default.toml (limits are
+an object passed in code), the benchmark at 100,000 entries, two devices writing at once.
+Nebel does not use the module yet.
 
 Seen, not touched: the Otter gate reports 27 SECRETS candidates (the visible ones look
 like names of settings, not keys; not each one read), nesting of depth 3 to 4 in
 `dynamic.nim`, `storage.nim`, `trust.nim`, and layout notes for `sidecar.nim`. All are in
 older code.
-
 
 ## 2026-10-30 Trusted notes, unsafe retrieval, folder versions
 
