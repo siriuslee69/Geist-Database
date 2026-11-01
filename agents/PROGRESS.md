@@ -1,6 +1,32 @@
 # Progress
 
-Commit Message: Trust: signed notes are checked against a trusted keys file; unsafe retrieval is a setting
+Commit Message: Docs: design of the blind store (sealed entries kept for one public key)
+
+## 2026-11-01 Blind store, design only
+
+What was asked: simple databases that keep data the owner sealed themselves. The host
+has no key. They are bound to the owner's public key, every entry is signed, entries
+are indexed by time only, and only a request signed by the owner can fetch.
+
+Written: `docs/BLIND_STORE.md` (examples first, definitions, on-disk layout, refusals,
+limits). No code yet. Planned module: `src/geist/blind.nim`, built on `trust.nim`
+(signed notes) and the sidecar store (blobs named by hash).
+
+Decided with the owner of the repo:
+
+- Fetch needs a request signed by the owner's key.
+- Two times per entry: the owner's (signed) and ours (the index uses ours).
+- Hard and soft size limits; a soft limit only warns. Who may make a store (IP limits,
+  fake accounts) is the host app's job and comes later.
+
+Not done: all six build steps in BLIND_STORE.md section 10. Open: a `fetch` kind that
+`parseNote` accepts, `trim`, two-device writes, index size at 100,000 entries.
+
+Seen, not touched: the Otter gate reports 27 SECRETS candidates (the visible ones look
+like names of settings, not keys; not each one read), nesting of depth 3 to 4 in
+`dynamic.nim`, `storage.nim`, `trust.nim`, and layout notes for `sidecar.nim`. All are in
+older code.
+
 
 ## 2026-10-30 Trusted notes, unsafe retrieval, folder versions
 
