@@ -63,6 +63,19 @@ suite "modes":
     check f.ok and f.items.len == 1 and f.items[0].data == b("2") and f.number == 2'u64
     S.closeShelf()
 
+  # {.testKind: tkRegression, covers: "putBoxItem", pins: "a resend after a lost answer looked like a failed write".}
+  test "the same item sent twice is one item and no error":
+    var S = fresh("resend")
+    check S.createBox("chat", "c1", "alice").ok
+    check S.setBoxPeople("chat", "c1", "alice", ["bob"], []).ok
+    check S.putBoxItem("chat", "c1", "alice", "a", b("1"), 0, T).number == 1'u64
+    var again = S.putBoxItem("chat", "c1", "alice", "a", b("1"), 0, T)
+    check again.ok and again.number == 1'u64
+    check not S.putBoxItem("chat", "c1", "alice", "a", b("2"), 0, T).ok
+    check not S.putBoxItem("chat", "c1", "bob", "a", b("1"), 0, T).ok
+    check S.fetchBoxItems("chat", "c1", "alice", 0, 9, T).items.len == 1
+    S.closeShelf()
+
   # {.testKind: tkUnit, covers: "putBoxItem".}
   test "overwrite: a write names the version it replaces":
     var S = fresh("over")

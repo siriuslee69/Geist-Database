@@ -29,18 +29,20 @@ import std/[json, os, strutils, sysrand, tables]
 
 import runePragmas
 import ./types
-import ./lease
 import ./durable
 import ./textfile
 import ./crypto/hashing
 import ./crypto/hashwidths
 import ./boxtypes
 import ./boxlog
+import ./boxshelf
+import ./box
 
 const
   accountMaxDevices* = 8
   accountNameMax* = 64
-  accountsBox = "accounts/all"
+  accountsKind* = "accounts"
+  accountsId* = "all"
   decoyFile = "decoy.key"
   accountIdBytes = 16
 
@@ -60,7 +62,9 @@ type
   Accounts* {.role: truthState, tag: "accounts|types",
       expectedCount: 1, lifeCycle: lcForever.} = ref object
     ## Every account of one store.
-    lease*: Lease
+    shelf*: BoxShelf
+      ## one box holds every account; so a copy on another machine is ordinary
+      ## (./boxcopy), followed by `reloadAccounts`
     log*: BoxFile
     byName*: Table[string, AccountRow]
     nameOfId*: Table[string, string]
@@ -122,44 +126,61 @@ proc replayRows(A: Accounts) {.role: truthBuilder.} =
   ## A: every row read back from the log.
   var
     got: tuple[ok: bool, item: BoxItem] = (false, BoxItem())
+  A.byName = initTable[string, AccountRow]()
+  A.nameOfId = initTable[string, string]()
+  A.nameOfKey = initTable[string, string]()
   for key, slot in A.log.index.pairs:
     got = readWholeItem(A.log, slot)
     if not got.ok:
       raise newException(IOError, "the account " & key & " is damaged")
     A.remember(rowOf(textOfBytes(got.item.data)))
 
+proc accountsRule(): BoxRule {.role: configurator.} =
+  ## The kind of the one box that holds the accounts.
+  result = defaultBoxRule(accountsKind)
+  result.owner = boSpace
+  result.mode = bmOverwrite
+  result.maxItems = high(int)
+  result.maxItemBytes = 64 * 1024
+
+proc reloadAccounts*(A: Accounts): string {.role: truthBuilder,
+    tag: "accounts|appApi|storageIo|read".} =
+  ## A: every map rebuilt from the log (after a copy arrived). "" or what is wrong.
+  var
+    got: tuple[found: bool, box: BoxFile] = A.shelf.boxOf(accountsKind, accountsId)
+  if not got.found:
+    return "the account store is missing or damaged"
+  A.log = got.box
+  try:
+    A.replayRows()
+  except CatchableError as e:
+    result = e.msg
+
 proc openAccounts*(dir: string, atRest: BoxKey = nil): tuple[ok: bool,
     accounts: Accounts, err: string] {.role: orchestrator,
     tag: "accounts|appApi|storageIo".} =
   ## dir: the folder. atRest: seals the rows, nil for none. One program at a time.
   var
-    got: tuple[ok: bool, lease: Lease, err: string] = (false, Lease(), "")
-    made: tuple[ok: bool, err: string] = (false, "")
+    got: tuple[ok: bool, shelf: BoxShelf, err: string] = (false, nil, "")
     A: Accounts = nil
+    why: string = ""
   try:
-    createDir(dir)
-    got = acquireLease(dir)
+    got = openShelf(dir, [accountsRule()], atRest = atRest)
     if not got.ok:
       return (false, nil, got.err)
-    A = Accounts(lease: got.lease, decoySecret: loadDecoySecret(dir),
-      log: makeBoxFile(dir, accountsBox, atRest),
-      byName: initTable[string, AccountRow](), nameOfId: initTable[string, string](),
-      nameOfKey: initTable[string, string]())
-    if fileExists(dir / boxLogName):
-      made = openBoxFile(A.log)
-    else:
-      made = createBoxFile(A.log, BoxHead(kind: "accounts", id: "all", owner: "system"))
-    if not made.ok:
-      return (false, nil, made.err)
-    A.replayRows()
+    A = Accounts(shelf: got.shelf, decoySecret: loadDecoySecret(dir))
+    if not got.shelf.boxOf(accountsKind, accountsId).found:
+      discard got.shelf.createBox(accountsKind, accountsId, "system")
+    why = A.reloadAccounts()
+    if why.len > 0:
+      return (false, nil, why)
     result = (true, A, "")
   except CatchableError as e:
     result = (false, nil, e.msg)
 
 proc closeAccounts*(A: Accounts) {.role: actor, tag: "accounts|appApi|storageIo".} =
   ## A: the log closed, the lease given back.
-  closeBoxFile(A.log)
-  releaseLease(A.lease)
+  closeShelf(A.shelf)
 
 proc saveRow(A: Accounts, R: AccountRow, nowMs: uint64): tuple[ok: bool, err: string] {.
     role: dataWriter, tag: "accounts|storageIo|write".} =
@@ -169,11 +190,9 @@ proc saveRow(A: Accounts, R: AccountRow, nowMs: uint64): tuple[ok: bool, err: st
       writer: "system", atMs: nowMs, data: textBytes(rowJson(R)))
   try:
     appendFrame(A.log, brItem, encodeItem(item))
-    result = syncBox(A.log)
+    result = A.shelf.commitBox(A.log)
     if result.ok:
       A.remember(R)
-    if result.ok and A.log.needsCompacting():
-      result = compactBox(A.log)
   except CatchableError as e:
     result = (false, e.msg)
 

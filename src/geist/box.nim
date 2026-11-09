@@ -236,6 +236,23 @@ proc writeItem(S: BoxShelf, B: BoxFile, item: BoxItem): tuple[ok: bool, err: str
   S.charge(B.head.owner, 0, B.liveBytes - wasLive + blob.size - old.blobBytes)
   result = (true, "")
 
+proc sameAsStored(R: BoxRule, B: BoxFile, subject, key: string,
+    data: openArray[uint8]): bool {.role: parser, tag: "boxes".} =
+  ## R/B/subject/key/data: true when this very item is here already, from this
+  ## very writer. A sender that lost the answer sends again; the second time must
+  ## not be an error, or a write that worked would look as if it had failed.
+  var
+    got: tuple[ok: bool, item: BoxItem] = (false, BoxItem())
+  if R.mode == bmOverwrite or not B.index.hasKey(key) or B.index[key].writer != subject:
+    return false
+  got = readWholeItem(B, B.index[key])
+  result = got.ok and got.item.data == 
+
+proc resent(B: BoxFile, key: string): BoxResult {.role: helper, inline.} =
+  ## B/key: the answer to an item that was here already.
+  result = BoxResult(ok: true, number: B.index[key].number,
+    version: B.index[key].version, chainHead: B.chain)
+
 proc putBoxItem*(S: BoxShelf, kind, id, subject, key: string,
     data: openArray[uint8], expectVersion, nowMs: uint64, label: string = "",
     flush: bool = true): BoxResult {.role: actor,
@@ -252,6 +269,8 @@ proc putBoxItem*(S: BoxShelf, kind, id, subject, key: string,
     wrote: tuple[ok: bool, err: string] = (false, "")
   if not c.ok:
     return refuseBox()
+  if sameAsStored(c.rule, c.box, subject, key, data):
+    return resent(c.box, key)
   if c.box.index.len >= c.rule.maxItems:
     discard S.sweepOpen(c.rule, c.box, nowMs)
   err = putError(c.rule, c.box, key, data.len, expectVersion)
