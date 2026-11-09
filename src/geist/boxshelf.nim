@@ -96,15 +96,17 @@ proc addBoxToUsage(S: BoxShelf, dir, name: string) {.role: truthBuilder.} =
     return
   S.charge(got.owner, 1, getFileSize(dir / boxLogName) + dirBytes(dir / boxBlobDir))
 
+proc scanKind(S: BoxShelf, kindDir: string) {.role: truthBuilder.} =
+  ## S/kindDir: every box of one kind, counted.
+  for e in walkDir(kindDir):
+    if e.kind == pcDir and fileExists(e.path / boxLogName):
+      S.addBoxToUsage(e.path, boxName(kindDir.extractFilename(), e.path.extractFilename()))
+
 proc scanUsage(S: BoxShelf) {.role: truthBuilder, tag: "boxes|storageIo|read".} =
   ## S: walks every kind and box once, at start-up.
-  for kindEntry in walkDir(S.root):
-    if kindEntry.kind != pcDir:
-      continue
-    for boxEntry in walkDir(kindEntry.path):
-      if boxEntry.kind == pcDir and fileExists(boxEntry.path / boxLogName):
-        S.addBoxToUsage(boxEntry.path, boxName(kindEntry.path.extractFilename(),
-          boxEntry.path.extractFilename()))
+  for e in walkDir(S.root):
+    if e.kind == pcDir:
+      S.scanKind(e.path)
 
 proc openShelf*(root: string, rules: openArray[BoxRule],
     limits: BoxLimits = BoxLimits(), atRest: BoxKey = nil,

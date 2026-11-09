@@ -51,22 +51,24 @@ type
     blobs*: seq[uint64]
       ## numbers of the large items named in this chunk
 
+proc listKind(S: BoxShelf, kindDir: string, R: var seq[BoxListing]) {.role: dataFetcher.} =
+  ## S/kindDir/R: every box of one kind, added to R.
+  var
+    k: string = kindDir.extractFilename()
+    id: string = ""
+    got: tuple[found: bool, box: BoxFile] = (false, nil)
+  for e in walkDir(kindDir):
+    id = e.path.extractFilename()
+    got = S.boxOf(k, id)
+    if got.found:
+      R.add(BoxListing(kind: k, id: id, logId: got.box.logId, size: got.box.size))
+
 proc listBoxes*(S: BoxShelf): seq[BoxListing] {.role: dataFetcher,
     tag: "boxes|appApi|storageIo|read".} =
   ## S: every box on this shelf.
-  var
-    got: tuple[found: bool, box: BoxFile] = (false, nil)
-    k: string = ""
-    id: string = ""
-  for kindEntry in walkDir(S.root):
-    if kindEntry.kind != pcDir:
-      continue
-    k = kindEntry.path.extractFilename()
-    for boxEntry in walkDir(kindEntry.path):
-      id = boxEntry.path.extractFilename()
-      got = S.boxOf(k, id)
-      if got.found:
-        result.add(BoxListing(kind: k, id: id, logId: got.box.logId, size: got.box.size))
+  for e in walkDir(S.root):
+    if e.kind == pcDir:
+      S.listKind(e.path, result)
 
 proc noteBlobs(B: BoxFile, f: File, at, stop: int64, R: var BoxCopyChunk) {.
     role: parser.} =
@@ -214,22 +216,25 @@ proc appendRecords(S: BoxShelf, B: BoxFile, C: BoxCopyChunk): tuple[ok: bool,
   if result.ok:
     S.charge(B.head.owner, 0, B.size - was)
 
+proc continueLog(S: BoxShelf, kind, id: string, C: BoxCopyChunk): tuple[ok: bool,
+    err: string] {.role: orchestrator.} =
+  ## S/kind/id/C: a chunk that must pick up exactly where this log ends.
+  var
+    got: tuple[found: bool, box: BoxFile] = S.boxOf(kind, id)
+  if not got.found or got.box.logId != C.logId or got.box.size != C.offset:
+    return (false, "this chunk does not continue the log here")
+  result = S.appendRecords(got.box, C)
+
 proc applyBoxLog*(S: BoxShelf, kind, id: string, C: BoxCopyChunk): tuple[ok: bool,
     err: string] {.role: orchestrator, tag: "boxes|appApi|storageIo|write".} =
   ## S/kind/id/C: a chunk from `boxLogSince`. A chunk that does not continue this
   ## log exactly, and is no fresh start either, is refused and changes nothing.
   var
     got: tuple[found: bool, box: BoxFile] = (false, nil)
-  if not validBoxId(id) or S.rules.ruleOf(kind).ok == false:
+  if not validBoxId(id) or not S.rules.ruleOf(kind).ok:
     return (false, boxRefused)
   try:
-    if C.offset == 0'i64:
-      result = S.replaceLog(kind, id, C)
-    else:
-      got = S.boxOf(kind, id)
-      if not got.found or got.box.logId != C.logId or got.box.size != C.offset:
-        return (false, "this chunk does not continue the log here")
-      result = S.appendRecords(got.box, C)
+    result = if C.offset == 0'i64: S.replaceLog(kind, id, C) else: S.continueLog(kind, id, C)
     got = S.boxOf(kind, id)
     if result.ok and got.found:
       S.counters[boxName(kind, id)] = got.box.counter
