@@ -41,7 +41,7 @@ elif defined(windows):
   proc flushFileBuffers(h: Handle): WINBOOL {.role: dataWriter,
     importc: "FlushFileBuffers", stdcall, dynlib: "kernel32".}
 
-proc syncHandle(f: File): bool {.role: dataWriter,
+proc syncFile*(f: File): bool {.role: dataWriter,
     tag: "storageIo|write".} =
   ## f: open file whose bytes are pushed from the kernel's cache to the
   ## device. Everything else in this module is bookkeeping around this call.
@@ -92,7 +92,7 @@ proc writeDurable*(path: string, A: openArray[uint8]): tuple[ok: bool,
     if A.len > 0:
       discard f.writeBuffer(unsafeAddr A[0], A.len)
     flushFile(f)
-    ok = syncHandle(f)
+    ok = syncFile(f)
     f.close()
     f = nil
     if not ok:

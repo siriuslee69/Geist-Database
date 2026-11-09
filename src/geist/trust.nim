@@ -195,7 +195,7 @@ proc parseNote*(text: string, needHash: bool = true): tuple[ok: bool,
   ## there, or the hash is not a full hash: a note that cannot be trusted names
   ## nothing.
   ## needHash: false for a signed text that stands for no payload (a request, see
-  ##   blind.nim). Its hash may be missing; every other check stays the same.
+  ##   a request). Its hash may be missing; every other check stays the same.
   var
     got: tuple[ok: bool, pairs: Table[string, string], err: string] =
       parseKeyFile(text)

@@ -13,7 +13,7 @@
 ## fails the last test in this file.
 
 import runePragmas
-import std/[os, strutils, unittest]
+import std/[json, os, strutils, unittest]
 import geist
 import geist
 
@@ -135,3 +135,16 @@ suite "a preset can be chosen from config.toml":
       if not got.ok:
         echo "preset '", p.name, "' is not loadable: ", got.err
       i = i + 1
+
+suite "a preset built into the program":
+  # {.testKind: tkRegression, covers: "tomlOf", pins: "a preset build started elsewhere silently used the defaults".}
+  test "a config file that is missing here falls back to what was built in":
+    var
+      here = getCurrentDir()
+      away = getTempDir() / "geist_preset_elsewhere"
+    createDir(away)
+    setCurrentDir(away)
+    var doc = tomlOf(libraryConfigName)
+    setCurrentDir(here)
+    check doc.ok
+    check doc.node.kind == JObject and doc.node.len > 0

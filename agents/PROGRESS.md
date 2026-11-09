@@ -1,4 +1,24 @@
-Commit Message: Blind store: sealed entries kept for one public key, fetched only with a signed request
+Commit Message: Boxes in Geist: the four modes on one log per box, accounts, grants, copies, streaming, folder scan, built-in presets
+
+## 2026-11-09 Geist side built (docs/BOXES.md)
+
+- boxtypes, boxlog, boxshelf, box: the four modes moved here from Nebel. One
+  append-only log per box (record = length, kind, body, check): a number and its
+  item are one write. Incomplete tail cut, wrong check refused (repairBox).
+  Large items beside the log. At-rest key handed over (BoxKey). flushShelf for
+  many writes per fsync. Per-owner limits. test_box (26).
+- Signed boxes replace the blind store (blind.nim removed). test_box_signed (6).
+- boxcopy: log handed out from an offset, checked and applied. test_box_copy (5).
+- accounts: name, id, device keys, login check, decoy ids. test_accounts (8).
+- grants: Nebel's permission table moved here. test_grants (12).
+- sidecarstream: large values in pieces, no whole copy in memory. test (6).
+- folderscan: which files changed, no network. test (4).
+- toml_read: the preset's files are built into the program; a file beside it
+  still wins. Regression test in test_presets.
+
+Removed the stale untracked submodules/Bifrost-ExchangeProtocols copy: Geist has
+no network code and no dependency on Bifrost.
+
 
 ## 2026-11-09 PLAN: what goes where, and why (written before any code)
 

@@ -78,6 +78,13 @@ import ./geist/crypto/hashing
 import ./geist/seal
 import ./geist/keyring
 import ./geist/verify
+import ./geist/box
+import ./geist/boxlog
+import ./geist/boxcopy
+import ./geist/accounts
+import ./geist/grants
+import ./geist/sidecarstream
+import ./geist/folderscan
 
 export types, secret, config, backup, session
 export toml_read, settings
@@ -89,6 +96,11 @@ export secrets, users, seal
 export keyring
 ## Keyless check of every sealed batch (Gimli digests in the ledger).
 export verify
+## Boxes: the places that keep items for somebody, who may do what in them,
+## and the accounts and grants that say who somebody is.
+export box, boxlog, boxcopy, accounts, grants
+## Large values without holding them in memory; which files changed.
+export sidecarstream, folderscan
 export mapper
 export rowid
 export durable

@@ -39,14 +39,44 @@ const
     ## configs/default.toml and then configs/server.toml in its own working
     ## directory -- never at a path on the machine that compiled it.
 
+proc embeddedPresets(): seq[tuple[name, text: string]] {.compileTime, role: helper.} =
+  ## Every file this build was made from, read while compiling. A program
+  ## started somewhere without a configs/ folder still knows its preset.
+  var
+    full: string = ""
+  if presetFiles.len == 0:
+    return
+  for p in presetFiles.split(';'):
+    full = if isAbsolute(p): p else: staticExec("pwd") / p
+    result.add((extractFilename(p), staticRead(full)))
+
+const
+  builtInConfigs: seq[tuple[name, text: string]] = embeddedPresets()
+    ## (file name, text) of default.toml and the preset, base first.
+
+proc builtInTextOf(path: string): tuple[found: bool, text: string] {.role: parser.} =
+  ## path: a config file -> the copy built into this program, when it has one.
+  for x in builtInConfigs:
+    if x.name == extractFilename(path):
+      return (true, x.text)
+
 proc tomlOf*(path: string): tuple[ok: bool, node: JsonNode, err: string] {.
     role: parser, tag: "config|parsing|read".} =
   ## path: a TOML file, or nothing.
   ##
-  ## A missing file is OK with an empty table: "no settings" is a valid
-  ## state. A file that is THERE and will not parse is an error, because
-  ## the alternative is running with defaults the operator did not choose
-  ## and cannot see.
+  ## A file beside the program wins, so an operator can edit it. With none there
+  ## the copy built into the program is used: the program was built for that
+  ## preset, and a service started from another folder must not quietly become
+  ## something else. With neither, "no settings" is a valid state. A file that
+  ## is THERE and will not parse is an error, because the alternative is running
+  ## with defaults the operator did not choose and cannot see.
+  var
+    built: tuple[found: bool, text: string] = builtInTextOf(path)
+  if not fileExists(path) and built.found:
+    try:
+      return (true, parseTomlNode(built.text), "")
+    except CatchableError as exc:
+      return (false, newJObject(), "built-in " & path & ": " & exc.msg)
   if not fileExists(path):
     return (true, newJObject(), "")
   try:
