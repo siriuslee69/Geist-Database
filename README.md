@@ -1436,6 +1436,43 @@ full definitions.
 
 ---
 
+## 1.15 Boxes: places that keep items for somebody 🍣
+
+A box keeps items for somebody who is not always here. Geist does every write and
+decides every yes and no. It does not know whether the caller is on this machine.
+
+```nim
+import geist
+
+var rule = defaultBoxRule("chat")
+rule.owner = boSpace
+rule.read = baMembers
+rule.write = baMembers
+
+var S = openShelf("data/boxes", [rule]).shelf
+discard S.createBox("chat", "c0ffee", "alice")
+discard S.putBoxItem("chat", "c0ffee", "alice", "k1", textBytes("hi"), 0, nowMs)
+echo S.fetchBoxItems("chat", "c0ffee", "alice", 0, 100, nowMs).items.len
+S.closeShelf()
+```
+
+```text
+  file              job
+  ────────────────  ──────────────────────────────────────────────────────
+  boxtypes          what a box is, who may do what, rules from a file
+  boxframe          one record as bytes
+  boxlog            one append-only file per box; crashes and damage
+  boxshelf          every box below a folder, what each owner uses
+  box               put, fetch, get, take, acknowledge
+  boxcopy           a log handed to another machine, record by record
+  accounts          names, device keys, a login check
+  grants, access    who may read or write which address
+  sidecarstream     large values in pieces, not whole in memory
+  folderscan        which files changed
+```
+
+Every byte and every crash case: `docs/BOXES.md`.
+
 ## For contributors
 
 ## Where the walls are
