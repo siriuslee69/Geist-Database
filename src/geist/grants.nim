@@ -35,6 +35,7 @@ import std/[os, strutils]
 
 import runePragmas
 import ./types
+import ./access
 import ./config
 import ./session
 import ./layout
@@ -42,19 +43,13 @@ import ./rowid
 import ./store
 import ./row
 
+export access
+
 const
   grantsRowKey* = "grants"
   grantSeparator = '\t'
 
 type
-  AccessRight* {.role: configurator, tag: "permission|types".} = enum
-    ## What a subject may do. Granted by the operator, never asked for.
-    ##
-    ##   prRead   list, get, find, sync, subscribe, poll
-    ##   prWrite  put and delete
-    ##   prAdmin  reserved for operations that change a database's shape
-    prRead, prWrite, prAdmin
-
   GrantRow* {.role: truthState.} = object
     ## One grant, as the operator wrote it.
     subject*: string
