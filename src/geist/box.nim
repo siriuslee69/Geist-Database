@@ -341,6 +341,25 @@ proc fetchBoxItems*(S: BoxShelf, kind, id, subject: string, afterNumber: uint64,
       continue
     result.items.add(got.item)
 
+proc getBoxItem*(S: BoxShelf, kind, id, subject, key: string, nowMs: uint64): BoxResult {.
+    role: dataFetcher, tag: "boxes|appApi|storageIo|read".} =
+  ## S/kind/id/subject/key: the one item with this key. An item that is not there
+  ## answers ok with no item, so a reader can tell it from a refusal.
+  var
+    c: tuple[ok: bool, rule: BoxRule, box: BoxFile] =
+      S.checkedBox(kind, id, subject, bxRead)
+    got: tuple[ok: bool, item: BoxItem] = (false, BoxItem())
+  if not c.ok or (c.rule.mode == bmTakeOnce and subject != c.box.head.owner):
+    return refuseBox()
+  result = BoxResult(ok: true, number: c.box.counter, chainHead: c.box.chain)
+  if not c.box.index.hasKey(key) or expired(c.rule, c.box.index[key].atMs, nowMs):
+    return
+  got = readWholeItem(c.box, c.box.index[key])
+  if not got.ok:
+    noteBoxDamage(c.box.name & ": item " & key & " is damaged")
+    return refuseBox()
+  result.items = @[got.item]
+
 proc takeBoxItem*(S: BoxShelf, kind, id, subject: string, nowMs: uint64): BoxResult {.
     role: actor, tag: "boxes|appApi|storageIo|write".} =
   ## S/kind/id/subject/nowMs: the oldest item of a takeOnce box, deleted durably

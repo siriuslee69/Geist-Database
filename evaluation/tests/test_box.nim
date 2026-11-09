@@ -89,6 +89,18 @@ suite "modes":
     check f.items.len == 1 and f.items[0].data == b("2")
     S.closeShelf()
 
+  # {.testKind: tkUnit, covers: "getBoxItem".}
+  test "one item by its key, without walking the box":
+    var S = fresh("get")
+    check S.createBox("chat", "c", "alice").ok
+    check S.putBoxItem("chat", "c", "alice", "a", b("1"), 0, T).ok
+    check S.putBoxItem("chat", "c", "alice", "b", b("2"), 0, T).ok
+    check S.getBoxItem("chat", "c", "alice", "b", T).items[0].data == b("2")
+    var none = S.getBoxItem("chat", "c", "alice", "zzz", T)
+    check none.ok and none.items.len == 0
+    check not S.getBoxItem("chat", "c", "mallory", "b", T).ok
+    S.closeShelf()
+
   # {.testKind: tkUnit, covers: "ackBoxItems".}
   test "queue: anyone drops a letter, only the owner reads and clears it":
     var S = fresh("queue")
