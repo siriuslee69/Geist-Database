@@ -246,7 +246,7 @@ proc sameAsStored(R: BoxRule, B: BoxFile, subject, key: string,
   if R.mode == bmOverwrite or not B.index.hasKey(key) or B.index[key].writer != subject:
     return false
   got = readWholeItem(B, B.index[key])
-  result = got.ok and got.item.data == 
+  result = got.ok and got.item.data == @data
 
 proc resent(B: BoxFile, key: string): BoxResult {.role: helper, inline.} =
   ## B/key: the answer to an item that was here already.
