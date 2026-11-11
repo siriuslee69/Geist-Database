@@ -179,7 +179,9 @@ sent the log from the start.
 ## 9. Limits and open points
 
 - `maxBoxesPerOwner`, `maxBytesPerOwner` per shelf; `maxItems`, `maxItemBytes`,
-  `keepMs` per kind. What sits in my mailbox counts against me.
+  `keepMs`, `maxPerWriter` per kind. What sits in my mailbox counts against me, so
+  a box that anyone may write to should set `maxPerWriter`: it is how many live
+  items one writer other than the owner may have there.
 - All live keys of a box are held in memory, about 150 bytes each. A million items
   in one box is about 150 MB while that box is open.
 - A log is read once, whole, when its box opens.

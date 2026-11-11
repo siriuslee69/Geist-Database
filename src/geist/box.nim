@@ -181,9 +181,20 @@ proc sweepBox*(S: BoxShelf, kind, id: string, nowMs: uint64): int {.role: actor,
   if got.found:
     result = S.sweepOpen(r.rule, got.box, nowMs)
 
-proc putError(R: BoxRule, B: BoxFile, key: string, n: int, expectVersion: uint64): string {.
-    role: parser, tag: "boxes".} =
-  ## R/B/key/n/expectVersion: "" when this put may go ahead.
+proc itemsBy(B: BoxFile, writer: string): int {.role: parser, inline.} =
+  ## B/writer: how many live items this writer has in the box.
+  for key, s in B.index.pairs:
+    if s.writer == writer:
+      result = result + 1
+
+proc writerFull(R: BoxRule, B: BoxFile, subject: string): bool {.role: parser, inline.} =
+  ## R/B/subject: true when this writer has as many items here as one writer may.
+  result = R.maxPerWriter > 0 and subject != B.head.owner and
+    itemsBy(B, subject) >= R.maxPerWriter
+
+proc putError(R: BoxRule, B: BoxFile, subject, key: string, n: int,
+    expectVersion: uint64): string {.role: parser, tag: "boxes".} =
+  ## R/B/subject/key/n/expectVersion: "" when this put may go ahead.
   var
     exists: bool = B.index.hasKey(key)
   if key.len == 0 or key.len > 256:
@@ -194,6 +205,8 @@ proc putError(R: BoxRule, B: BoxFile, key: string, n: int, expectVersion: uint64
     return "that key is taken; items of this box are written once"
   if not exists and B.index.len >= R.maxItems:
     return "the box is full (" & $R.maxItems & " items)"
+  if not exists and writerFull(R, B, subject):
+    return "you have as many items in this box as one writer may (" & $R.maxPerWriter & ")"
   if R.mode == bmOverwrite and not exists and expectVersion != 0'u64:
     return "no such item to replace; send version 0 for a new key"
   if R.mode == bmOverwrite and exists and B.index[key].version != expectVersion:
@@ -273,7 +286,7 @@ proc putBoxItem*(S: BoxShelf, kind, id, subject, key: string,
     return resent(c.box, key)
   if c.box.index.len >= c.rule.maxItems:
     discard S.sweepOpen(c.rule, c.box, nowMs)
-  err = putError(c.rule, c.box, key, data.len, expectVersion)
+  err = putError(c.rule, c.box, subject, key, data.len, expectVersion)
   if err.len == 0 and c.rule.signed:
     err = labelError(c.box, data, label)
   if err.len == 0:

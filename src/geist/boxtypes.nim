@@ -87,6 +87,10 @@ type
       ## how long an item is kept; 0 = until it is deleted
     maxItemBytes*: int
     maxItems*: int
+    maxPerWriter*: int
+      ## how many live items ONE writer other than the owner may have here; 0 = no
+      ## limit. Without it, one stranger can fill a posting box that anyone may
+      ## write to, and nobody else's letter gets in.
 
   BoxHead* {.role: truthState, tag: "boxes|types",
       expectedCount: [0, -1], lifeCycle: lcSession.} = object
@@ -238,8 +242,8 @@ proc validBoxId*(id: string): bool {.role: sanitizer, tag: "boxes".} =
 ## ---------------------------- rules from a file -----------------------------
 
 const
-  boxRuleKeys*: array[9, string] = ["owner", "read", "write", "mode", "blind",
-    "signed", "keepDays", "maxItemBytes", "maxItems"]
+  boxRuleKeys*: array[10, string] = ["owner", "read", "write", "mode", "blind",
+    "signed", "keepDays", "maxItemBytes", "maxItems", "maxPerWriter"]
 
 proc defaultBoxRule*(name: string): BoxRule {.role: configurator, tag: "boxes|config".} =
   ## name: a kind. What every rule starts from.
@@ -291,8 +295,8 @@ proc boxRuleError*(R: BoxRule): string {.role: sanitizer, tag: "boxes|config".} 
   ## R: "" when the rule can be served; otherwise what does not fit.
   if R.name.len == 0 or not R.name.allCharsInSet(Letters + Digits):
     return "a box kind name is letters and digits only"
-  if R.maxItemBytes <= 0 or R.maxItems <= 0:
-    return "maxItemBytes and maxItems must be at least 1"
+  if R.maxItemBytes <= 0 or R.maxItems <= 0 or R.maxPerWriter < 0:
+    return "maxItemBytes and maxItems must be at least 1, maxPerWriter at least 0"
   if R.owner == boAccount and (R.read == baMembers or R.write == baMembers):
     return "an account box has no members; use owner, whitelist or anyone"
   if R.mode == bmTakeOnce and R.write != baOwner:
@@ -318,6 +322,7 @@ proc parseBoxRule*(name: string, n: JsonNode,
   result.rule.keepMs = uint64(n.setting("keepDays", 0)) * 86_400_000'u64
   result.rule.maxItemBytes = n.setting("maxItemBytes", result.rule.maxItemBytes)
   result.rule.maxItems = n.setting("maxItems", result.rule.maxItems)
+  result.rule.maxPerWriter = n.setting("maxPerWriter", 0)
   if complaint.len == 0:
     complaint = boxRuleError(result.rule)
   if complaint.len > 0:

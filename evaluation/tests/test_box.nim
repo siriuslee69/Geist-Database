@@ -145,6 +145,21 @@ suite "modes":
     check S.sweepBox("mail", "alice", T + 400) == 2
     S.closeShelf()
 
+  # {.testKind: tkRegression, covers: "putBoxItem|writerFull", pins: "one stranger could fill a posting box".}
+  test "one writer cannot fill a box that anyone may write to":
+    var S = fresh("perwriter")
+    S.rules[1].maxPerWriter = 2
+    check S.createBox("mail", "alice", "alice").ok
+    check S.putBoxItem("mail", "alice", "mallory", "a", b("1"), 0, T).ok
+    check S.putBoxItem("mail", "alice", "mallory", "b", b("2"), 0, T).ok
+    check not S.putBoxItem("mail", "alice", "mallory", "c", b("3"), 0, T).ok
+    check S.putBoxItem("mail", "alice", "bob", "d", b("4"), 0, T).ok
+    check S.ackBoxItems("mail", "alice", "alice", ["a"]).ok
+    check S.putBoxItem("mail", "alice", "mallory", "c", b("3"), 0, T).ok
+    for i in 0 .. 5:
+      check S.putBoxItem("mail", "alice", "alice", "own" & $i, b("x"), 0, T).ok
+    S.closeShelf()
+
   # {.testKind: tkEdgeCase, covers: "putBoxItem".}
   test "size and key limits":
     var S = fresh("limit")

@@ -241,8 +241,9 @@ proc readWholeItem*(B: BoxFile, s: BoxSlot): tuple[ok: bool, item: BoxItem] {.
     P = decodeItem(r.body)
     if P.isBlob:
       raw = cast[ByteSeq](readFile(B.blobPath(P.item.number)))
-      if not constantTimeEq(geistHash(hkBlake3, raw, fullDigestBytes), P.blobHash):
-        return
+    if P.isBlob and not constantTimeEq(geistHash(hkBlake3, raw, fullDigestBytes), P.blobHash):
+      return
+    if P.isBlob:
       P.item.data = openBody(B, raw)
   except CatchableError:
     return
