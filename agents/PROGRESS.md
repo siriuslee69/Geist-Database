@@ -1,4 +1,14 @@
-Commit Message: Boxes in Geist: the four modes on one log per box, accounts, grants, copies, streaming, folder scan, built-in presets
+Commit Message: Boxes: maxPerWriter; example geist_boxes
+
+## 2026-11-11 Review pass
+
+- box: `maxPerWriter` per kind: how many live items one writer other than the owner
+  may have in a box. Without it one stranger fills a box anyone may write to.
+  test_box "one writer cannot fill a box that anyone may write to".
+- examples/geist_boxes.nim.
+- Not touched: the nesting Otter reports in dynamic.nim, storage.nim, trust.nim,
+  keyring.nim (older code, no finding against its behaviour).
+
 
 ## 2026-11-09 Geist side built (docs/BOXES.md)
 
