@@ -21,8 +21,8 @@ suite "the most specific grant decides":
   test "a longer prefix overrides a shorter one for the same subject":
     var
       T: GrantTable = GrantTable()
-    check T.grant("phone", "fjord", {prRead}) == ""
-    check T.grant("phone", "fjord/mail/alice", {prRead, prWrite}) == ""
+    check T.grant("phone", "fjord", {prRead}).ok
+    check T.grant("phone", "fjord/mail/alice", {prRead, prWrite}).ok
     check rightsAt(T, "phone", "fjord/mail/alice/inbox") == {prRead, prWrite}
     check rightsAt(T, "phone", "fjord/mail/bob/inbox") == {prRead}
     check rightsAt(T, "phone", "fjord") == {prRead}
@@ -90,20 +90,20 @@ suite "names and addresses":
   test "a subject or prefix that is not a clean name is refused":
     var
       T: GrantTable = GrantTable()
-    check T.grant("", "fjord", {prRead}).len > 0
-    check T.grant("phone", "", {prRead}).len > 0
-    check T.grant("ph one", "fjord", {prRead}).contains("characters")
-    check T.grant("phone", "../etc", {prRead}).contains("prefix")
-    check T.grant("phone", "/fjord", {prRead}).contains("prefix")
-    check T.grant("phone", "fjord/*", {prRead}).contains("prefix")
-    check T.grant("phone", "fjord//mail", {prRead}).contains("prefix")
+    check not T.grant("", "fjord", {prRead}).ok
+    check not T.grant("phone", "", {prRead}).ok
+    check T.grant("ph one", "fjord", {prRead}).err.contains("characters")
+    check T.grant("phone", "../etc", {prRead}).err.contains("prefix")
+    check T.grant("phone", "/fjord", {prRead}).err.contains("prefix")
+    check T.grant("phone", "fjord/*", {prRead}).err.contains("prefix")
+    check T.grant("phone", "fjord//mail", {prRead}).err.contains("prefix")
     check T.grants.len == 0
 
   # {.testKind: tkEdgeCase, covers: "rightsAt".}
   test "a subject named * is refused, so no grant can reach everyone":
     var
       T: GrantTable = GrantTable()
-    check T.grant("*", "fjord", {prRead}).len > 0
+    check not T.grant("*", "fjord", {prRead}).ok
     check rightsAt(T, "phone", "fjord") == {}
 
 suite "the text table":

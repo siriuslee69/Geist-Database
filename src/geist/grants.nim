@@ -134,21 +134,23 @@ proc grantIndex(T: GrantTable, subject, prefix: string): int {.role: parser.} =
     i = i + 1
 
 proc grant*(T: var GrantTable, subject, prefix: string,
-    rights: set[AccessRight]): string {.role: actor.} =
+    rights: set[AccessRight]): tuple[ok: bool, err: string] {.role: actor.} =
   ## T/subject/prefix/rights: the grant for one subject at one prefix. An empty
-  ## set removes the grant. "" when recorded, else why not.
+  ## set removes the grant. A failed change leaves the table as it was.
   var
-    i: int = grantIndex(T, subject, prefix)
+    i: int = -1
   if not validName(subject):
-    return "subject '" & subject & "' has characters a name may not have"
+    return (false, "subject '" & subject & "' has characters a name may not have")
   if not validName(prefix):
-    return "prefix '" & prefix & "' is not an address path"
+    return (false, "prefix '" & prefix & "' is not an address path")
+  i = grantIndex(T, subject, prefix)
   if i >= 0 and rights.len == 0:
     T.grants.delete(i)
   if i >= 0 and rights.len > 0:
     T.grants[i].rights = rights
   if i < 0 and rights.len > 0:
     T.grants.add GrantRow(subject: subject, prefix: prefix, rights: rights)
+  result = (true, "")
 
 proc coveringGrant(T: GrantTable, subject, path: string): int {.role: parser.} =
   ## T/subject/path: the index of the most specific grant covering `path`, or -1.

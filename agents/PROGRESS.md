@@ -1,4 +1,9 @@
-Commit Message: Boxes: maxPerWriter; example geist_boxes
+Commit Message: Return an explicit result from grant
+
+## 2026-11-19 Grant results
+
+- Give `grant` the same `ok` and `err` result as `saveGrants`. Update the
+  grant tests and the CLI consumer in Nebel. Keep the saved grant format.
 
 ## 2026-11-11 Review pass
 
