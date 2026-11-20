@@ -72,3 +72,8 @@ examples/geist_*
 # The template beside it is tracked; what someone fills in is not.
 userconfig.toml
 .otter/
+
+# migration top-up 2026-11-20
+nimcache*/
+*.trash
+.local/
